@@ -49,7 +49,7 @@ func (m *Model) dispatchEditorKey(msg tea.KeyMsg) (handled, dirty bool) {
 // Completions:
 //   - [        → inserts [] with cursor inside; subsequent ] skips over it
 //   - ( after] → inserts () with cursor inside; subsequent ) skips over it
-//   - ```       → completes a fenced code block with cursor on the blank middle line
+//   - ```       → inserts `````` with the cursor between the two triples; Enter splits them
 func (m *Model) handlePairCompletion(msg tea.KeyMsg) bool {
 	if msg.Type != tea.KeyRunes || len(msg.Runes) != 1 {
 		return false
