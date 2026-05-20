@@ -25,21 +25,47 @@ func (m *Model) dispatchEditorKey(msg tea.KeyMsg) (handled, dirty bool) {
 		for _, r := range msg.Runes {
 			m.editor.InsertRune(r)
 		}
+		m.syncEditorViewport()
 		return true, true
 	case tea.KeySpace:
 		m.editor.InsertRune(' ')
+		m.syncEditorViewport()
 		return true, true
 	case tea.KeyEnter:
 		m.editor.InsertRune('\n')
+		m.syncEditorViewport()
 		return true, true
 	case tea.KeyUp:
 		m.editor.CursorUp()
+		m.syncEditorViewport()
 		return true, false
 	case tea.KeyDown:
 		m.editor.CursorDown()
+		m.syncEditorViewport()
 		return true, false
 	}
 	return false, false
+}
+
+// repositionMsg is a no-op message fed to textarea.Update purely to make it
+// run its (unexported) viewport repositioning. It is never emitted as a real
+// tea.Msg through the program.
+type repositionMsg struct{}
+
+// syncEditorViewport scrolls the textarea's internal viewport so the cursor
+// stays visible. The direct cursor methods used by dispatchEditorKey
+// (InsertRune / CursorUp / CursorDown) move the cursor but never reposition
+// the viewport — only textarea.Update does that, via the repositionView()
+// it runs at the end of every Update.
+//
+// View() is called first because the textarea only refreshes its viewport's
+// content inside View(); without it, repositionView() would scroll against a
+// stale (pre-edit) content height and could leave a just-typed line off
+// screen. The subsequent Update with a non-key message then repositions with
+// no editing side effect.
+func (m *Model) syncEditorViewport() {
+	m.editor.View()
+	m.editor, _ = m.editor.Update(repositionMsg{})
 }
 
 // handlePairCompletion intercepts specific key presses in the editor and

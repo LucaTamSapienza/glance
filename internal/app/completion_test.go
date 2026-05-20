@@ -1,6 +1,8 @@
 package app
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,5 +28,35 @@ func TestBacktickHasNoCompletion(t *testing.T) {
 
 	if got := m.editor.Value(); got != "```" {
 		t.Fatalf("after typing ```, want %q, got %q", "```", got)
+	}
+}
+
+func TestEditorViewportFollowsCursor(t *testing.T) {
+	var lines []string
+	for i := 0; i < 40; i++ {
+		lines = append(lines, fmt.Sprintf("line%02d", i))
+	}
+	m := New("", []byte(strings.Join(lines, "\n")), ModeEdit)
+	m.width = 40
+	m.height = 8 // editor viewport ends up only a few rows tall
+	m.layout()
+
+	// Start at the top of the document.
+	for m.editor.Line() > 0 {
+		m.editor.CursorUp()
+	}
+
+	// Press Down well past the bottom of the visible area.
+	for i := 0; i < 30; i++ {
+		m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = m2.(Model)
+	}
+
+	view := ansiRE.ReplaceAllString(m.editor.View(), "")
+	if !strings.Contains(view, "line30") {
+		t.Errorf("viewport did not follow the cursor down — cursor's line not visible.\nview:\n%s", view)
+	}
+	if strings.Contains(view, "line00") {
+		t.Errorf("viewport did not scroll — the top line is still visible after moving the cursor down.\nview:\n%s", view)
 	}
 }
