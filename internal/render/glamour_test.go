@@ -26,3 +26,18 @@ func TestPreservedNewlines(t *testing.T) {
 		t.Errorf("rendered output missing content:\n%q", plain)
 	}
 }
+
+func TestCodeBlockRenders(t *testing.T) {
+	g, err := NewGlamour(80)
+	if err != nil {
+		t.Fatalf("NewGlamour: %v", err)
+	}
+	out, err := g.Render("```\ncode here\n```\n")
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	plain := ansiRE.ReplaceAllString(out, "")
+	if !strings.Contains(plain, "code here") {
+		t.Errorf("code block content missing from render:\n%q", plain)
+	}
+}
