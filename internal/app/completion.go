@@ -36,11 +36,19 @@ func (m *Model) dispatchEditorKey(msg tea.KeyMsg) (handled, dirty bool) {
 		m.syncEditorViewport()
 		return true, true
 	case tea.KeyUp:
-		m.editor.CursorUp()
+		if msg.Alt {
+			m.editorParagraphUp()
+		} else {
+			m.editor.CursorUp()
+		}
 		m.syncEditorViewport()
 		return true, false
 	case tea.KeyDown:
-		m.editor.CursorDown()
+		if msg.Alt {
+			m.editorParagraphDown()
+		} else {
+			m.editor.CursorDown()
+		}
 		m.syncEditorViewport()
 		return true, false
 	}
@@ -66,6 +74,46 @@ type repositionMsg struct{}
 func (m *Model) syncEditorViewport() {
 	m.editor.View()
 	m.editor, _ = m.editor.Update(repositionMsg{})
+}
+
+// editorParagraphDown moves the editor cursor down to the next blank line
+// (or the last line of the document) — the Opt+Down "jump by paragraph".
+func (m *Model) editorParagraphDown() {
+	lines := strings.Split(m.editor.Value(), "\n")
+	target := len(lines) - 1
+	for r := m.editor.Line() + 1; r < len(lines); r++ {
+		if strings.TrimSpace(lines[r]) == "" {
+			target = r
+			break
+		}
+	}
+	for m.editor.Line() < target {
+		before := m.editor.Line()
+		m.editor.CursorDown()
+		if m.editor.Line() == before {
+			break
+		}
+	}
+}
+
+// editorParagraphUp moves the editor cursor up to the previous blank line
+// (or the first line of the document) — the Opt+Up "jump by paragraph".
+func (m *Model) editorParagraphUp() {
+	lines := strings.Split(m.editor.Value(), "\n")
+	target := 0
+	for r := m.editor.Line() - 1; r >= 0; r-- {
+		if strings.TrimSpace(lines[r]) == "" {
+			target = r
+			break
+		}
+	}
+	for m.editor.Line() > target {
+		before := m.editor.Line()
+		m.editor.CursorUp()
+		if m.editor.Line() == before {
+			break
+		}
+	}
 }
 
 // handlePairCompletion intercepts specific key presses in the editor and

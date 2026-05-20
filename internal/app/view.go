@@ -182,6 +182,7 @@ func overlayHelp(body string, w, h int) string {
 		"Reader:   j/k arrows scroll · gg/G top/bottom · / search (rendered) · t TOC · ? help · :q quit",
 		"          i  → insert mode (edit raw text)   e  → split view (live preview)",
 		"Insert:   Esc back to reader · ctrl+s quick save",
+		"          opt+←/→ jump word · opt+↑/↓ jump paragraph",
 		"Commands: :w save · :q quit · :q! force · :wq save+quit  (available in reader/split)",
 		"Mouse:    wheel to scroll",
 		"",

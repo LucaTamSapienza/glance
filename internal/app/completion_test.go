@@ -60,3 +60,40 @@ func TestEditorViewportFollowsCursor(t *testing.T) {
 		t.Errorf("viewport did not scroll — the top line is still visible after moving the cursor down.\nview:\n%s", view)
 	}
 }
+
+func TestEditorParagraphJump(t *testing.T) {
+	src := "para1 line1\npara1 line2\n\npara2 line1\npara2 line2\n\npara3"
+	m := New("", []byte(src), ModeEdit)
+	m.width = 40
+	m.height = 20
+	m.layout()
+
+	// Start at the top of the document.
+	for m.editor.Line() > 0 {
+		m.editor.CursorUp()
+	}
+
+	step := func(msg tea.KeyMsg) {
+		m2, _ := m.Update(msg)
+		m = m2.(Model)
+	}
+	optDown := tea.KeyMsg{Type: tea.KeyDown, Alt: true}
+	optUp := tea.KeyMsg{Type: tea.KeyUp, Alt: true}
+
+	step(optDown)
+	if got := m.editor.Line(); got != 2 {
+		t.Fatalf("Opt+Down from line 0: want line 2 (blank), got %d", got)
+	}
+	step(optDown)
+	if got := m.editor.Line(); got != 5 {
+		t.Fatalf("Opt+Down from line 2: want line 5 (blank), got %d", got)
+	}
+	step(optUp)
+	if got := m.editor.Line(); got != 2 {
+		t.Fatalf("Opt+Up from line 5: want line 2 (blank), got %d", got)
+	}
+	step(optUp)
+	if got := m.editor.Line(); got != 0 {
+		t.Fatalf("Opt+Up from line 2: want line 0 (top), got %d", got)
+	}
+}
