@@ -135,3 +135,32 @@ func TestDebounceLogic(t *testing.T) {
 	}
 }
 
+func TestQDoesNotQuit(t *testing.T) {
+	m := New("", []byte("# Title\n\nbody"), ModeReader)
+	m.width = 80
+	m.height = 24
+	m.layout()
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if cmd != nil {
+		if _, ok := cmd().(tea.QuitMsg); ok {
+			t.Error("pressing q in reader mode should not quit")
+		}
+	}
+}
+
+func TestColonQQuits(t *testing.T) {
+	m := New("", []byte("content"), ModeReader)
+	m.width = 80
+	m.height = 24
+	m.layout()
+
+	_, cmd := m.runCommand("q")
+	if cmd == nil {
+		t.Fatal("expected :q to return a quit command")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Errorf("expected :q to produce tea.QuitMsg, got %T", cmd())
+	}
+}
+

@@ -3,7 +3,6 @@ package app
 import "github.com/charmbracelet/bubbles/key"
 
 type KeyMap struct {
-	Quit       key.Binding
 	Help       key.Binding
 	EditMode   key.Binding
 	ReaderMode key.Binding
@@ -25,7 +24,6 @@ type KeyMap struct {
 
 func DefaultKeys() KeyMap {
 	return KeyMap{
-		Quit:       key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),
 		Help:       key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 		EditMode:   key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
 		ReaderMode: key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "reader")),

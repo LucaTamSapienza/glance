@@ -328,8 +328,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.layout()
 		m.previewGen++
 		return m, m.renderCmd(m.previewGen)
-	case keyMatch(m.keys.Quit, msg):
-		return m, tea.Quit
 	case msg.String() == "R" && m.externalChange:
 		return m.reloadFromDisk()
 	}

@@ -179,7 +179,7 @@ func overlayHelp(body string, w, h int) string {
 	help := strings.Join([]string{
 		"glance — help",
 		"",
-		"Reader:   j/k arrows scroll · gg/G top/bottom · / search (rendered) · t TOC · ? help · q quit",
+		"Reader:   j/k arrows scroll · gg/G top/bottom · / search (rendered) · t TOC · ? help · :q quit",
 		"          i  → insert mode (edit raw text)   e  → split view (live preview)",
 		"Insert:   Esc back to reader · ctrl+s quick save",
 		"Commands: :w save · :q quit · :q! force · :wq save+quit  (available in reader/split)",
