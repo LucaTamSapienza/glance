@@ -87,5 +87,6 @@ func newRenderer(dark bool, width int) (*glamour.TermRenderer, error) {
 		glamour.WithStyles(style),
 		glamour.WithWordWrap(width),
 		glamour.WithEmoji(),
+		glamour.WithPreservedNewLines(),
 	)
 }
