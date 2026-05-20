@@ -163,3 +163,37 @@ func TestColonQQuits(t *testing.T) {
 		t.Errorf("expected :q to produce tea.QuitMsg, got %T", cmd())
 	}
 }
+
+func TestCtrlCQuitsWhenClean(t *testing.T) {
+	m := New("", []byte("content"), ModeReader)
+	m.width = 80
+	m.height = 24
+	m.layout()
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd == nil {
+		t.Fatal("expected ctrl+c to quit when there are no unsaved changes")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Errorf("expected tea.QuitMsg, got %T", cmd())
+	}
+}
+
+func TestCtrlCWarnsWhenDirtyWithoutPath(t *testing.T) {
+	m := New("", []byte("content"), ModeReader)
+	m.width = 80
+	m.height = 24
+	m.layout()
+	m.dirty = true // unsaved changes; New("") has no file path to save to
+
+	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = m2.(Model)
+	if cmd != nil {
+		if _, ok := cmd().(tea.QuitMsg); ok {
+			t.Error("ctrl+c must not quit with unsaved changes and no file path")
+		}
+	}
+	if !strings.Contains(m.status, "save") {
+		t.Errorf("expected a warning mentioning save, got status %q", m.status)
+	}
+}

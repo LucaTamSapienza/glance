@@ -233,6 +233,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Global shortcuts (reader / unfocused split).
 	switch {
 	case msg.String() == "ctrl+c":
+		if m.dirty {
+			if m.path == "" {
+				m.flash("unsaved changes — :w <path> to save, or :q! to force-quit")
+				return m, nil
+			}
+			return m, tea.Sequence(m.saveCmd(""), tea.Quit)
+		}
 		return m, tea.Quit
 	case keyMatch(m.keys.Help, msg):
 		m.helpOpen = !m.helpOpen
