@@ -163,4 +163,3 @@ func TestColonQQuits(t *testing.T) {
 		t.Errorf("expected :q to produce tea.QuitMsg, got %T", cmd())
 	}
 }
-
