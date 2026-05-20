@@ -1,0 +1,54 @@
+version: 2
+
+project_name: glance
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: glance
+    main: ./cmd/glance
+    binary: glance
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: glance
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+brews:
+  - name: glance
+    repository:
+      owner: lucatam
+      name: homebrew-glance
+    homepage: "https://github.com/lucatam/glance"
+    description: "The terminal Markdown reader/editor for macOS"
+    license: MIT
+    test: |
+      system "#{bin}/glance --version"
+    install: |
+      bin.install "glance"
