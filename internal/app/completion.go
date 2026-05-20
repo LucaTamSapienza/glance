@@ -49,7 +49,6 @@ func (m *Model) dispatchEditorKey(msg tea.KeyMsg) (handled, dirty bool) {
 // Completions:
 //   - [        → inserts [] with cursor inside; subsequent ] skips over it
 //   - ( after] → inserts () with cursor inside; subsequent ) skips over it
-//   - ```       → inserts `````` with the cursor between the two triples; Enter splits them
 func (m *Model) handlePairCompletion(msg tea.KeyMsg) bool {
 	if msg.Type != tea.KeyRunes || len(msg.Runes) != 1 {
 		return false
@@ -98,18 +97,6 @@ func (m *Model) handlePairCompletion(msg tea.KeyMsg) bool {
 		// Skip over an auto-inserted )
 		if charAfter == ")" {
 			m.editor.SetCursor(col + 1)
-			return true
-		}
-
-	case '`':
-		// Third backtick on an otherwise-empty line → insert the closing
-		// fence adjacent to the opening one (``````), with the cursor
-		// between the two triples. The user presses Enter to split it.
-		stripped := strings.TrimLeft(prefix, " \t")
-		if stripped == "``" {
-			m.editor.InsertString("````")
-			m.editor.SetCursor(col + 1)
-			m.dirty = true
 			return true
 		}
 	}

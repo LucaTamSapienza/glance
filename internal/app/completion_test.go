@@ -12,24 +12,19 @@ func typeRune(m Model, r rune) Model {
 	return m2.(Model)
 }
 
-func TestFenceCompletion(t *testing.T) {
+func TestBacktickHasNoCompletion(t *testing.T) {
 	m := New("", []byte(""), ModeEdit)
 	m.width = 80
 	m.height = 24
 	m.layout()
 
-	// Type three backticks on an empty line.
+	// Typing three backticks must produce exactly three backticks — the editor
+	// must not auto-insert a closing fence.
 	m = typeRune(m, '`')
 	m = typeRune(m, '`')
 	m = typeRune(m, '`')
 
-	if got := m.editor.Value(); got != "``````" {
-		t.Fatalf("after typing ```, want %q, got %q", "``````", got)
-	}
-
-	// The cursor must sit between the two triples: a typed char lands in the middle.
-	m = typeRune(m, 'x')
-	if got := m.editor.Value(); got != "```x```" {
-		t.Errorf("after typing x, want %q, got %q", "```x```", got)
+	if got := m.editor.Value(); got != "```" {
+		t.Fatalf("after typing ```, want %q, got %q", "```", got)
 	}
 }
