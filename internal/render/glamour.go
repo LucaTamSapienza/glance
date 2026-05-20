@@ -71,7 +71,7 @@ func newRenderer(dark bool, width int) (*glamour.TermRenderer, error) {
 	style.CodeBlock.Color = &codeFG
 	// Disable Chroma so glamour's fallback path is used — only that path
 	// honors CodeBlock.BackgroundColor / Color. Trade-off: no syntax
-	// highlighting, but code is uniformly readable (black on white).
+	// highlighting, but code is uniformly readable with contrasting colors.
 	style.CodeBlock.Chroma = nil
 
 	// Remove the blank line glamour appends after every heading (BlockSuffix).
