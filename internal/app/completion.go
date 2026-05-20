@@ -102,16 +102,13 @@ func (m *Model) handlePairCompletion(msg tea.KeyMsg) bool {
 		}
 
 	case '`':
-		// Third backtick on an otherwise-empty line → fenced code block.
-		// The line already contains `` from the previous two keystrokes, so
-		// we only insert the missing third ` plus the closing fence.
+		// Third backtick on an otherwise-empty line → insert the closing
+		// fence adjacent to the opening one (``````), with the cursor
+		// between the two triples. The user presses Enter to split it.
 		stripped := strings.TrimLeft(prefix, " \t")
 		if stripped == "``" {
-			m.editor.InsertString("`\n\n```")
-			// Cursor is at end of closing fence; go up twice to land
-			// at the end of the opening fence line (ready to type language).
-			m.editor.CursorUp()
-			m.editor.CursorUp()
+			m.editor.InsertString("````")
+			m.editor.SetCursor(col + 1)
 			m.dirty = true
 			return true
 		}
