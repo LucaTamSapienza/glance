@@ -56,23 +56,17 @@ func newRenderer(dark bool, width int) (*glamour.TermRenderer, error) {
 	style.Paragraph.Margin = &margin
 	style.CodeBlock.Margin = &margin
 
-	// Code blocks: use a contrasting background so they stand out on both dark
-	// and light terminals. The foreground overrides Glamour's default so text
-	// stays readable against the new background.
-	var codeBG, codeFG string
-	if dark {
-		codeBG = "#e8e8e8" // near-white background
-		codeFG = "#1a1a1a" // near-black text
-	} else {
-		codeBG = "#2b2b2b" // dark background
-		codeFG = "#f0f0f0" // light text
+	// Code blocks keep Glamour's Chroma syntax highlighting. On a dark
+	// terminal, give the block an explicit dark-grey background so it reads
+	// as a distinct box instead of blending into the near-black terminal.
+	// The Chroma struct is copied first so the package-global DarkStyleConfig
+	// is not mutated. Light terminals keep Glamour's default code-block style.
+	if dark && style.CodeBlock.Chroma != nil {
+		chromaCfg := *style.CodeBlock.Chroma
+		codeBG := "#404040"
+		chromaCfg.Background.BackgroundColor = &codeBG
+		style.CodeBlock.Chroma = &chromaCfg
 	}
-	style.CodeBlock.BackgroundColor = &codeBG
-	style.CodeBlock.Color = &codeFG
-	// Disable Chroma so glamour's fallback path is used — only that path
-	// honors CodeBlock.BackgroundColor / Color. Trade-off: no syntax
-	// highlighting, but code is uniformly readable with contrasting colors.
-	style.CodeBlock.Chroma = nil
 
 	// Remove the blank line glamour appends after every heading (BlockSuffix).
 	// Without this, 0 blank lines between consecutive headings in the source
