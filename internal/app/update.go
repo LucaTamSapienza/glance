@@ -202,8 +202,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.mode == ModeSplit && m.editor.Focused() {
 		switch msg.String() {
 		case "esc", "ctrl+c":
+			m.pendingSyncLine = m.editor.Line()
+			m.pendingSyncCol = m.editor.LineInfo().ColumnOffset
+			m.source = m.editor.Value()
+			m.tocItems = ExtractTOC(m.source)
+			m.mode = ModeReader
 			m.editor.Blur()
-			return m, nil
+			m.layout()
+			m.previewGen++
+			return m, m.renderCmd(m.previewGen)
 		case "tab":
 			m.editor.InsertString("    ")
 			m.dirty = true

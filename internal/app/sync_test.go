@@ -2,6 +2,8 @@ package app
 
 import (
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestReaderLineToSourceProportionalFallback(t *testing.T) {
@@ -52,5 +54,23 @@ func TestReaderLineToSourceHeuristic(t *testing.T) {
 		if got != tt.wantSource {
 			t.Errorf("cursorLine %d: want source %d, got %d", tt.cursorLine, tt.wantSource, got)
 		}
+	}
+}
+
+func TestSplitEscGoesToReader(t *testing.T) {
+	m := New("", []byte("# title\n\nbody\n"), ModeSplit)
+	m.width = 80
+	m.height = 24
+	m.layout()
+	m.editor.Focus()
+
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = m2.(Model)
+
+	if m.mode != ModeReader {
+		t.Fatalf("after Esc in focused Split: want mode Reader, got %v", m.mode)
+	}
+	if m.editor.Focused() {
+		t.Fatalf("after Esc in focused Split: editor must be blurred")
 	}
 }
