@@ -88,6 +88,30 @@ func (m *Model) findClosestRenderedLine(sourceLineIdx int) int {
 	return clamp(prop, 0, len(renderedLines)-1)
 }
 
+// renderedLineToSource returns the source-line index whose rendered position
+// is at or just before the given rendered row. Walks the srcToRendered map
+// to find the largest src index whose mapped row is ≤ the target. Falls
+// back to a proportional estimate if the map is empty.
+func (m *Model) renderedLineToSourceLine(renderedRow int) int {
+	if len(m.srcToRendered) == 0 {
+		if m.totalLines <= 0 {
+			return 0
+		}
+		sourceLineCount := strings.Count(m.source, "\n") + 1
+		est := renderedRow * sourceLineCount / m.totalLines
+		return clamp(est, 0, sourceLineCount-1)
+	}
+	best := 0
+	for i, r := range m.srcToRendered {
+		if r <= renderedRow {
+			best = i
+		} else {
+			break
+		}
+	}
+	return best
+}
+
 // editorSourceCol returns the logical character offset of the textarea
 // cursor within its current source line. Unlike LineInfo().ColumnOffset
 // (which is the visual column within a soft-wrapped row), this value

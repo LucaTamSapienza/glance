@@ -96,6 +96,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reader, c = m.reader.Update(msg)
 			if m.mode == ModeReader {
 				m.cursorLine = clamp(m.reader.YOffset, 0, m.totalLines-1)
+				m.srcLine = m.renderedLineToSourceLine(m.cursorLine)
 			}
 			cmds = append(cmds, c)
 		}
@@ -310,7 +311,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if len(m.tocItems) > 0 {
 				item := m.tocItems[m.tocSelected]
-				m.cursorLine = m.findClosestRenderedLine(item.LineNum - 1)
+				m.srcLine = item.LineNum - 1
+				m.srcCol = 0
+				m.cursorLine = m.findClosestRenderedLine(m.srcLine)
 				m.reader.SetYOffset(m.cursorLine)
 				m.tocFocused = false
 			}
@@ -358,6 +361,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if msg.String() == "g" {
 				m.cursorLine = 0
 				m.cursorCol = 0
+				m.srcLine = 0
+				m.srcCol = 0
 				m.reader.GotoTop()
 				return m, nil
 			}
@@ -370,11 +375,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case keyMatch(m.keys.Top, msg):
 			m.cursorLine = 0
 			m.cursorCol = 0
+			m.srcLine = 0
+			m.srcCol = 0
 			m.reader.GotoTop()
 			return m, nil
 		case keyMatch(m.keys.Bottom, msg):
 			m.cursorLine = max(0, m.totalLines-1)
 			m.cursorCol = 0
+			m.srcLine = strings.Count(m.source, "\n")
+			m.srcCol = 0
 			m.reader.GotoBottom()
 			return m, nil
 		case keyMatch(m.keys.Down, msg):
@@ -420,6 +429,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.reader, c = m.reader.Update(msg)
 		if m.mode == ModeReader && m.reader.YOffset != prevYOffset {
 			m.cursorLine = clamp(m.reader.YOffset, 0, m.totalLines-1)
+			m.srcLine = m.renderedLineToSourceLine(m.cursorLine)
 		}
 		return m, c
 	}

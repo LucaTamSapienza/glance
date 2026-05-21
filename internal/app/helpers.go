@@ -22,6 +22,8 @@ func (m *Model) jumpToHit() {
 	m.reader.SetYOffset(hit.line)
 	m.cursorLine = clamp(hit.line, 0, m.totalLines-1)
 	m.cursorCol = hit.col
+	m.srcLine = m.renderedLineToSourceLine(m.cursorLine)
+	m.srcCol = m.cursorCol
 }
 
 // hitLineSet builds a fast-lookup set of rendered line numbers from the

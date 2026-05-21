@@ -142,6 +142,57 @@ func TestReaderToEditorUsesSrcCoords(t *testing.T) {
 	}
 }
 
+func TestGGResetsSrcLine(t *testing.T) {
+	m := New("", []byte("alpha\nbeta\ngamma\n"), ModeReader)
+	m.width = 80
+	m.height = 24
+	m.layout()
+	m.rendered = "alpha\nbeta\ngamma\n"
+	m.totalLines = 4
+	m.srcToRendered = []int{0, 1, 2, 3}
+
+	step := func(msg tea.KeyMsg) {
+		m2, _ := m.Update(msg)
+		m = m2.(Model)
+	}
+	// Move to line 2 first.
+	step(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	step(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if m.srcLine != 2 {
+		t.Fatalf("setup: want srcLine=2, got %d", m.srcLine)
+	}
+
+	// Press gg to go to top.
+	step(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	step(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	if m.srcLine != 0 {
+		t.Errorf("after gg: want srcLine=0, got %d", m.srcLine)
+	}
+
+	// Switch to editor; should land at line 0.
+	step(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	if m.editor.Line() != 0 {
+		t.Errorf("after i: want editor.Line()=0, got %d", m.editor.Line())
+	}
+}
+
+func TestBottomKeyUpdatesSrcLine(t *testing.T) {
+	m := New("", []byte("alpha\nbeta\ngamma\n"), ModeReader)
+	m.width = 80
+	m.height = 24
+	m.layout()
+	m.rendered = "alpha\nbeta\ngamma\n"
+	m.totalLines = 4
+	m.srcToRendered = []int{0, 1, 2, 3}
+
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = m2.(Model)
+	// source "alpha\nbeta\ngamma\n" has 4 lines (indices 0..3, last is "").
+	if m.srcLine != 3 {
+		t.Errorf("after G: want srcLine=3, got %d", m.srcLine)
+	}
+}
+
 func TestReaderEditorReaderRoundTrip(t *testing.T) {
 	source := "alpha\nbeta\ngamma\n"
 	m := New("", []byte(source), ModeReader)
