@@ -97,3 +97,51 @@ func TestEditorParagraphJump(t *testing.T) {
 		t.Fatalf("Opt+Up from line 2: want line 0 (top), got %d", got)
 	}
 }
+
+func TestEditorWordJump(t *testing.T) {
+	// "foo bar  baz qux" — length 16, double space between "bar" and "baz".
+	m := New("", []byte("foo bar  baz qux"), ModeEdit)
+	m.width = 80
+	m.height = 24
+	m.layout()
+
+	// SetValue puts the cursor at end of content; move to column 0.
+	for m.editor.Line() > 0 {
+		m.editor.CursorUp()
+	}
+	m.editor.CursorStart()
+
+	step := func(msg tea.KeyMsg) {
+		m2, _ := m.Update(msg)
+		m = m2.(Model)
+	}
+	optRight := tea.KeyMsg{Type: tea.KeyRight, Alt: true}
+	optLeft := tea.KeyMsg{Type: tea.KeyLeft, Alt: true}
+
+	expectCol := func(want int, label string) {
+		t.Helper()
+		got := m.editor.LineInfo().CharOffset
+		if got != want {
+			t.Fatalf("%s: want col %d, got %d", label, want, got)
+		}
+	}
+
+	expectCol(0, "start")
+	step(optRight)
+	expectCol(3, "1st opt+right (end of foo)")
+	step(optRight)
+	expectCol(7, "2nd opt+right (end of bar)")
+	step(optRight)
+	expectCol(12, "3rd opt+right (end of baz)")
+	step(optRight)
+	expectCol(16, "4th opt+right (end of line)")
+
+	step(optLeft)
+	expectCol(13, "1st opt+left (start of qux)")
+	step(optLeft)
+	expectCol(9, "2nd opt+left (start of baz)")
+	step(optLeft)
+	expectCol(4, "3rd opt+left (start of bar)")
+	step(optLeft)
+	expectCol(0, "4th opt+left (start of line)")
+}

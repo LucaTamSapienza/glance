@@ -51,6 +51,20 @@ func (m *Model) dispatchEditorKey(msg tea.KeyMsg) (handled, dirty bool) {
 		}
 		m.syncEditorViewport()
 		return true, false
+	case tea.KeyLeft:
+		if !msg.Alt {
+			return false, false
+		}
+		m.editorWordLeft()
+		m.syncEditorViewport()
+		return true, false
+	case tea.KeyRight:
+		if !msg.Alt {
+			return false, false
+		}
+		m.editorWordRight()
+		m.syncEditorViewport()
+		return true, false
 	}
 	return false, false
 }
@@ -114,6 +128,52 @@ func (m *Model) editorParagraphUp() {
 			break
 		}
 	}
+}
+
+// editorWordRight moves the editor cursor right by one whitespace-delimited
+// word on the current source line. From a space, it first skips the run of
+// spaces, then skips the run of non-space chars. From a non-space, it skips
+// the current word. Lands on the first space after the word, or end-of-line.
+func (m *Model) editorWordRight() {
+	lines := strings.Split(m.editor.Value(), "\n")
+	row := m.editor.Line()
+	if row >= len(lines) {
+		return
+	}
+	runes := []rune(lines[row])
+	col := m.editor.LineInfo().CharOffset
+
+	for col < len(runes) && runes[col] == ' ' {
+		col++
+	}
+	for col < len(runes) && runes[col] != ' ' {
+		col++
+	}
+	m.editor.SetCursor(col)
+}
+
+// editorWordLeft moves the editor cursor left by one whitespace-delimited
+// word on the current source line. Lands on the start of the previous word,
+// or column 0.
+func (m *Model) editorWordLeft() {
+	lines := strings.Split(m.editor.Value(), "\n")
+	row := m.editor.Line()
+	if row >= len(lines) {
+		return
+	}
+	runes := []rune(lines[row])
+	col := m.editor.LineInfo().CharOffset
+	if col == 0 {
+		return
+	}
+	col--
+	for col > 0 && runes[col] == ' ' {
+		col--
+	}
+	for col > 0 && runes[col-1] != ' ' {
+		col--
+	}
+	m.editor.SetCursor(col)
 }
 
 // handlePairCompletion intercepts specific key presses in the editor and
