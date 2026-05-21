@@ -145,3 +145,58 @@ func TestEditorWordJump(t *testing.T) {
 	step(optLeft)
 	expectCol(0, "4th opt+left (start of line)")
 }
+
+func TestSingleBacktickThenEnterNoDuplication(t *testing.T) {
+	m := New("", []byte(""), ModeEdit)
+	m.width = 80
+	m.height = 24
+	m.layout()
+
+	m = typeRune(m, '`')
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = m2.(Model)
+
+	want := "`\n"
+	if got := m.editor.Value(); got != want {
+		t.Fatalf("after typing ` then Enter: want %q, got %q", want, got)
+	}
+}
+
+func TestTripleBacktickThenEnterNoDuplication(t *testing.T) {
+	m := New("", []byte(""), ModeEdit)
+	m.width = 80
+	m.height = 24
+	m.layout()
+
+	m = typeRune(m, '`')
+	m = typeRune(m, '`')
+	m = typeRune(m, '`')
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = m2.(Model)
+
+	want := "```\n"
+	if got := m.editor.Value(); got != want {
+		t.Fatalf("after typing ``` then Enter: want %q, got %q", want, got)
+	}
+}
+
+func TestAltModifiedRunesAreNotInserted(t *testing.T) {
+	// Regression: on macOS the literal 'b'/'f' that some terminals emit when
+	// Opt+Left/Opt+Right is pressed must never reach the buffer as text.
+	m := New("", []byte(""), ModeEdit)
+	m.width = 80
+	m.height = 24
+	m.layout()
+
+	altB := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}, Alt: true}
+	altF := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}, Alt: true}
+
+	m2, _ := m.Update(altB)
+	m = m2.(Model)
+	m2, _ = m.Update(altF)
+	m = m2.(Model)
+
+	if got := m.editor.Value(); got != "" {
+		t.Fatalf("Alt-modified runes must not be inserted; got %q", got)
+	}
+}

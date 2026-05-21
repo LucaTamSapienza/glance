@@ -22,6 +22,13 @@ func (m *Model) dispatchEditorKey(msg tea.KeyMsg) (handled, dirty bool) {
 		if len(msg.Runes) == 0 {
 			return false, false
 		}
+		// Alt-modified runes are commands (word jumps etc.), not text. Some
+		// macOS terminals emit a stray Alt-modified rune alongside Opt+arrow
+		// or Opt+digit keypresses; inserting them produces phantom characters
+		// in the buffer.
+		if msg.Alt {
+			return true, false
+		}
 		for _, r := range msg.Runes {
 			m.editor.InsertRune(r)
 		}
