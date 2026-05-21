@@ -88,6 +88,32 @@ func (m *Model) findClosestRenderedLine(sourceLineIdx int) int {
 	return clamp(prop, 0, len(renderedLines)-1)
 }
 
+// editorSourceCol returns the logical character offset of the textarea
+// cursor within its current source line. Unlike LineInfo().ColumnOffset
+// (which is the visual column within a soft-wrapped row), this value
+// survives line wrapping because it indexes into the unwrapped source.
+func (m *Model) editorSourceCol() int {
+	info := m.editor.LineInfo()
+	if info.RowOffset == 0 {
+		return info.ColumnOffset
+	}
+	lines := strings.Split(m.editor.Value(), "\n")
+	row := m.editor.Line()
+	if row < 0 || row >= len(lines) {
+		return info.ColumnOffset
+	}
+	src := []rune(lines[row])
+	w := m.editor.Width()
+	if w <= 0 {
+		return info.ColumnOffset
+	}
+	guess := info.RowOffset*w + info.ColumnOffset
+	if guess > len(src) {
+		guess = len(src)
+	}
+	return guess
+}
+
 // jumpEditorToSourceLine moves the textarea cursor to the given source line
 // and column, used when switching from reader to editor mode.
 func (m *Model) jumpEditorToSourceLine(line, col int) {

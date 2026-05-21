@@ -75,6 +75,38 @@ func TestSplitEscGoesToReader(t *testing.T) {
 	}
 }
 
+func TestEditorToReaderCapturesSrcCoords(t *testing.T) {
+	source := "alpha\nbeta\ngamma\n"
+	m := New("", []byte(source), ModeEdit)
+	m.width = 80
+	m.height = 24
+	m.layout()
+
+	// Move editor cursor to (line 2, col 3) = the 'm' in "gamma".
+	for m.editor.Line() > 0 {
+		m.editor.CursorUp()
+	}
+	m.editor.CursorStart()
+	for i := 0; i < 2; i++ {
+		m.editor.CursorDown()
+	}
+	m.editor.SetCursor(3)
+
+	// Press Esc to switch to Reader.
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = m2.(Model)
+
+	if m.mode != ModeReader {
+		t.Fatalf("want ModeReader after Esc, got %v", m.mode)
+	}
+	if m.srcLine != 2 {
+		t.Errorf("srcLine: want 2, got %d", m.srcLine)
+	}
+	if m.srcCol != 3 {
+		t.Errorf("srcCol: want 3, got %d", m.srcCol)
+	}
+}
+
 func TestReaderToEditorUsesSrcCoords(t *testing.T) {
 	source := "alpha\nbeta\ngamma\n"
 	m := New("", []byte(source), ModeReader)

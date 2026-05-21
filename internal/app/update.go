@@ -169,6 +169,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc", "ctrl+c":
 			m.pendingSyncLine = m.editor.Line()
 			m.pendingSyncCol = m.editor.LineInfo().ColumnOffset
+			m.srcLine = m.editor.Line()
+			m.srcCol = m.editorSourceCol()
 			m.source = m.editor.Value()
 			m.tocItems = ExtractTOC(m.source)
 			m.mode = ModeReader
@@ -205,6 +207,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc", "ctrl+c":
 			m.pendingSyncLine = m.editor.Line()
 			m.pendingSyncCol = m.editor.LineInfo().ColumnOffset
+			m.srcLine = m.editor.Line()
+			m.srcCol = m.editorSourceCol()
 			m.source = m.editor.Value()
 			m.tocItems = ExtractTOC(m.source)
 			m.mode = ModeReader
@@ -334,6 +338,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keyMatch(m.keys.ReaderMode, msg) && m.mode == ModeSplit:
 		m.pendingSyncLine = m.editor.Line()
 		m.pendingSyncCol = m.editor.LineInfo().ColumnOffset
+		m.srcLine = m.editor.Line()
+		m.srcCol = m.editorSourceCol()
 		m.mode = ModeReader
 		m.editor.Blur()
 		m.source = m.editor.Value()
