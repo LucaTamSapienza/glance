@@ -128,6 +128,45 @@ func indexOfDot(s string) int {
 	return -1
 }
 
+// normalizeRendered pads the rendered output with blank rows so that source
+// line i always lives at rendered row i. Returns the padded output and the
+// (now identity-ish) map suitable for direct lookup.
+//
+// If a source line wrapped to N rendered rows (long unbroken text on a
+// narrow terminal), it stays as N rows and subsequent source lines shift
+// down by N-1. The returned map reflects this: srcToRendered[i+1] =
+// srcToRendered[i] + N. The identity property only holds when no line
+// wraps; the contract is "source line i starts at rendered row map[i]".
+func normalizeRendered(source, rendered string) (string, []int) {
+	raw := buildSrcToRendered(source, rendered)
+	renderedLines := strings.Split(rendered, "\n")
+
+	out := make([]string, 0, len(renderedLines)+len(raw))
+	newMap := make([]int, len(raw))
+
+	rIdx := 0
+	for si := 0; si < len(raw); si++ {
+		target := raw[si]
+		// Append rendered rows up to and including target.
+		for rIdx <= target && rIdx < len(renderedLines) {
+			out = append(out, renderedLines[rIdx])
+			rIdx++
+		}
+		// If target collapsed onto a previous row (raw[si] == raw[si-1]),
+		// we need to add a blank row to give this source line its own slot.
+		if si > 0 && raw[si] == raw[si-1] {
+			out = append(out, "")
+		}
+		newMap[si] = len(out) - 1
+	}
+	// Append any trailing rendered rows not covered above.
+	for rIdx < len(renderedLines) {
+		out = append(out, renderedLines[rIdx])
+		rIdx++
+	}
+	return strings.Join(out, "\n"), newMap
+}
+
 // normalizeForAlign lowercases and collapses internal whitespace for a more
 // resilient match. Returns "" for blank-or-whitespace input.
 func normalizeForAlign(s string) string {

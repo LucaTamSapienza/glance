@@ -2,6 +2,7 @@ package app
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -60,6 +61,38 @@ func TestBuildSrcToRenderedConsecutiveBlanks(t *testing.T) {
 	want := []int{0, 1, 1, 2}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("want %v, got %v", want, got)
+	}
+}
+
+func TestNormalizeRendered(t *testing.T) {
+	source := "# Ciao\n## io sono Luca\n\n**tu come ti chiami**\n\nsssss"
+	rendered := "Ciao\nio sono Luca\ntu come ti chiami\n\nsssss"
+
+	normalized, srcMap := normalizeRendered(source, rendered)
+
+	// After normalization every source line index i lands on rendered row i.
+	want := []int{0, 1, 2, 3, 4, 5}
+	if !reflect.DeepEqual(srcMap, want) {
+		t.Fatalf("normalized srcMap: want %v, got %v", want, srcMap)
+	}
+
+	normalizedLines := strings.Split(normalized, "\n")
+	if len(normalizedLines) < 6 {
+		t.Fatalf("normalized output: want at least 6 lines, got %d:\n%s",
+			len(normalizedLines), normalized)
+	}
+	// Row 0 corresponds to source "# Ciao" — should contain "Ciao".
+	if !strings.Contains(normalizedLines[0], "Ciao") {
+		t.Errorf("row 0: want contains %q, got %q", "Ciao", normalizedLines[0])
+	}
+	// Row 2 corresponds to source blank line — should be blank.
+	if strings.TrimSpace(normalizedLines[2]) != "" {
+		t.Errorf("row 2: want blank (the inserted padding), got %q", normalizedLines[2])
+	}
+	// Row 3 corresponds to source "**tu come ti chiami**" — should contain it.
+	if !strings.Contains(normalizedLines[3], "tu come ti chiami") {
+		t.Errorf("row 3: want contains %q, got %q",
+			"tu come ti chiami", normalizedLines[3])
 	}
 }
 

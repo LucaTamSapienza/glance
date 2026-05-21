@@ -78,8 +78,7 @@ func (m *Model) renderCmd(gen int) tea.Cmd {
 		// surrounding blank lines become the multi-blank gap the user typed.
 		out = restoreExpandedBlanks(out)
 		// Strip Glamour's trailing padding, then restore the source's trailing
-		// blank lines — lets the cursor navigate to positions that exist in the
-		// editor without allowing overflow into Glamour-added padding.
+		// blank lines.
 		out = strings.TrimRight(out, "\n")
 		if out == "" {
 			out = " "
@@ -87,7 +86,10 @@ func (m *Model) renderCmd(gen int) tea.Cmd {
 		if trailing > 0 {
 			out += strings.Repeat("\n", trailing)
 		}
-		return previewReadyMsg{gen: gen, rendered: out, renderer: r}
+		// 1:1 row alignment: pad the rendered output so each source line i
+		// lives on rendered row srcMap[i] (≈ i, modulo soft-wrap).
+		normalized, srcMap := normalizeRendered(rawSrc, out)
+		return previewReadyMsg{gen: gen, rendered: normalized, renderer: r, srcMap: srcMap}
 	}
 }
 

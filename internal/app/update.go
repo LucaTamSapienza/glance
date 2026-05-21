@@ -27,6 +27,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.renderer = msg.renderer
 		m.rendered = msg.rendered
+		m.srcToRendered = msg.srcMap
 		m.reader.SetContent(msg.rendered)
 		m.totalLines = strings.Count(msg.rendered, "\n") + 1
 		if m.cursorLine >= m.totalLines {

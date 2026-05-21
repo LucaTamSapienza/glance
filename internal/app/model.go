@@ -35,6 +35,7 @@ type (
 		gen      int
 		rendered string
 		renderer *render.Glamour
+		srcMap   []int
 	}
 	saveDoneMsg struct {
 		err     error
@@ -99,6 +100,9 @@ type Model struct {
 	// cursor position to sync after the next render completes
 	pendingSyncLine int
 	pendingSyncCol  int
+
+	// Source-line → rendered-row mapping, rebuilt after every render.
+	srcToRendered []int
 }
 
 // New creates the initial Model for the given file path, content and mode.
