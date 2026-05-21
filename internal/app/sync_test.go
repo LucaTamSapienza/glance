@@ -141,3 +141,55 @@ func TestReaderToEditorUsesSrcCoords(t *testing.T) {
 		t.Fatalf("editor.LineInfo().ColumnOffset: want 3, got %d", got)
 	}
 }
+
+func TestReaderEditorReaderRoundTrip(t *testing.T) {
+	source := "alpha\nbeta\ngamma\n"
+	m := New("", []byte(source), ModeReader)
+	m.width = 80
+	m.height = 24
+	m.layout()
+	// Simulate a render result so reader-mode movement has something to work with.
+	m.rendered = "alpha\nbeta\ngamma\n"
+	m.totalLines = 4
+	m.srcToRendered = []int{0, 1, 2, 3}
+
+	// Move the reader cursor to line 2, col 3 via key events.
+	step := func(msg tea.KeyMsg) {
+		m2, _ := m.Update(msg)
+		m = m2.(Model)
+	}
+	// j twice → line 2.
+	step(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	step(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	// l three times → col 3.
+	step(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	step(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	step(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+
+	if m.srcLine != 2 || m.srcCol != 3 {
+		t.Fatalf("after movement: want srcLine=2 srcCol=3, got srcLine=%d srcCol=%d",
+			m.srcLine, m.srcCol)
+	}
+
+	// Reader → Editor.
+	step(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	if m.mode != ModeEdit {
+		t.Fatalf("after 'i': want ModeEdit, got %v", m.mode)
+	}
+	if got := m.editor.Line(); got != 2 {
+		t.Fatalf("editor.Line() after 'i': want 2, got %d", got)
+	}
+	if got := m.editor.LineInfo().ColumnOffset; got != 3 {
+		t.Fatalf("editor.ColumnOffset after 'i': want 3, got %d", got)
+	}
+
+	// Editor → Reader.
+	step(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.mode != ModeReader {
+		t.Fatalf("after Esc: want ModeReader, got %v", m.mode)
+	}
+	if m.srcLine != 2 || m.srcCol != 3 {
+		t.Fatalf("after round-trip: want srcLine=2 srcCol=3, got srcLine=%d srcCol=%d",
+			m.srcLine, m.srcCol)
+	}
+}

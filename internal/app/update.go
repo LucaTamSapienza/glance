@@ -379,7 +379,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case keyMatch(m.keys.Down, msg):
 			if m.mode == ModeReader {
-				m.cursorLine = clamp(m.cursorLine+1, 0, m.totalLines-1)
+				srcLineMax := len(strings.Split(m.source, "\n")) - 1
+				m.srcLine = clamp(m.srcLine+1, 0, srcLineMax)
+				if m.srcLine < len(m.srcToRendered) {
+					m.cursorLine = m.srcToRendered[m.srcLine]
+				} else {
+					m.cursorLine = clamp(m.cursorLine+1, 0, m.totalLines-1)
+				}
 				if m.cursorLine >= m.reader.YOffset+m.reader.Height {
 					m.reader.SetYOffset(m.cursorLine - m.reader.Height + 1)
 				}
@@ -387,19 +393,26 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case keyMatch(m.keys.Up, msg):
 			if m.mode == ModeReader {
-				m.cursorLine = clamp(m.cursorLine-1, 0, m.totalLines-1)
+				m.srcLine = clamp(m.srcLine-1, 0, len(strings.Split(m.source, "\n"))-1)
+				if m.srcLine < len(m.srcToRendered) {
+					m.cursorLine = m.srcToRendered[m.srcLine]
+				} else {
+					m.cursorLine = clamp(m.cursorLine-1, 0, m.totalLines-1)
+				}
 				if m.cursorLine < m.reader.YOffset {
 					m.reader.SetYOffset(m.cursorLine)
 				}
 				return m, nil
 			}
 		case keyMatch(m.keys.Left, msg) && m.mode == ModeReader:
-			if m.cursorCol > 0 {
-				m.cursorCol--
+			if m.srcCol > 0 {
+				m.srcCol--
+				m.cursorCol = m.srcCol
 			}
 			return m, nil
 		case keyMatch(m.keys.Right, msg) && m.mode == ModeReader:
-			m.cursorCol++
+			m.srcCol++
+			m.cursorCol = m.srcCol
 			return m, nil
 		}
 		prevYOffset := m.reader.YOffset
