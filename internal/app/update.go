@@ -322,16 +322,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.editor.SetValue(m.source)
 		m.editor.Focus()
 		m.layout()
-		l, c := m.readerLineToSource()
-		m.jumpEditorToSourceLine(l, c)
+		m.jumpEditorToSourceLine(m.srcLine, m.srcCol)
 		return m, textarea.Blink
 	case keyMatch(m.keys.EditMode, msg) && m.mode == ModeReader:
 		m.mode = ModeSplit
 		m.editor.SetValue(m.source)
 		m.editor.Focus()
 		m.layout()
-		l, c := m.readerLineToSource()
-		m.jumpEditorToSourceLine(l, c)
+		m.jumpEditorToSourceLine(m.srcLine, m.srcCol)
 		return m, tea.Batch(textarea.Blink, m.renderNow())
 	case keyMatch(m.keys.ReaderMode, msg) && m.mode == ModeSplit:
 		m.pendingSyncLine = m.editor.Line()

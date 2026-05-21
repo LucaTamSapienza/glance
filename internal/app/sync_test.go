@@ -74,3 +74,38 @@ func TestSplitEscGoesToReader(t *testing.T) {
 		t.Fatalf("after Esc in focused Split: editor must be blurred")
 	}
 }
+
+func TestReaderToEditorUsesSrcCoords(t *testing.T) {
+	source := "alpha\nbeta\ngamma\n"
+	m := New("", []byte(source), ModeReader)
+	m.width = 80
+	m.height = 24
+	m.layout()
+	// Simulate a render result.
+	m.rendered = "alpha\nbeta\ngamma\n"
+	m.totalLines = 4
+	m.srcToRendered = []int{0, 1, 2, 3}
+
+	// srcLine/srcCol point at "gamma" col 3 ('m'), but the rendered-view
+	// cursor (cursorLine/cursorCol) is left at line 0 col 0.  If the old
+	// readerLineToSource heuristic were still called it would return (0, 0);
+	// only the new srcLine/srcCol path produces (2, 3).
+	m.srcLine = 2
+	m.srcCol = 3
+	m.cursorLine = 0
+	m.cursorCol = 0
+
+	// Switch to ModeEdit via "i".
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m = m2.(Model)
+
+	if m.mode != ModeEdit {
+		t.Fatalf("want ModeEdit after 'i', got %v", m.mode)
+	}
+	if got := m.editor.Line(); got != 2 {
+		t.Fatalf("editor.Line(): want 2, got %d", got)
+	}
+	if got := m.editor.LineInfo().ColumnOffset; got != 3 {
+		t.Fatalf("editor.LineInfo().ColumnOffset: want 3, got %d", got)
+	}
+}

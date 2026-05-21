@@ -80,6 +80,13 @@ type Model struct {
 	cursorCol  int
 	totalLines int
 
+	// authoritative cursor position in *source* coordinates (line/col are
+	// indices into the source string, not the rendered view). Reader→Editor
+	// transitions use these directly instead of the readerLineToSource
+	// heuristic. Kept in sync by Tasks 7 & 8.
+	srcLine int
+	srcCol  int
+
 	// debounce generation: only the latest preview is applied
 	previewGen int
 
@@ -145,7 +152,6 @@ func New(path string, content []byte, mode Mode) Model {
 		keys:            DefaultKeys(),
 		tocItems:        ExtractTOC(src),
 		pendingSyncLine: -1,
-		pendingSyncCol:  0,
 	}
 	if path != "" {
 		if ch, _, err := gfs.Watch(path); err == nil {

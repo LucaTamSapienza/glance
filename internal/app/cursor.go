@@ -95,9 +95,15 @@ func (m *Model) jumpEditorToSourceLine(line, col int) {
 	line = clamp(line, 0, len(sourceLines)-1)
 
 	m.editor.CursorStart()
-	for i := 0; i < m.editor.Line(); i++ {
+	// Move to line 0.  Guard against stall (matches completion.go pattern).
+	for m.editor.Line() > 0 {
+		before := m.editor.Line()
 		m.editor.CursorUp()
+		if m.editor.Line() == before {
+			break
+		}
 	}
+	// Move down to target line
 	for i := 0; i < line; i++ {
 		m.editor.CursorDown()
 	}
