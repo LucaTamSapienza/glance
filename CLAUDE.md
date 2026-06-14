@@ -68,3 +68,20 @@ The app follows the Elm architecture. Key patterns to understand:
 - The renderer is created/recreated inside render goroutines when `r.Width() != w`; do not cache the renderer on the model across width changes.
 - `previewWidth()` accounts for mode, TOC panel (28 cols), and the 2-col cursor prefix in reader mode.
 - `AtomicWrite` must not be called with `path == ""` (stdin input has no path; the UI prevents saving in that case).
+
+## Maintaining project status
+
+Whenever you make non-trivial changes (new behavior, bug fixes, refactors, new
+files, retired files), update both of these in the same change so a future
+session can pick up the work without needing prior conversation context:
+
+- `context.md` — keep the **Current status** section accurate: what's on the
+  active branch vs `main`, what's still open, what was just resolved. Update
+  the date stamp at the top.
+- The user's auto-memory `project_glance.md` — keep the package layout, bug
+  log, and known-limitations sections current. Add new files when introduced,
+  remove entries that are no longer accurate.
+
+Skip the update only for tiny, fully self-contained edits (a typo, a comment
+tweak). For anything bigger — feature work, bug fixes, refactors, new test
+files — update the status docs in the same edit.

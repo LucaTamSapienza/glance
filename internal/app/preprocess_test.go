@@ -58,9 +58,29 @@ func TestPreventSetextFromThematicBreaks(t *testing.T) {
 			want:  "\n---\n",
 		},
 		{
-			name:  "equals after text not changed (setext H1, not thematic break)",
+			name:  "equals after text gets blank line inserted (neutralize setext H1)",
 			input: "My Title\n===",
-			want:  "My Title\n===",
+			want:  "My Title\n\n===",
+		},
+		{
+			name:  "single dash after text gets blank line inserted (neutralize setext H2)",
+			input: "**bold text**\n-",
+			want:  "**bold text**\n\n-",
+		},
+		{
+			name:  "double dash after text gets blank line inserted (neutralize setext H2)",
+			input: "some text\n--",
+			want:  "some text\n\n--",
+		},
+		{
+			name:  "single equals after text gets blank line inserted",
+			input: "some text\n=",
+			want:  "some text\n\n=",
+		},
+		{
+			name:  "bullet list item after text not affected",
+			input: "some text\n- item",
+			want:  "some text\n- item",
 		},
 		{
 			name:  "stars after text get blank line inserted",
@@ -80,6 +100,47 @@ func TestPreventSetextFromThematicBreaks(t *testing.T) {
 				t.Errorf("got:\n%s\nwant:\n%s", strings.ReplaceAll(got, "\n", "↵\n"), strings.ReplaceAll(tc.want, "\n", "↵\n"))
 			}
 		})
+	}
+}
+
+func TestTightenBoldDelimiters(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"spaces both sides", "** parola **", "**parola**"},
+		{"space after open only", "** parola**", "**parola**"},
+		{"space before close only", "**parola **", "**parola**"},
+		{"already tight unchanged", "**parola**", "**parola**"},
+		{"internal spaces preserved", "** a b **", "**a b**"},
+		{"underscore bold tightened", "__ x __", "__x__"},
+		{"underscore already tight", "__x__", "__x__"},
+		{"empty bold left alone", "** **", "** **"},
+		{"non-bold text untouched", "no emphasis here", "no emphasis here"},
+		{"single star italic untouched", "* parola *", "* parola *"},
+		{"thematic break untouched", "***", "***"},
+		{"two bolds on a line", "** a ** and ** b **", "**a** and **b**"},
+		{"surrounding text kept", "say ** hi ** now", "say **hi** now"},
+		{"inline code untouched", "use `** x **` literally", "use `** x **` literally"},
+		{"bold outside, code inside", "** y ** and `** z **`", "**y** and `** z **`"},
+		{"multi-backtick inline code untouched", "``** a **`` outside ** b **", "``** a **`` outside **b**"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tightenBoldDelimiters(tc.input)
+			if got != tc.want {
+				t.Errorf("tightenBoldDelimiters(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTightenBoldDelimitersSkipsFence(t *testing.T) {
+	src := "** a **\n```\n** b **\n```\n** c **"
+	want := "**a**\n```\n** b **\n```\n**c**"
+	if got := tightenBoldDelimiters(src); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
 

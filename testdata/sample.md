@@ -55,3 +55,8 @@ hobbies =
     ["gym", "IoT"]
 ```
 
+```python
+def main():
+    print("Hello World")
+```
+

@@ -1,26 +1,157 @@
 package app
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
+
+// boldStarRE / boldUnderscoreRE match a bold span whose inner edges may carry
+// stray spaces (e.g. "** word **"). The capture is the whole interior,
+// including any surrounding spaces, so tightenEmphasis can trim it. The inner
+// run excludes the delimiter char so two adjacent bold spans don't merge and a
+// "***" run is never mistaken for an empty bold span.
+var (
+	boldStarRE       = regexp.MustCompile(`\*\*([ \t]*[^*]*?[ \t]*)\*\*`)
+	boldUnderscoreRE = regexp.MustCompile(`__([ \t]*[^_]*?[ \t]*)__`)
+)
+
+// tightenBoldDelimiters removes spaces that sit directly inside bold delimiters
+// so "** parola **" renders as bold. CommonMark requires the delimiter to hug
+// the text ("**parola**"); glance is more forgiving. Only bold (** ** and
+// __ __) is touched — single-star/underscore italic is left alone to avoid
+// clashing with bullet lists. Fenced code blocks and inline code spans are
+// preserved verbatim.
+func tightenBoldDelimiters(src string) string {
+	lines := strings.Split(src, "\n")
+	inFence := false
+	for idx, line := range lines {
+		trimmed := strings.TrimLeft(line, " \t")
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+		lines[idx] = tightenBoldOutsideCode(line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// tightenBoldOutsideCode applies the bold tightening only to the parts of a
+// line that are not inside an inline code span (`...`). Backtick runs are
+// matched by equal length, mirroring CommonMark's code-span rule.
+func tightenBoldOutsideCode(line string) string {
+	var b strings.Builder
+	i, n := 0, len(line)
+	for i < n {
+		if line[i] == '`' {
+			j := i
+			for j < n && line[j] == '`' {
+				j++
+			}
+			runLen := j - i
+			if close := indexBacktickRun(line, j, runLen); close >= 0 {
+				b.WriteString(line[i : close+runLen]) // code span, verbatim
+				i = close + runLen
+				continue
+			}
+			b.WriteString(line[i:j]) // unterminated run: literal backticks
+			i = j
+			continue
+		}
+		start := i
+		for i < n && line[i] != '`' {
+			i++
+		}
+		seg := line[start:i]
+		seg = tightenEmphasis(seg, "**", boldStarRE)
+		seg = tightenEmphasis(seg, "__", boldUnderscoreRE)
+		b.WriteString(seg)
+	}
+	return b.String()
+}
+
+// indexBacktickRun returns the start index of the next run of exactly runLen
+// backticks at or after from, or -1 if there is none.
+func indexBacktickRun(s string, from, runLen int) int {
+	for i := from; i < len(s); {
+		if s[i] == '`' {
+			j := i
+			for j < len(s) && s[j] == '`' {
+				j++
+			}
+			if j-i == runLen {
+				return i
+			}
+			i = j
+		} else {
+			i++
+		}
+	}
+	return -1
+}
+
+// tightenEmphasis trims spaces directly inside each delim..delim span matched by
+// re. A span that is empty after trimming (e.g. "** **") is left untouched.
+func tightenEmphasis(s, delim string, re *regexp.Regexp) string {
+	return re.ReplaceAllStringFunc(s, func(m string) string {
+		inner := m[len(delim) : len(m)-len(delim)]
+		trimmed := strings.TrimSpace(inner)
+		if trimmed == "" || trimmed == inner {
+			return m
+		}
+		return delim + trimmed + delim
+	})
+}
 
 // blankMarker is a unique paragraph string inserted by expandBlankLines to
 // represent extra blank lines that Goldmark would otherwise normalize away.
 // It is removed from the rendered output by restoreExpandedBlanks.
 const blankMarker = "GLANCEBLANK"
 
-// preventSetextFromThematicBreaks inserts a blank line before any line that is
-// a valid CommonMark thematic break (≥3 of -, *, or _) but directly follows a
-// non-blank text line. Without this insertion, Goldmark interprets "text\n---"
-// as a setext H2 heading rather than a paragraph followed by a horizontal rule.
+// preventSetextFromThematicBreaks inserts a blank line before any line that
+// would otherwise combine with the preceding non-blank text line into a setext
+// heading. This covers two cases:
+//
+//   - thematic breaks (≥3 of -, *, or _): "text\n---" should render as a
+//     paragraph followed by a horizontal rule, not a setext H2.
+//   - setext underlines (a run of only - or only =, any length): "text\n-" or
+//     "text\n===" should stay a paragraph rather than turn the text above into
+//     a heading. glance prefers explicit ATX headings (# / ##) so a stray
+//     dash/equals line never silently rewrites the text above it.
 func preventSetextFromThematicBreaks(src string) string {
 	lines := strings.Split(src, "\n")
 	out := make([]string, 0, len(lines)+4)
 	for i, line := range lines {
-		if i > 0 && isThematicBreak(line) && len(out) > 0 && strings.TrimSpace(out[len(out)-1]) != "" {
+		if i > 0 && len(out) > 0 && strings.TrimSpace(out[len(out)-1]) != "" &&
+			(isThematicBreak(line) || isSetextUnderline(line)) {
 			out = append(out, "")
 		}
 		out = append(out, line)
 	}
 	return strings.Join(out, "\n")
+}
+
+// isSetextUnderline reports whether line is a CommonMark setext heading
+// underline: a non-empty run of only '-' or only '=' characters, with optional
+// leading/trailing spaces but no interior spaces. A single character qualifies
+// (CommonMark imposes no minimum length), so "-" and "=" both match.
+func isSetextUnderline(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return false
+	}
+	c := trimmed[0]
+	if c != '-' && c != '=' {
+		return false
+	}
+	for i := 0; i < len(trimmed); i++ {
+		if trimmed[i] != c {
+			return false
+		}
+	}
+	return true
 }
 
 // isThematicBreak reports whether line is a CommonMark thematic break:

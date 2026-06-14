@@ -40,6 +40,7 @@ func (m *Model) renderCmd(gen int) tea.Cmd {
 	// so Goldmark (which normalizes all blank sequences to 1) preserves the
 	// user's exact blank-line count between content blocks.
 	src := preventSetextFromThematicBreaks(rawSrc)
+	src = tightenBoldDelimiters(src)
 	src = expandBlankLines(src)
 
 	// Ensure Goldmark always sees a newline-terminated document so the last
