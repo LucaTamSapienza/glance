@@ -9,8 +9,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	gfs "github.com/lucatam/glance/internal/fs"
-	"github.com/lucatam/glance/internal/render"
+	gfs "github.com/LucaTamSapienza/glance/internal/fs"
+	"github.com/LucaTamSapienza/glance/internal/render"
 )
 
 // Mode is the current editing/viewing mode.

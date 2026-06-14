@@ -1,4 +1,4 @@
-module github.com/lucatam/glance
+module github.com/LucaTamSapienza/glance
 
 go 1.22
 

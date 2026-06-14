@@ -5,7 +5,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lucatam/glance/internal/render"
+	"github.com/LucaTamSapienza/glance/internal/render"
 )
 
 // renderNow issues an immediate (non-debounced) render command.

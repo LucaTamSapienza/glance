@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lucatam/glance/internal/app"
+	"github.com/LucaTamSapienza/glance/internal/app"
 )
 
 var version = "dev"

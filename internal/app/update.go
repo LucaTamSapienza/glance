@@ -6,7 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 
-	gfs "github.com/lucatam/glance/internal/fs"
+	gfs "github.com/LucaTamSapienza/glance/internal/fs"
 )
 
 // Update implements tea.Model.
