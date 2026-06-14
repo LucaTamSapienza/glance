@@ -37,7 +37,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.searchHits = findHits(m.rendered, m.search.Value())
 		}
 		if m.pendingSyncLine >= 0 {
-			m.cursorLine = m.findClosestRenderedLine(m.pendingSyncLine)
+			// Use the authoritative srcToRendered map produced by this render
+			// rather than the legacy text-matching heuristic, which mis-mapped
+			// source lines with non-distinctive text (e.g. plain paragraphs)
+			// to rendered row 0 and silently desynced cursorLine from srcLine.
+			if m.pendingSyncLine < len(m.srcToRendered) {
+				m.cursorLine = m.srcToRendered[m.pendingSyncLine]
+			} else {
+				m.cursorLine = m.findClosestRenderedLine(m.pendingSyncLine)
+			}
 			renderedLines := strings.Split(m.rendered, "\n")
 			if m.cursorLine >= 0 && m.cursorLine < len(renderedLines) {
 				renderedLinePlain := ansiRE.ReplaceAllString(renderedLines[m.cursorLine], "")
@@ -388,8 +396,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case keyMatch(m.keys.Down, msg):
 			if m.mode == ModeReader {
-				srcLineMax := len(strings.Split(m.source, "\n")) - 1
-				m.srcLine = clamp(m.srcLine+1, 0, srcLineMax)
+				sourceLines := strings.Split(m.source, "\n")
+				m.srcLine = clamp(m.srcLine+1, 0, len(sourceLines)-1)
+				m.clampSrcColToLine(sourceLines)
 				if m.srcLine < len(m.srcToRendered) {
 					m.cursorLine = m.srcToRendered[m.srcLine]
 				} else {
@@ -402,7 +411,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case keyMatch(m.keys.Up, msg):
 			if m.mode == ModeReader {
-				m.srcLine = clamp(m.srcLine-1, 0, len(strings.Split(m.source, "\n"))-1)
+				sourceLines := strings.Split(m.source, "\n")
+				m.srcLine = clamp(m.srcLine-1, 0, len(sourceLines)-1)
+				m.clampSrcColToLine(sourceLines)
 				if m.srcLine < len(m.srcToRendered) {
 					m.cursorLine = m.srcToRendered[m.srcLine]
 				} else {

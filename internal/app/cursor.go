@@ -138,6 +138,25 @@ func (m *Model) editorSourceCol() int {
 	return guess
 }
 
+// clampSrcColToLine clamps m.srcCol to the length of the current source line
+// (m.srcLine) and mirrors the resulting value into m.cursorCol. Called by the
+// vertical-motion reader handlers so the visible cursor stops at end-of-line
+// instead of carrying a stale column from a longer line into a shorter one.
+//
+// Loses "sticky column" memory across vertical moves — a trade for the
+// editor's cursor landing exactly where the reader cursor was shown.
+func (m *Model) clampSrcColToLine(sourceLines []string) {
+	if m.srcLine < 0 || m.srcLine >= len(sourceLines) {
+		m.cursorCol = m.srcCol
+		return
+	}
+	lineLen := len([]rune(sourceLines[m.srcLine]))
+	if m.srcCol > lineLen {
+		m.srcCol = lineLen
+	}
+	m.cursorCol = m.srcCol
+}
+
 // jumpEditorToSourceLine moves the textarea cursor to the given source line
 // and column, used when switching from reader to editor mode.
 func (m *Model) jumpEditorToSourceLine(line, col int) {

@@ -244,3 +244,42 @@ func TestReaderEditorReaderRoundTrip(t *testing.T) {
 			m.srcLine, m.srcCol)
 	}
 }
+
+func TestReaderDownClampsSrcColToLine(t *testing.T) {
+	// When moving vertically in reader from a long line to a shorter one,
+	// srcCol must be clamped to the new line's length so that switching to
+	// the editor lands the cursor where the reader's visual cursor was.
+	// Without the clamp, srcCol carries a stale column past EOL and the
+	// editor's SetCursor silently clamps to 0 (or the actual EOL).
+	source := "long line ABCDEFG\nshort\nback to a long line"
+	m := New("", []byte(source), ModeReader)
+	m.width = 80
+	m.height = 24
+	m.layout()
+	m.rendered = source
+	m.totalLines = 3
+	m.srcToRendered = []int{0, 1, 2}
+
+	step := func(msg tea.KeyMsg) {
+		m2, _ := m.Update(msg)
+		m = m2.(Model)
+	}
+
+	// Move to col 10 of line 0 by pressing Right 10 times.
+	for i := 0; i < 10; i++ {
+		step(tea.KeyMsg{Type: tea.KeyRight})
+	}
+	if m.srcLine != 0 || m.srcCol != 10 {
+		t.Fatalf("setup: want (0,10), got (%d,%d)", m.srcLine, m.srcCol)
+	}
+
+	// Down to line 1 ("short" = 5 chars). srcCol must clamp to 5.
+	step(tea.KeyMsg{Type: tea.KeyDown})
+	if m.srcLine != 1 || m.srcCol != 5 {
+		t.Errorf("after Down to short line: want srcLine=1 srcCol=5, got (%d,%d)",
+			m.srcLine, m.srcCol)
+	}
+	if m.cursorCol != 5 {
+		t.Errorf("after Down: cursorCol should mirror srcCol, want 5 got %d", m.cursorCol)
+	}
+}

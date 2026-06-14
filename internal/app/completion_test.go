@@ -200,3 +200,56 @@ func TestAltModifiedRunesAreNotInserted(t *testing.T) {
 		t.Fatalf("Alt-modified runes must not be inserted; got %q", got)
 	}
 }
+
+func TestEditorWordJumpViaAltRune(t *testing.T) {
+	// macOS terminals deliver Opt+Left as KeyRunes alt+b (readline ESC+b)
+	// and Opt+Right as KeyRunes alt+f, NOT as KeyLeft/KeyRight with the Alt
+	// modifier flag set. Verify the word-jump helpers run for those events.
+	m := New("", []byte("foo bar  baz qux"), ModeEdit)
+	m.width = 80
+	m.height = 24
+	m.layout()
+
+	for m.editor.Line() > 0 {
+		m.editor.CursorUp()
+	}
+	m.editor.CursorStart()
+
+	step := func(msg tea.KeyMsg) {
+		m2, _ := m.Update(msg)
+		m = m2.(Model)
+	}
+	altF := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}, Alt: true}
+	altB := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}, Alt: true}
+
+	expectCol := func(want int, label string) {
+		t.Helper()
+		if got := m.editor.LineInfo().ColumnOffset; got != want {
+			t.Fatalf("%s: want col %d, got %d", label, want, got)
+		}
+	}
+
+	expectCol(0, "start")
+	step(altF)
+	expectCol(3, "alt+f 1st")
+	step(altF)
+	expectCol(7, "alt+f 2nd")
+	step(altF)
+	expectCol(12, "alt+f 3rd")
+	step(altF)
+	expectCol(16, "alt+f 4th (EOL)")
+
+	step(altB)
+	expectCol(13, "alt+b 1st")
+	step(altB)
+	expectCol(9, "alt+b 2nd")
+	step(altB)
+	expectCol(4, "alt+b 3rd")
+	step(altB)
+	expectCol(0, "alt+b 4th (BOL)")
+
+	// The buffer must remain untouched — no rune insertion.
+	if got := m.editor.Value(); got != "foo bar  baz qux" {
+		t.Fatalf("buffer must not change during word-jumps; got %q", got)
+	}
+}

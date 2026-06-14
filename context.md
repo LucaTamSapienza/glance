@@ -112,29 +112,25 @@ of this merge** — `master` only received the setext+bold work plus doc updates
 > and no longer exists**. The current editor-polish commits are
 > `af32d4b..aa2838b` (see `git log master..bugfixes`).
 
-### ⚠️ Uncommitted work in the tree (READ THIS FIRST on resume)
+### ✅ Bug 2 resolved and merged (2026-06-15)
 
-There is a **252-line staged-but-uncommitted changeset** sitting in the index,
-deliberately not committed (user said *"per adesso non committiamo"*). It
-contains the diagnostic logging **and** the in-flight round-2 Bug 2 fix:
+The cursor reader↔editor sync (Bug 2) is **confirmed fixed by the user** and
+**merged into `master`**. The diagnostic scaffolding has been stripped:
+`internal/app/debug.go` and `cmd/probe_render/` were deleted, and every
+`debugLogf(...)` / `m.debugState(...)` call removed. The committed fix is just
+the real logic:
 
-```
-git diff --cached --stat
-  internal/app/completion.go       +routing/debug
-  internal/app/completion_test.go  +tests
-  internal/app/cursor.go           +clamp/lookup
-  internal/app/debug.go            NEW (temporary) — debugLogf + Model.debugState
-  internal/app/preview.go          +normalizeRendered call / debug
-  internal/app/sync_test.go        +round-trip tests
-  internal/app/update.go           +srcToRendered lookup + debugState calls
-```
+- `update.go` — `previewReadyMsg` now maps `pendingSyncLine` through the
+  authoritative `srcToRendered` map (falling back to `findClosestRenderedLine`
+  only if out of bounds); Down/Up reader handlers call `clampSrcColToLine`.
+- `cursor.go` — new `clampSrcColToLine` (clamps `srcCol` to the current source
+  line length; trades away sticky-column memory).
+- `completion.go` — `alt+b`/`alt+f` routed to `editorWordLeft`/`Right`.
+- Tests: `completion_test.go`, `sync_test.go`.
 
-Unstaged on top: `CLAUDE.md` (+17, the "Maintaining project status" section)
-and `testdata/sample.md` (+5). Untracked: `cmd/probe_render/`, this
-`context.md`, and `testdata/{README,codeblocks,new,probe}.md`.
-
-**Decisions still owed to the user:** whether to commit the staged changeset,
-and when to strip the diagnostic logging + probe scaffolding before any merge.
+The tree is otherwise clean. The only untracked files are scratch test fixtures
+under `testdata/` (e.g. `bugfixes.md`, `codeblocks.md`, `new.md`, `v1.md`,
+`README.md`) — not committed.
 
 ### Behaviors delivered on this branch and verified working
 
@@ -164,27 +160,23 @@ From the "editor polish" round (specs + plan in `docs/superpowers/`):
   user last reported residual misalignment only in **Split mode**, so treat
   Split alignment as not-fully-confirmed.
 
-### Where we left off — Bug 2 (cursor reader ↔ writer) still partial
+### Bug 2 (cursor reader ↔ writer) — RESOLVED (2026-06-15)
 
-The user's last word on Bug 2: *"una riga di sbaglio tra reader e writer — se
-nel reader sono a riga 1, nel writer sono a riga 2; il cursore sinistra/destra
-sembra giusto."* So a **1-line vertical offset reader→writer** persists;
-left/right (column) tracking is fine.
+The 1-line vertical offset reader→writer is **fixed and user-confirmed**, now
+in `master`.
 
 - **Round 1:** vertical motion in reader carried a stale `srcCol` past the EOL
   of a short line → `i` landed the editor at the wrong column. Fixed via
   `cursor.go::clampSrcColToLine` called from the Down/Up reader handlers.
-- **Round 2 (in the uncommitted staged changeset):** the `previewReadyMsg`
-  handler in `update.go` was re-deriving `cursorLine` via the legacy
-  `findClosestRenderedLine` text-heuristic instead of the authoritative
-  `srcToRendered` map; on non-distinctive lines it mapped to rendered row 0,
-  desyncing `cursorLine` from `srcLine`. Replaced the heuristic with a direct
-  `m.srcToRendered[m.pendingSyncLine]` lookup.
+- **Round 2:** the `previewReadyMsg` handler in `update.go` re-derived
+  `cursorLine` via the legacy `findClosestRenderedLine` text-heuristic instead
+  of the authoritative `srcToRendered` map; on non-distinctive lines it mapped
+  to rendered row 0, desyncing `cursorLine` from `srcLine`. Replaced with a
+  direct `m.srcToRendered[m.pendingSyncLine]` lookup (heuristic kept only as an
+  out-of-bounds fallback).
 
-**Still not resolved.** Next session should reproduce the 1-line offset with a
-fresh `GLANCE_DEBUGLOG` run (simple doc passed; a doc with headings/blank-line
-collapsing is where it slips), focusing on the source→rendered map around
-headings. Do **not** mark Bug 2 done until the user confirms.
+The diagnostic logging and probe scaffolding used to chase this were stripped
+before the merge (see the resolved-and-merged note near the top).
 
 ### Open investigation — sh/yaml code-block highlighting
 
@@ -197,18 +189,13 @@ collapsing the 256-color codes into similar buckets, or a subtle theme. **No
 code change made** — awaiting user clarification on what they actually see
 (identical to plain, or just less vivid than Go?) before touching the renderer.
 
-### Diagnostic instrumentation still in place
+### Diagnostic instrumentation — removed (2026-06-15)
 
-`internal/app/debug.go` (in the uncommitted changeset) is a diagnostic logger
-gated by `GLANCE_DEBUGLOG=/path`. It logs every `tea.KeyMsg`, dispatch
-decisions, mode transitions, the full render pipeline (rawSrc / Glamour out /
-normalized / `srcMap`), and `Model.debugState` snapshots at every reader-mode
-movement. **Leave it in until Bug 2 is fully resolved**, then strip it in a
-clean commit (along with the probe scaffolding) before merging.
+The `GLANCE_DEBUGLOG` logger (`internal/app/debug.go`) and the
+`cmd/probe_render/` scaffolding have been **deleted**, and all `debugLogf` /
+`debugState` calls stripped, now that Bug 2 is confirmed fixed and merged.
 
 ## Known limitations & open items
-
-- **Bug 2 round 2** awaiting user smoke-test (see above).
 - **Sticky-column memory is lost across vertical moves** — a deliberate
   trade-off in `clampSrcColToLine` for exact reader→editor cursor preservation.
   Most editors keep a "memorized column" so going down through a short line

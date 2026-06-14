@@ -22,11 +22,24 @@ func (m *Model) dispatchEditorKey(msg tea.KeyMsg) (handled, dirty bool) {
 		if len(msg.Runes) == 0 {
 			return false, false
 		}
-		// Alt-modified runes are commands (word jumps etc.), not text. Some
-		// macOS terminals emit a stray Alt-modified rune alongside Opt+arrow
-		// or Opt+digit keypresses; inserting them produces phantom characters
-		// in the buffer.
+		// macOS terminals deliver Opt+Left as ESC+'b' and Opt+Right as
+		// ESC+'f' (readline-style backward-word/forward-word escapes),
+		// which bubbletea decodes as KeyRunes with Alt=true. Route those
+		// to the word-jump helpers; filter any other Alt-modified rune so
+		// it doesn't get inserted as text.
 		if msg.Alt {
+			if len(msg.Runes) == 1 {
+				switch msg.Runes[0] {
+				case 'b':
+					m.editorWordLeft()
+					m.syncEditorViewport()
+					return true, false
+				case 'f':
+					m.editorWordRight()
+					m.syncEditorViewport()
+					return true, false
+				}
+			}
 			return true, false
 		}
 		for _, r := range msg.Runes {
