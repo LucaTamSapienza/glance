@@ -21,13 +21,24 @@ Markdown is the lingua franca of agent context files (`CLAUDE.md`, `AGENTS.md`),
 
 ## Install
 
-With Go (requires Go 1.21+):
+**With Go** (requires Go 1.22+):
 
 ```sh
 go install github.com/LucaTamSapienza/glance/cmd/glance@latest
 ```
 
-Or build from source:
+This drops the `glance` binary in `$(go env GOPATH)/bin` — make sure that's on your `PATH`.
+
+**Pre-built binaries** — grab the archive for your OS/arch from the
+[latest release](https://github.com/LucaTamSapienza/glance/releases/latest)
+(macOS & Linux, amd64 & arm64), then:
+
+```sh
+tar -xzf glance_*_darwin_arm64.tar.gz
+sudo mv glance /usr/local/bin/
+```
+
+**From source:**
 
 ```sh
 git clone https://github.com/LucaTamSapienza/glance
@@ -35,7 +46,7 @@ cd glance
 go build -o glance ./cmd/glance
 ```
 
-> Homebrew tap coming soon (`brew install LucaTamSapienza/tap/glance`).
+> Homebrew tap is planned for a future release.
 
 ## Usage
 

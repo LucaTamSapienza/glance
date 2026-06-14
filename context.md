@@ -2,7 +2,7 @@
 
 > A recap of what this project is, where it's going, and its current status.
 > Intended as orientation context for anyone (including Claude) picking up the work.
-> Last updated: 2026-06-14.
+> Last updated: 2026-06-15.
 
 ## What it is
 
@@ -80,6 +80,25 @@ Glamour).
 Active work lives on the **`bugfixes` branch**, pushed to GitHub at
 `git@github.com:LucaTamSapienza/glance.git`. Build is clean
 (`go build ./...`) and **all tests pass** (`go test ./...`).
+
+### 2026-06-15 — v0.1.0 released + CI/install fixes
+
+- **Module installable.** `go.mod` path is `github.com/LucaTamSapienza/glance`
+  (matches the repo). `go install github.com/LucaTamSapienza/glance/cmd/glance@latest`
+  and `@v0.1.0` both work. The earlier 404 was the old (mismatched) module path
+  plus a stale proxy cache.
+- **First tag `v0.1.0`** created and pushed. The `release` workflow built and
+  **published the GitHub Release** (darwin/linux × amd64/arm64 tarballs +
+  `checksums.txt`) successfully.
+- **Release workflow now green-able.** The run had failed *only* at the final
+  Homebrew step: `brews:` pointed at a non-existent tap
+  `lucatam/homebrew-glance` (wrong owner casing, deprecated `brews:` key). Per
+  user decision the `brews:` section was **removed** from `.goreleaser.yaml`;
+  Homebrew is deferred. Everything else in the release pipeline is unchanged.
+- **`test.yml` trigger fixed**: was `branches: [main]` but the default branch is
+  `master`, so push-triggered tests never ran. Now `branches: [master]`.
+- **README install section rewritten**: `go install`, pre-built release binaries,
+  and build-from-source; the broken Homebrew command is gone.
 
 ### 2026-06-14 — Markdown-tolerance work merged to `master`
 
