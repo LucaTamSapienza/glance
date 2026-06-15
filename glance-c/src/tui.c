@@ -22,7 +22,7 @@
 #include <errno.h>
 #include <unistd.h>
 
-enum { MODE_READER, MODE_INSERT };
+enum { MODE_READER, MODE_INSERT, MODE_SPLIT };
 
 typedef struct {
     struct notcurses *nc;
@@ -51,11 +51,14 @@ typedef struct {
     const char *path;            /* file to save to, or NULL for stdin */
     int    dirty;                /* unsaved changes since the last write */
     char   msg[160];             /* transient status message (one keypress) */
+    Doc   *preview;              /* Split mode: live render of the editor text */
 } App;
 
 #define TOC_W 30                 /* table-of-contents panel width */
 
 static int content_rows(App *a) { return a->rows - 1; }   /* last row = status */
+
+static int map_line(int from, int nfrom, int nto);        /* defined below */
 
 /* ---- terminal teardown (kitty keyboard protocol, see slice-2 fix) --------- */
 
@@ -199,9 +202,8 @@ static void reader_bottom(App *a) {
                  a->title ? a->title : "", a->cur_hit + 1, a->hits.n, a->searchbuf);
     } else {
         snprintf(status, sizeof status,
-                 " READER  %s  —  Ln %d/%d, Col %d   i insert   / search   :q quit   hjkl move",
-                 a->title ? a->title : "", a->rcur_line + 1, (int)a->doc->nline,
-                 a->rcur_col + 1);
+                 " READER  %s  —  Ln %d/%d   i insert  e split  / search  t toc  :q quit",
+                 a->title ? a->title : "", a->rcur_line + 1, (int)a->doc->nline);
     }
     status_bar(a, status);
 }
@@ -243,31 +245,35 @@ static void draw_toc(App *a) {
     ncplane_set_bg_default(p);
 }
 
+/* Draw one rendered Doc line at screen (row, x0): a code/quote background fill
+ * across `width`, then the styled runs. The Doc must have been rendered at the
+ * pane width, so runs already fit and need no clipping. */
+static void draw_doc_line(struct ncplane *p, const Line *L, int row, int x0, int width) {
+    if (L->fill) {
+        ncplane_set_fg_default(p);
+        ncplane_set_bg_rgb8(p, L->fill_bg.r, L->fill_bg.g, L->fill_bg.b);
+        ncplane_set_styles(p, NCSTYLE_NONE);
+        for (int x = 0; x < width; x++) ncplane_putchar_yx(p, row, x0 + x, ' ');
+    }
+    int x = 0;
+    for (size_t j = 0; j < L->nrun && x < width; j++) {
+        apply_style(p, &L->runs[j].st);
+        ncplane_putstr_yx(p, row, x0 + x, L->runs[j].text);
+        x += u8_width(L->runs[j].text, L->runs[j].len);
+    }
+}
+
 /* Render the visible Doc lines, overlay the block cursor, and the status. */
 static void draw_reader(App *a) {
-    struct ncplane *p = a->plane;
     notcurses_cursor_disable(a->nc);
     reader_scroll(a);
-    ncplane_erase(p);
+    ncplane_erase(a->plane);
 
     int body = content_rows(a);
     for (int row = 0; row < body; row++) {
         int li = a->top + row;
         if (li >= (int)a->doc->nline) break;
-        Line *L = &a->doc->lines[li];
-
-        if (L->fill) {
-            ncplane_set_fg_default(p);
-            ncplane_set_bg_rgb8(p, L->fill_bg.r, L->fill_bg.g, L->fill_bg.b);
-            ncplane_set_styles(p, NCSTYLE_NONE);
-            for (int x = 0; x < a->cols; x++) ncplane_putchar_yx(p, row, x, ' ');
-        }
-        int x = 0;
-        for (size_t j = 0; j < L->nrun && x < a->cols; j++) {
-            apply_style(p, &L->runs[j].st);
-            ncplane_putstr_yx(p, row, x, L->runs[j].text);
-            x += u8_width(L->runs[j].text, L->runs[j].len);
-        }
+        draw_doc_line(a->plane, &a->doc->lines[li], row, 0, a->cols);
     }
 
     draw_hits(a);
@@ -285,10 +291,10 @@ static void draw_reader(App *a) {
     notcurses_render(a->nc);
 }
 
-/* ---- Insert mode ---------------------------------------------------------- */
+/* ---- Insert / Split editing ---------------------------------------------- */
 
-/* keep the cursor line and column on screen */
-static void editor_scroll(App *a) {
+/* Keep the editor cursor visible within a pane `width` columns wide. */
+static void editor_scroll(App *a, int width) {
     int body = content_rows(a);
     Editor *e = &a->ed;
     if (e->cy < e->top) e->top = e->cy;
@@ -296,45 +302,96 @@ static void editor_scroll(App *a) {
     if (e->top < 0) e->top = 0;
     int ccol = editor_cursor_col(e);
     if (ccol < e->xoff) e->xoff = ccol;
-    if (ccol >= e->xoff + a->cols) e->xoff = ccol - a->cols + 1;
+    if (ccol >= e->xoff + width) e->xoff = ccol - width + 1;
     if (e->xoff < 0) e->xoff = 0;
 }
 
-/* Render the editor's visible lines (clipped to the h-scroll window) and place
- * the hardware cursor. */
-static void draw_editor(App *a) {
+/* Draw the editor's visible lines into a pane at x0, clipped to `width`. */
+static void draw_editor_pane(App *a, int x0, int width) {
     struct ncplane *p = a->plane;
     Editor *e = &a->ed;
-    editor_scroll(a);
-    ncplane_erase(p);
+    int body = content_rows(a);
     ncplane_set_styles(p, NCSTYLE_NONE);
     ncplane_set_fg_default(p);
     ncplane_set_bg_default(p);
-
-    int body = content_rows(a);
     for (int row = 0; row < body; row++) {
         size_t li = (size_t)e->top + row;
         if (li >= e->n) break;
         ELine *L = &e->lines[li];
         if (!L->b || L->len == 0) continue;
         size_t s = ed_col_to_byte(L->b, L->len, e->xoff);
-        size_t en = ed_col_to_byte(L->b, L->len, e->xoff + a->cols);
+        size_t en = ed_col_to_byte(L->b, L->len, e->xoff + width);
         if (en <= s) continue;
         char save = L->b[en];           /* clip the visible window in place */
         L->b[en] = '\0';
-        ncplane_putstr_yx(p, row, 0, L->b + s);
+        ncplane_putstr_yx(p, row, x0, L->b + s);
         L->b[en] = save;
+    }
+}
+
+/* Full-screen editor (Insert mode): pane + status + hardware cursor. */
+static void draw_editor(App *a) {
+    Editor *e = &a->ed;
+    editor_scroll(a, a->cols);
+    ncplane_erase(a->plane);
+    draw_editor_pane(a, 0, a->cols);
+
+    char status[320];
+    if (a->msg[0]) snprintf(status, sizeof status, " %s", a->msg);
+    else snprintf(status, sizeof status,
+                  " INSERT  %s%s  —  Ln %d, Col %d   Esc reader   ^S save",
+                  a->title ? a->title : "", e->dirty ? " *" : "",
+                  e->cy + 1, editor_cursor_col(e) + 1);
+    status_bar(a, status);
+
+    notcurses_cursor_enable(a->nc, e->cy - e->top, editor_cursor_col(e) - e->xoff);
+    notcurses_render(a->nc);
+}
+
+/* Re-render the live preview from the editor text at the right-pane width. */
+static void render_preview(App *a) {
+    if (a->preview) { doc_free(a->preview); a->preview = NULL; }
+    int rw = a->cols - a->cols / 2 - 1;
+    if (rw < 4) rw = 4;
+    size_t nlen; char *s = editor_source(&a->ed, &nlen);
+    if (s) { a->preview = render_doc(s, nlen, rw, a->dark); free(s); }
+}
+
+/* Split mode: editor on the left, a live preview on the right, a divider
+ * between. The preview scrolls to keep the editor's current line centred. */
+static void draw_split(App *a) {
+    struct ncplane *p = a->plane;
+    Editor *e = &a->ed;
+    int leftw = a->cols / 2, rightw = a->cols - leftw - 1, body = content_rows(a);
+    editor_scroll(a, leftw);
+    ncplane_erase(p);
+    draw_editor_pane(a, 0, leftw);
+
+    /* divider */
+    RGB d = a->dark ? (RGB){80, 80, 80} : (RGB){170, 170, 170};
+    ncplane_set_styles(p, NCSTYLE_NONE);
+    ncplane_set_fg_rgb8(p, d.r, d.g, d.b);
+    ncplane_set_bg_default(p);
+    for (int row = 0; row < body; row++) ncplane_putstr_yx(p, row, leftw, "\xe2\x94\x82");
+
+    /* preview, centred on the line that matches the editor cursor */
+    if (a->preview) {
+        int focus = map_line(e->cy, (int)e->n, (int)a->preview->nline);
+        int ptop = focus - body / 2;
+        if (ptop > (int)a->preview->nline - body) ptop = (int)a->preview->nline - body;
+        if (ptop < 0) ptop = 0;
+        for (int row = 0; row < body; row++) {
+            int pli = ptop + row;
+            if (pli >= (int)a->preview->nline) break;
+            draw_doc_line(p, &a->preview->lines[pli], row, leftw + 1, rightw);
+        }
     }
 
     char status[320];
-    if (a->msg[0]) {
-        snprintf(status, sizeof status, " %s", a->msg);
-    } else {
-        snprintf(status, sizeof status,
-                 " INSERT  %s%s  —  Ln %d, Col %d   Esc reader   ^S save",
-                 a->title ? a->title : "", e->dirty ? " *" : "",
-                 e->cy + 1, editor_cursor_col(e) + 1);
-    }
+    if (a->msg[0]) snprintf(status, sizeof status, " %s", a->msg);
+    else snprintf(status, sizeof status,
+                  " SPLIT  %s%s  —  edit left, preview right   Esc reader   ^S save",
+                  a->title ? a->title : "", e->dirty ? " *" : "");
     status_bar(a, status);
 
     notcurses_cursor_enable(a->nc, e->cy - e->top, editor_cursor_col(e) - e->xoff);
@@ -377,16 +434,21 @@ static int map_line(int from, int nfrom, int nto) {
     return r;
 }
 
-/* Switch Reader -> Insert, seeding the editor cursor from the Reader cursor. */
-static void enter_insert(App *a) {
+/* Seed the editor from the current source, mapping the Reader cursor onto it. */
+static void seed_editor(App *a) {
     editor_init(&a->ed, a->src, a->srclen);
     int sl = map_line(a->rcur_line, (int)a->doc->nline, (int)a->ed.n);
     a->ed.cy = sl;
     ELine *L = &a->ed.lines[sl];
     a->ed.cx = (int)ed_col_to_byte(L->b ? L->b : "", L->len, a->rcur_col);
     a->ed.goal_col = -1;
-    a->mode = MODE_INSERT;
 }
+
+/* Enter Insert mode (full-screen editor). */
+static void enter_insert(App *a) { seed_editor(a); a->mode = MODE_INSERT; }
+
+/* Enter Split mode (editor + live preview). */
+static void enter_split(App *a) { seed_editor(a); a->mode = MODE_SPLIT; render_preview(a); }
 
 /* Copy the editor's buffer back into the app source (editor stays alive). */
 static void sync_source(App *a) {
@@ -395,13 +457,14 @@ static void sync_source(App *a) {
     if (a->ed.dirty) a->dirty = 1;
 }
 
-/* Switch Insert -> Reader: sync the buffer into the source, re-render, and map
- * the editor cursor back onto the rendered view. */
-static void leave_insert(App *a) {
+/* Leave Insert/Split back to Reader: sync the buffer into the source, re-render,
+ * and map the editor cursor back onto the rendered view. */
+static void leave_editor(App *a) {
     int src_cy = a->ed.cy, src_n = (int)a->ed.n;
     int rcol = editor_cursor_col(&a->ed);
     sync_source(a);
     editor_free(&a->ed);
+    if (a->preview) { doc_free(a->preview); a->preview = NULL; }
     a->mode = MODE_READER;
     rerender(a);
     a->rcur_line = map_line(src_cy, src_n, (int)a->doc->nline);
@@ -412,8 +475,9 @@ static void leave_insert(App *a) {
 
 /* Draw whichever mode is active. */
 static void redraw(App *a) {
-    if (a->mode == MODE_READER) draw_reader(a);
-    else                        draw_editor(a);
+    if (a->mode == MODE_READER)     draw_reader(a);
+    else if (a->mode == MODE_SPLIT) draw_split(a);
+    else                            draw_editor(a);
 }
 
 /* ---- input ---------------------------------------------------------------- */
@@ -581,7 +645,7 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     else if (id == 'N' && a->hits.n)             focus_hit(a, a->cur_hit - 1);
     else if (id == NCKEY_ESC)                    clear_search(a);
     else if (id == 'i')                          enter_insert(a);  /* vi-style */
-    /* 'e' is reserved for Split view (slice 4) */
+    else if (id == 'e')                          enter_split(a);   /* editor + preview */
     else if (id == 'j' || id == NCKEY_DOWN)      { a->rcur_line++; a->rcur_col = a->rcur_goal; }
     else if (id == 'k' || id == NCKEY_UP)        { a->rcur_line--; a->rcur_col = a->rcur_goal; }
     else if (id == 'h' || id == NCKEY_LEFT)      { a->rcur_col--; a->rcur_goal = a->rcur_col; }
@@ -598,12 +662,9 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     return 1;
 }
 
-/* Insert-mode keys: editing commands, cursor motion, and text entry. */
-static int handle_insert(App *a, uint32_t id, const ncinput *ni) {
-    Editor *e = &a->ed;
-    if (id == NCKEY_ESC) { leave_insert(a); return 1; }
-    else if (id == 's' && ncinput_ctrl_p(ni)) { sync_source(a); save_file(a); }
-    else if (id == NCKEY_ENTER || id == '\r' || id == '\n') editor_newline(e);
+/* Apply one editing key (motion, structural edit, or text entry) to e. */
+static void apply_edit_key(Editor *e, uint32_t id, const ncinput *ni) {
+    if (id == NCKEY_ENTER || id == '\r' || id == '\n') editor_newline(e);
     else if (id == NCKEY_BACKSPACE || id == 0x08 || id == 0x7f) editor_backspace(e);
     else if (id == NCKEY_DEL)   editor_delete(e);
     else if (id == NCKEY_LEFT)  editor_left(e);
@@ -614,6 +675,21 @@ static int handle_insert(App *a, uint32_t id, const ncinput *ni) {
     else if (id == NCKEY_END)   editor_end(e);
     else if (id == NCKEY_TAB || id == '\t') editor_insert(e, "    ", 4);
     else try_insert_text(e, ni);
+}
+
+/* Insert-mode keys: Esc leaves, Ctrl-S saves, everything else edits. */
+static int handle_insert(App *a, uint32_t id, const ncinput *ni) {
+    if (id == NCKEY_ESC) leave_editor(a);
+    else if (id == 's' && ncinput_ctrl_p(ni)) { sync_source(a); save_file(a); }
+    else apply_edit_key(&a->ed, id, ni);
+    return 1;
+}
+
+/* Split-mode keys: same editing as Insert, plus a live preview refresh. */
+static int handle_split(App *a, uint32_t id, const ncinput *ni) {
+    if (id == NCKEY_ESC) leave_editor(a);
+    else if (id == 's' && ncinput_ctrl_p(ni)) { sync_source(a); save_file(a); }
+    else { apply_edit_key(&a->ed, id, ni); render_preview(a); }
     return 1;
 }
 
@@ -720,6 +796,7 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
         else if (a.searchmode)     running = handle_search(&a, id, &ni);
         else if (a.tocmode)        running = handle_toc(&a, id, &ni);
         else if (a.mode == MODE_READER) running = handle_reader(&a, id, &ni);
+        else if (a.mode == MODE_SPLIT)  running = handle_split(&a, id, &ni);
         else                       running = handle_insert(&a, id, &ni);
         if (running) redraw(&a);
     }
@@ -729,7 +806,8 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
     ncinput drain; uint32_t d;
     while ((d = notcurses_get_nblock(a.nc, &drain)) != 0 && d != (uint32_t)-1) { }
 
-    if (a.mode == MODE_INSERT) editor_free(&a.ed);
+    if (a.mode == MODE_INSERT || a.mode == MODE_SPLIT) editor_free(&a.ed);
+    if (a.preview) doc_free(a.preview);
     hits_free(&a.hits);
     toc_free(&a.toc);
     doc_free(a.doc);
