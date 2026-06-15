@@ -309,7 +309,7 @@ int tui_keyprobe(void) {
 
     struct ncplane *p = notcurses_stdplane(nc);
     unsigned rows, cols; ncplane_dim_yx(p, &rows, &cols);
-    const char *hdr = " key probe — press keys (try Option+3, etc).  Ctrl+Q to quit ";
+    const char *hdr = " key probe — press keys (try Option+3, etc).  Esc to quit ";
     ncplane_erase(p);
     ncplane_putstr_yx(p, 0, 0, hdr);
     notcurses_render(nc);
@@ -318,7 +318,9 @@ int tui_keyprobe(void) {
     ncinput ni; uint32_t id;
     while ((id = notcurses_get_blocking(nc, &ni)) != (uint32_t)-1) {
         if (ni.evtype == NCTYPE_RELEASE) continue;
-        if (id == 'q' && ncinput_ctrl_p(&ni)) break;
+        /* Esc, or Ctrl+C delivered as a key (raw mode swallows the signal),
+         * quits through the normal clean path — no flow-control traps. */
+        if (id == NCKEY_ESC || (id == 'c' && ncinput_ctrl_p(&ni))) break;
 
         char hex[64] = {0};
         int hp = 0;
