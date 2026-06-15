@@ -138,9 +138,21 @@ static int rerender(App *a) {
 }
 
 int tui_run(const char *src, unsigned long len, const char *title) {
+    /* Normalize the terminal before notcurses probes it. notcurses queries the
+     * terminal at init (device attributes, graphics/image support, kitty
+     * keyboard, background colour...) and parses the replies. If the keyboard
+     * protocol is in an unknown state, those replies can be encoded
+     * unexpectedly and mis-parsed, producing a one-time visual glitch on the
+     * first run in a fresh terminal. Forcing the protocol to a known baseline
+     * (the same state our exit leaves behind) makes the first run behave like
+     * every subsequent one. */
+    term_kbd_reset();
+
     notcurses_options opts;
     memset(&opts, 0, sizeof opts);
-    opts.flags = NCOPTION_SUPPRESS_BANNERS;
+    /* we install our own teardown signal handlers below, so tell notcurses not
+     * to install its own quit handlers (which would otherwise race ours) */
+    opts.flags = NCOPTION_SUPPRESS_BANNERS | NCOPTION_NO_QUIT_SIGHANDLERS;
 
     App a;
     memset(&a, 0, sizeof a);
