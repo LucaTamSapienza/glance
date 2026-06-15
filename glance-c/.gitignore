@@ -1,0 +1,6 @@
+# build artifacts
+/glance-render
+/glance
+/build/
+*.o
+*.dSYM/
