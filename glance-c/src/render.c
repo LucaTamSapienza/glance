@@ -73,7 +73,8 @@ typedef struct {
     char   list_mark[MAX_LIST];
     int    ol_next[MAX_LIST];
     int    li_pending;
-    int    heading;
+    int    heading;        /* current heading level (inside MD_BLOCK_H) */
+    int    heading_start;  /* doc line index where the heading's text begins */
 } R;
 
 /* ---- run / line builders -------------------------------------------------- */
@@ -114,6 +115,7 @@ static void line_commit(R *r) {
     L->runs = r->line; L->nrun = r->line_n; L->cap = r->line_cap;
     L->cols = r->line_cols;
     L->source_line = 0;
+    L->heading = 0;
     L->fill = 0; L->fill_bg = rgb(0, 0, 0);
     /* hand ownership of the run array to the line; start a fresh one */
     r->line = NULL; r->line_n = 0; r->line_cap = 0;
@@ -245,6 +247,7 @@ static int cb_enter_block(MD_BLOCKTYPE type, void *detail, void *ud) {
         case MD_BLOCK_H: {
             MD_BLOCK_H_DETAIL *d = detail;
             r->heading = (int)d->level;
+            r->heading_start = (int)r->doc->nline;  /* first heading line index */
             style_push(r);
             r->cur.bold = 1; r->cur.has_fg = 1;
             r->cur.fg = heading_fg(r->dark, r->heading);
@@ -303,6 +306,9 @@ static int cb_leave_block(MD_BLOCKTYPE type, void *detail, void *ud) {
             flush_word(r);
             style_pop(r);
             if (r->line_has) line_commit(r);
+            /* tag the heading's first line so the TOC can find it */
+            if (r->heading_start < (int)r->doc->nline)
+                r->doc->lines[r->heading_start].heading = r->heading;
             line_commit(r);            /* blank line after heading */
             r->heading = 0;
             break;

@@ -37,6 +37,7 @@ typedef struct {
     size_t nrun, cap;
     int    cols;         /* visible width used by the runs */
     int    source_line;  /* 1-based source line, or 0 if unknown (filled later) */
+    int    heading;      /* heading level 1..6 on a heading's first line, else 0 */
     int    fill;         /* 1 = pad rest of width with fill_bg (code blocks) */
     RGB    fill_bg;
 } Line;

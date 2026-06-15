@@ -11,6 +11,7 @@
 #include "render.h"
 #include "editor.h"
 #include "search.h"
+#include "toc.h"
 #include "util.h"
 
 #include <notcurses/notcurses.h>
@@ -42,7 +43,12 @@ typedef struct {
     int    searchlen;
     Hits   hits;                 /* current search matches */
     int    cur_hit;              /* index of the focused match, or -1 */
+    int    tocmode;              /* table-of-contents panel open */
+    TOC    toc;
+    int    toc_sel;              /* selected TOC entry */
 } App;
+
+#define TOC_W 30                 /* table-of-contents panel width */
 
 static int content_rows(App *a) { return a->rows - 1; }   /* last row = status */
 
@@ -193,6 +199,43 @@ static void reader_bottom(App *a) {
     status_bar(a, status);
 }
 
+/* Draw the table-of-contents panel over the left edge of the view. */
+static void draw_toc(App *a) {
+    struct ncplane *p = a->plane;
+    int h = content_rows(a);
+    RGB panel = a->dark ? (RGB){30, 30, 38} : (RGB){235, 235, 240};
+    RGB fg    = a->dark ? (RGB){210, 210, 210} : (RGB){30, 30, 30};
+    int first = a->toc_sel - h / 2 + 1;        /* scroll so the selection shows */
+    if (first > a->toc.n - (h - 1)) first = a->toc.n - (h - 1);
+    if (first < 0) first = 0;
+
+    ncplane_set_styles(p, NCSTYLE_BOLD);
+    ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b);
+    ncplane_set_bg_rgb8(p, panel.r, panel.g, panel.b);
+    for (int x = 0; x < TOC_W; x++) ncplane_putchar_yx(p, 0, x, ' ');
+    ncplane_putstr_yx(p, 0, 1, "Contents");
+
+    for (int row = 1; row < h; row++) {
+        int idx = first + row - 1;
+        for (int x = 0; x < TOC_W; x++) ncplane_putchar_yx(p, row, x, ' ');
+        if (idx < 0 || idx >= a->toc.n) continue;
+        TOCItem *it = &a->toc.v[idx];
+        int sel = (idx == a->toc_sel);
+        ncplane_set_styles(p, sel ? NCSTYLE_BOLD : NCSTYLE_NONE);
+        if (sel) { ncplane_set_fg_rgb8(p, 0, 0, 0); ncplane_set_bg_rgb8(p, 255, 200, 90); }
+        else     { ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b); ncplane_set_bg_rgb8(p, panel.r, panel.g, panel.b); }
+        char buf[TOC_W * 4];
+        int indent = (it->level - 1) * 2;
+        snprintf(buf, sizeof buf, "%*s%s", indent + 1, "", it->title);
+        size_t cut = ed_col_to_byte(buf, strlen(buf), TOC_W - 1);   /* clip to panel */
+        buf[cut] = '\0';
+        ncplane_putstr_yx(p, row, 0, buf);
+    }
+    ncplane_set_styles(p, NCSTYLE_NONE);
+    ncplane_set_fg_default(p);
+    ncplane_set_bg_default(p);
+}
+
 /* Render the visible Doc lines, overlay the block cursor, and the status. */
 static void draw_reader(App *a) {
     struct ncplane *p = a->plane;
@@ -223,13 +266,14 @@ static void draw_reader(App *a) {
     draw_hits(a);
 
     /* block cursor on top (hidden while typing a command/search) */
-    if (!a->cmdmode && !a->searchmode) {
+    if (!a->cmdmode && !a->searchmode && !a->tocmode) {
         int cy = a->rcur_line - a->top;
         RGB black = {0, 0, 0}, white = {255, 255, 255};
         if (cy >= 0 && cy < body && a->rcur_col < a->cols)
             overlay_cell(a->plane, cy, a->rcur_col, black, white);
     }
 
+    if (a->tocmode) draw_toc(a);
     reader_bottom(a);
     notcurses_render(a->nc);
 }
@@ -455,12 +499,42 @@ static int handle_search(App *a, uint32_t id, const ncinput *ni) {
     return 1;
 }
 
+/* Open the TOC panel, selecting the heading at or before the cursor line. */
+static void open_toc(App *a) {
+    toc_free(&a->toc);                       /* rebuild fresh from the current Doc */
+    toc_build(a->doc, &a->toc);
+    if (a->toc.n == 0) return;
+    a->toc_sel = 0;
+    for (int i = 0; i < a->toc.n; i++)
+        if (a->toc.v[i].line <= a->rcur_line) a->toc_sel = i;
+    a->tocmode = 1;
+}
+
+/* TOC-panel keys: move the selection, Enter jumps, t/Esc/q close. */
+static int handle_toc(App *a, uint32_t id, const ncinput *ni) {
+    if (id == 'j' || id == NCKEY_DOWN)      { if (a->toc_sel + 1 < a->toc.n) a->toc_sel++; }
+    else if (id == 'k' || id == NCKEY_UP)   { if (a->toc_sel > 0) a->toc_sel--; }
+    else if (id == 'g' || id == NCKEY_HOME) a->toc_sel = 0;
+    else if (id == 'G' || id == NCKEY_END)  a->toc_sel = a->toc.n - 1;
+    else if (id == NCKEY_ENTER || id == '\r' || id == '\n') {
+        a->rcur_line = a->toc.v[a->toc_sel].line;
+        a->rcur_col = 0; a->rcur_goal = 0;
+        reader_clamp_cursor(a);
+        a->tocmode = 0;
+    } else if (id == 't' || id == NCKEY_ESC || id == 'q' ||
+               (id == 'c' && ncinput_ctrl_p(ni))) {
+        a->tocmode = 0;
+    }
+    return 1;
+}
+
 /* Reader-mode keys: move the block cursor, search, enter Insert/command, quit. */
 static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     int body = content_rows(a);
     if (id == 'c' && ncinput_ctrl_p(ni))         return 0;   /* escape hatch */
     else if (id == ':')                          { a->cmdmode = 1; a->cmdbuf[0] = '\0'; a->cmdlen = 0; }
     else if (id == '/')                          { a->searchmode = 1; a->searchbuf[0] = '\0'; a->searchlen = 0; }
+    else if (id == 't')                          open_toc(a);
     else if (id == 'n' && a->hits.n)             focus_hit(a, a->cur_hit + 1);
     else if (id == 'N' && a->hits.n)             focus_hit(a, a->cur_hit - 1);
     else if (id == NCKEY_ESC)                    clear_search(a);
@@ -600,6 +674,7 @@ int tui_run(const char *src, unsigned long len, const char *title) {
         }
         if (a.cmdmode)             running = handle_command(&a, id, &ni);
         else if (a.searchmode)     running = handle_search(&a, id, &ni);
+        else if (a.tocmode)        running = handle_toc(&a, id, &ni);
         else if (a.mode == MODE_READER) running = handle_reader(&a, id, &ni);
         else                       running = handle_insert(&a, id, &ni);
         if (running) redraw(&a);
@@ -612,6 +687,7 @@ int tui_run(const char *src, unsigned long len, const char *title) {
 
     if (a.mode == MODE_INSERT) editor_free(&a.ed);
     hits_free(&a.hits);
+    toc_free(&a.toc);
     doc_free(a.doc);
     shutdown_tui();
     free(a.src);
