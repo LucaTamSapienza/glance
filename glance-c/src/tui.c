@@ -52,6 +52,7 @@ typedef struct {
     int    dirty;                /* unsaved changes since the last write */
     char   msg[160];             /* transient status message (one keypress) */
     Doc   *preview;              /* Split mode: live render of the editor text */
+    int    helpmode;             /* help overlay open */
 } App;
 
 #define TOC_W 30                 /* table-of-contents panel width */
@@ -473,11 +474,52 @@ static void leave_editor(App *a) {
     reader_clamp_cursor(a);
 }
 
-/* Draw whichever mode is active. */
+/* Draw the help overlay: a centered list of key bindings. */
+static void draw_help(App *a) {
+    static const char *lines[] = {
+        "  glance — key bindings",
+        "",
+        "  Reader",
+        "    h j k l / arrows    move cursor",
+        "    g / G               top / bottom",
+        "    Ctrl-D / Ctrl-U     half page down / up",
+        "    PgDn / PgUp         page down / up",
+        "    i                   insert mode (edit)",
+        "    e                   split: editor + live preview",
+        "    t                   table of contents",
+        "    /                   search    (n / N next / prev)",
+        "    Ctrl-S              save",
+        "    :w :wq :q :q!       write / quit",
+        "    ?                   toggle this help",
+        "",
+        "  Insert / Split",
+        "    Esc                 back to reader",
+        "    Ctrl-S              save",
+        "",
+        "  press any key to close",
+    };
+    int n = (int)(sizeof lines / sizeof lines[0]);
+    struct ncplane *p = a->plane;
+    RGB bg = a->dark ? (RGB){25, 25, 32} : (RGB){240, 240, 245};
+    RGB fg = a->dark ? (RGB){220, 220, 220} : (RGB){20, 20, 20};
+    int top = (a->rows - n) / 2; if (top < 0) top = 0;
+    ncplane_set_styles(p, NCSTYLE_NONE);
+    ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b);
+    ncplane_set_bg_rgb8(p, bg.r, bg.g, bg.b);
+    for (int i = 0; i < n && top + i < a->rows; i++) {
+        for (int x = 0; x < a->cols; x++) ncplane_putchar_yx(p, top + i, x, ' ');
+        ncplane_putstr_yx(p, top + i, 0, lines[i]);
+    }
+    ncplane_set_fg_default(p);
+    ncplane_set_bg_default(p);
+}
+
+/* Draw whichever mode is active, plus the help overlay when open. */
 static void redraw(App *a) {
     if (a->mode == MODE_READER)     draw_reader(a);
     else if (a->mode == MODE_SPLIT) draw_split(a);
     else                            draw_editor(a);
+    if (a->helpmode) { draw_help(a); notcurses_render(a->nc); }
 }
 
 /* ---- input ---------------------------------------------------------------- */
@@ -640,6 +682,7 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     else if (id == ':')                          { a->cmdmode = 1; a->cmdbuf[0] = '\0'; a->cmdlen = 0; }
     else if (id == '/')                          { a->searchmode = 1; a->searchbuf[0] = '\0'; a->searchlen = 0; }
     else if (id == 't')                          open_toc(a);
+    else if (id == '?')                          a->helpmode = 1;
     else if (id == 's' && ncinput_ctrl_p(ni))    save_file(a);
     else if (id == 'n' && a->hits.n)             focus_hit(a, a->cur_hit + 1);
     else if (id == 'N' && a->hits.n)             focus_hit(a, a->cur_hit - 1);
@@ -786,6 +829,7 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
     while (running && (id = notcurses_get_blocking(a.nc, &ni)) != (uint32_t)-1) {
         if (ni.evtype == NCTYPE_RELEASE) continue;
         a.msg[0] = '\0';                 /* clear the previous transient message */
+        if (a.helpmode) { a.helpmode = 0; redraw(&a); continue; }   /* any key closes help */
         if (id == NCKEY_RESIZE) {
             if (a.mode == MODE_READER) rerender(&a);
             else update_dims(&a);
