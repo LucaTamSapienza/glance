@@ -6,7 +6,7 @@
  *     -w WIDTH  wrap width (default: terminal width, or 80)
  *     -l        light theme (default: dark)
  */
-#include "render_md.h"
+#include "render.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -63,9 +63,13 @@ int main(int argc, char **argv) {
     if (f != stdin) fclose(f);
     if (!src) { fprintf(stderr, "read failed\n"); return 1; }
 
-    char *out = render_markdown(src, len, width, dark);
+    Doc *doc = render_doc(src, len, width, dark);
     free(src);
-    if (!out) { fprintf(stderr, "render failed\n"); return 1; }
+    if (!doc) { fprintf(stderr, "render failed\n"); return 1; }
+
+    char *out = doc_to_ansi(doc);
+    doc_free(doc);
+    if (!out) { fprintf(stderr, "serialize failed\n"); return 1; }
 
     fputs(out, stdout);
     free(out);
