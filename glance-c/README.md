@@ -26,6 +26,17 @@ cat notes.md | ./glance            # read from stdin
 ./glance --keys                    # diagnostic: show raw key events
 ```
 
+### Agent-facing exports (JSON to stdout)
+
+glance is also a lens an agent can call to understand a Markdown vault — no
+server, no embeddings, just structure:
+
+```sh
+./glance --outline file.md   # heading tree:  [{level,title,line}, ...]
+./glance --links file.md     # outbound links: [{target,wiki}, ...]
+./glance --graph ./notes     # whole-vault link graph: {nodes, edges}
+```
+
 ## Keys
 
 **Reader**
@@ -37,7 +48,8 @@ cat notes.md | ./glance            # read from stdin
 | `Ctrl-D` / `Ctrl-U` | half page | `V` | visual-line select |
 | `/` | search | `y` | yank selection → clipboard |
 | `n` / `N` | next / prev match | `t` | table of contents |
-| `Enter` | open link under cursor | `?` | help |
+| `Enter` | follow link / `[[wikilink]]` | `?` | help |
+| `-` / `Ctrl-O` | back to previous file | `b` | backlinks panel |
 | `:w` `:wq` `:q` `:q!` | write / quit | `Ctrl-S` | save |
 
 **Insert / Split:** type to edit, `Esc` returns to Reader, `Ctrl-S` saves.

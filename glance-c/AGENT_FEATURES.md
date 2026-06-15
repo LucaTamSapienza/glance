@@ -35,6 +35,20 @@ a folder of `.md` into something both can navigate.
 
 Everything stays strictly in the terminal / stdout. Same renderer, same Doc.
 
+## Status — all implemented on this branch
+
+- `[[wikilinks]]` render and are followable; Enter opens internal `.md` targets
+  inside glance with a back-stack (`-` / `Ctrl-O`); external URLs open in the
+  browser.
+- `b` opens a backlinks panel (files in the folder that link to the current one).
+- `glance --outline` / `--links` / `--graph` print JSON (see README). Unit-tested
+  via `vault_test` and `agent_test`; the render path is ASan-clean with links.
+
+### Candidate next steps (not yet built)
+- Inline image rendering (notcurses supports sixel/kitty/iterm protocols).
+- An MCP server mode (`glance --mcp`) exposing search/outline/graph to agents.
+- A terminal graph view of the vault neighborhood.
+
 ## Sources
 
 - [adamsdesk] https://www.adamsdesk.com/posts/linux-markdown-viewers/
