@@ -63,6 +63,7 @@ typedef struct {
     /* current inline style + a save stack for nested spans/blocks */
     Style cur;
     Style stack[MAX_STYLE]; int sp;
+    char *cur_link;        /* href of the enclosing link span, or NULL */
 
     /* block context */
     int    in_code;
@@ -94,6 +95,7 @@ static int runs_push(Run **arr, size_t *n, size_t *cap,
     (*arr)[*n].text = t;
     (*arr)[*n].len  = len;
     (*arr)[*n].st   = st;
+    (*arr)[*n].link = NULL;
     (*n)++;
     return 0;
 }
@@ -158,6 +160,7 @@ static void flush_word(R *r) {
     for (size_t i = 0; i < r->word_n; i++) {
         Run *w = &r->word[i];
         runs_push(&r->line, &r->line_n, &r->line_cap, w->text, w->len, w->st);
+        r->line[r->line_n - 1].link = w->link;   /* transfer link ownership */
         free(w->text);
     }
     r->line_cols += r->word_cols;
@@ -166,9 +169,10 @@ static void flush_word(R *r) {
     r->word_cols = 0;
 }
 
-/* push a styled run onto the pending word */
+/* push a styled run onto the pending word, tagging it with the active link */
 static void word_run(R *r, const char *text, size_t len, Style st) {
     runs_push(&r->word, &r->word_n, &r->word_cap, text, len, st);
+    if (r->cur_link) r->word[r->word_n - 1].link = strdup(r->cur_link);
     r->word_cols += u8_width(text, len);
 }
 
@@ -376,7 +380,13 @@ static int cb_enter_span(MD_SPANTYPE type, void *detail, void *ud) {
             r->cur.has_fg = 1; r->cur.fg = code_fg(r->dark);
             r->cur.has_bg = 1; r->cur.bg = code_bg(r->dark);
             break;
-        case MD_SPAN_A:
+        case MD_SPAN_A: {
+            MD_SPAN_A_DETAIL *d = detail;
+            free(r->cur_link);
+            r->cur_link = d->href.size ? strndup(d->href.text, d->href.size) : NULL;
+            r->cur.underline = 1; r->cur.has_fg = 1; r->cur.fg = link_fg(r->dark);
+            break;
+        }
         case MD_SPAN_WIKILINK:
             r->cur.underline = 1; r->cur.has_fg = 1; r->cur.fg = link_fg(r->dark);
             break;
@@ -385,10 +395,11 @@ static int cb_enter_span(MD_SPANTYPE type, void *detail, void *ud) {
     return 0;
 }
 
-/* Close an inline span: restore the style that was active before it. */
+/* Close an inline span: restore the style; clear the link when leaving one. */
 static int cb_leave_span(MD_SPANTYPE type, void *detail, void *ud) {
     R *r = ud;
-    (void)detail; (void)type;
+    (void)detail;
+    if (type == MD_SPAN_A) { free(r->cur_link); r->cur_link = NULL; }
     style_pop(r);
     return 0;
 }
@@ -458,10 +469,11 @@ Doc *render_doc(const char *src, size_t len, int width, int dark) {
     if (r.line_has || r.line_n > 0) line_commit(&r);
 
     /* free transient buffers */
-    for (size_t i = 0; i < r.word_n; i++) free(r.word[i].text);
+    for (size_t i = 0; i < r.word_n; i++) { free(r.word[i].text); free(r.word[i].link); }
     free(r.word);
     free(r.line);
     free(r.code_buf);
+    free(r.cur_link);
 
     if (rc != 0) { doc_free(doc); return NULL; }
     return doc;
@@ -472,7 +484,7 @@ void doc_free(Doc *d) {
     if (!d) return;
     for (size_t i = 0; i < d->nline; i++) {
         Line *L = &d->lines[i];
-        for (size_t j = 0; j < L->nrun; j++) free(L->runs[j].text);
+        for (size_t j = 0; j < L->nrun; j++) { free(L->runs[j].text); free(L->runs[j].link); }
         free(L->runs);
     }
     free(d->lines);

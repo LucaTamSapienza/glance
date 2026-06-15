@@ -748,6 +748,19 @@ static int handle_visual(App *a, uint32_t id, const ncinput *ni) {
     return 1;
 }
 
+/* Return the link URL of the run under the Reader cursor, or NULL. */
+static const char *link_at_cursor(App *a) {
+    if (a->rcur_line >= (int)a->doc->nline) return NULL;
+    Line *L = &a->doc->lines[a->rcur_line];
+    int x = 0;
+    for (size_t j = 0; j < L->nrun; j++) {
+        int w = u8_width(L->runs[j].text, L->runs[j].len);
+        if (a->rcur_col >= x && a->rcur_col < x + w) return L->runs[j].link;
+        x += w;
+    }
+    return NULL;
+}
+
 /* Reader-mode keys: move the block cursor, search, enter Insert/command, quit. */
 static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     int body = content_rows(a);
@@ -763,6 +776,11 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     else if (id == 'i')                          enter_insert(a);  /* vi-style */
     else if (id == 'e')                          enter_split(a);   /* editor + preview */
     else if (id == 'V')                          { a->visualmode = 1; a->visual_anchor = a->rcur_line; }
+    else if (id == NCKEY_ENTER || id == '\r' || id == '\n') {
+        const char *u = link_at_cursor(a);
+        if (u) { open_url(u); snprintf(a->msg, sizeof a->msg, "opening %s", u); }
+        else snprintf(a->msg, sizeof a->msg, "no link under cursor");
+    }
     else if (id == 'j' || id == NCKEY_DOWN)      { a->rcur_line++; a->rcur_col = a->rcur_goal; }
     else if (id == 'k' || id == NCKEY_UP)        { a->rcur_line--; a->rcur_col = a->rcur_goal; }
     else if (id == 'h' || id == NCKEY_LEFT)      { a->rcur_col--; a->rcur_goal = a->rcur_col; }

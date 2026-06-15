@@ -30,6 +30,7 @@ typedef struct {
     char  *text;   /* UTF-8, owned */
     size_t len;
     Style  st;
+    char  *link;   /* target URL if this run is part of a link, else NULL (owned) */
 } Run;
 
 typedef struct {
