@@ -270,6 +270,59 @@ static int handle_insert(App *a, uint32_t id, const ncinput *ni) {
     return 1;
 }
 
+int tui_keyprobe(void) {
+    term_kbd_reset();
+    notcurses_options opts;
+    memset(&opts, 0, sizeof opts);
+    opts.flags = NCOPTION_SUPPRESS_BANNERS | NCOPTION_NO_QUIT_SIGHANDLERS;
+    struct notcurses *nc = notcurses_init(&opts, NULL);
+    if (!nc) return 1;
+    g_nc = nc;
+    signal(SIGINT,  on_fatal_signal);
+    signal(SIGTERM, on_fatal_signal);
+    signal(SIGSEGV, on_fatal_signal);
+    signal(SIGABRT, on_fatal_signal);
+
+    struct ncplane *p = notcurses_stdplane(nc);
+    unsigned rows, cols; ncplane_dim_yx(p, &rows, &cols);
+    const char *hdr = " key probe — press keys (try Option+3, etc).  Ctrl+Q to quit ";
+    ncplane_erase(p);
+    ncplane_putstr_yx(p, 0, 0, hdr);
+    notcurses_render(nc);
+
+    int line = 2;
+    ncinput ni; uint32_t id;
+    while ((id = notcurses_get_blocking(nc, &ni)) != (uint32_t)-1) {
+        if (ni.evtype == NCTYPE_RELEASE) continue;
+        if (id == 'q' && ncinput_ctrl_p(&ni)) break;
+
+        char hex[64] = {0};
+        int hp = 0;
+        for (int i = 0; ni.utf8[i] && i < 4; i++)
+            hp += snprintf(hex + hp, sizeof hex - hp, "%02x ", (unsigned char)ni.utf8[i]);
+
+        char buf[256];
+        snprintf(buf, sizeof buf,
+                 "id=0x%06X  utf8=\"%s\"  hex=[%s]  alt=%d shift=%d ctrl=%d  evtype=%d",
+                 id, ni.utf8, hex,
+                 ncinput_alt_p(&ni) ? 1 : 0, ncinput_shift_p(&ni) ? 1 : 0,
+                 ncinput_ctrl_p(&ni) ? 1 : 0, (int)ni.evtype);
+
+        if (line >= (int)rows - 1) {
+            line = 2;
+            ncplane_erase(p);
+            ncplane_putstr_yx(p, 0, 0, hdr);
+        }
+        ncplane_putstr_yx(p, line++, 0, buf);
+        notcurses_render(nc);
+    }
+
+    ncinput d; uint32_t dd;
+    while ((dd = notcurses_get_nblock(nc, &d)) != 0 && dd != (uint32_t)-1) { }
+    shutdown_tui();
+    return 0;
+}
+
 int tui_run(const char *src, unsigned long len, const char *title) {
     term_kbd_reset();   /* normalize before notcurses probes (slice-2 fix) */
 

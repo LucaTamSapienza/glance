@@ -34,6 +34,9 @@ int main(int argc, char **argv) {
     FILE *f = stdin;
     char title[256] = "stdin";
 
+    if (argc > 1 && (strcmp(argv[1], "-k") == 0 || strcmp(argv[1], "--keys") == 0))
+        return tui_keyprobe();
+
     if (argc > 1) {
         path = argv[1];
         f = fopen(path, "rb");
