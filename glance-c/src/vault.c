@@ -2,8 +2,18 @@
 #include "vault.h"
 
 #include <md4c.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+
+void vault_stem(const char *name, char *out, size_t cap) {
+    const char *base = strrchr(name, '/');
+    base = base ? base + 1 : name;
+    snprintf(out, cap, "%s", base);
+    size_t n = strlen(out);
+    if (n > 3 && strcasecmp(out + n - 3, ".md") == 0) out[n - 3] = '\0';
+}
 
 /* Append a link (copying len bytes of target), growing the array as needed. */
 static void vlinks_push(VLinks *l, const char *target, size_t len, int wiki) {

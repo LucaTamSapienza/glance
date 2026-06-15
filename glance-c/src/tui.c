@@ -16,14 +16,18 @@
 #include "fswatch.h"
 #include "clipboard.h"
 #include "completion.h"
+#include "vault.h"
 #include "util.h"
 
 #include <notcurses/notcurses.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <stdio.h>
 #include <errno.h>
 #include <poll.h>
+#include <libgen.h>
+#include <dirent.h>
 #include <unistd.h>
 
 enum { MODE_READER, MODE_INSERT, MODE_SPLIT };
@@ -32,7 +36,7 @@ typedef struct {
     struct notcurses *nc;
     struct ncplane   *plane;
     char  *src; size_t srclen;   /* owned, mutable copy of the document */
-    const char *title;
+    char   title[256];           /* status-bar name (file base name or "stdin") */
     Doc   *doc;
     int    top;                  /* Reader: first visible doc line */
     int    rcur_line, rcur_col;  /* Reader: block-cursor position (doc coords) */
@@ -52,13 +56,20 @@ typedef struct {
     int    tocmode;              /* table-of-contents panel open */
     TOC    toc;
     int    toc_sel;              /* selected TOC entry */
-    const char *path;            /* file to save to, or NULL for stdin */
+    char  *path;                 /* current file (owned), or NULL for stdin */
+    char  *back[64];             /* navigation back-stack of file paths (owned) */
+    int    nback;
+    Watch  watch;                /* file watcher for the current file's dir */
+    int    wfd;                  /* watcher kqueue fd, or -1 */
     int    dirty;                /* unsaved changes since the last write */
     char   msg[160];             /* transient status message (one keypress) */
     Doc   *preview;              /* Split mode: live render of the editor text */
     int    helpmode;             /* help overlay open */
     int    visualmode;           /* vi visual-line selection active */
     int    visual_anchor;        /* line where the selection started */
+    int    blmode;               /* backlinks panel open */
+    char  *bl[256];              /* file names that link here (owned) */
+    int    nbl, bl_sel;
 } App;
 
 #define TOC_W 30                 /* table-of-contents panel width */
@@ -228,11 +239,11 @@ static void reader_bottom(App *a) {
     if (a->hits.n > 0) {
         snprintf(status, sizeof status,
                  " READER  %s  —  match %d/%d for \"%s\"   n/N next/prev   Esc clear",
-                 a->title ? a->title : "", a->cur_hit + 1, a->hits.n, a->searchbuf);
+                 a->title, a->cur_hit + 1, a->hits.n, a->searchbuf);
     } else {
         snprintf(status, sizeof status,
                  " READER  %s  —  Ln %d/%d   i insert  e split  / search  t toc  :q quit",
-                 a->title ? a->title : "", a->rcur_line + 1, (int)a->doc->nline);
+                 a->title, a->rcur_line + 1, (int)a->doc->nline);
     }
     status_bar(a, status);
 }
@@ -292,6 +303,36 @@ static void draw_doc_line(struct ncplane *p, const Line *L, int row, int x0, int
     }
 }
 
+/* Draw the backlinks panel: files that link to the current one. */
+static void draw_backlinks(App *a) {
+    struct ncplane *p = a->plane;
+    int h = content_rows(a);
+    RGB panel = a->dark ? (RGB){30, 30, 38} : (RGB){235, 235, 240};
+    RGB fg    = a->dark ? (RGB){210, 210, 210} : (RGB){30, 30, 30};
+    ncplane_set_styles(p, NCSTYLE_BOLD);
+    ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b);
+    ncplane_set_bg_rgb8(p, panel.r, panel.g, panel.b);
+    for (int x = 0; x < TOC_W; x++) ncplane_putchar_yx(p, 0, x, ' ');
+    ncplane_putstr_yx(p, 0, 1, "Backlinks");
+    for (int row = 1; row < h; row++) {
+        int idx = row - 1;
+        for (int x = 0; x < TOC_W; x++) ncplane_putchar_yx(p, row, x, ' ');
+        if (idx >= a->nbl) continue;
+        int sel = (idx == a->bl_sel);
+        ncplane_set_styles(p, sel ? NCSTYLE_BOLD : NCSTYLE_NONE);
+        if (sel) { ncplane_set_fg_rgb8(p, 0, 0, 0); ncplane_set_bg_rgb8(p, 255, 200, 90); }
+        else     { ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b); ncplane_set_bg_rgb8(p, panel.r, panel.g, panel.b); }
+        char buf[TOC_W * 4];
+        snprintf(buf, sizeof buf, " %s", a->bl[idx]);
+        size_t cut = ed_col_to_byte(buf, strlen(buf), TOC_W - 1);
+        buf[cut] = '\0';
+        ncplane_putstr_yx(p, row, 0, buf);
+    }
+    ncplane_set_styles(p, NCSTYLE_NONE);
+    ncplane_set_fg_default(p);
+    ncplane_set_bg_default(p);
+}
+
 /* Render the visible Doc lines, overlay the block cursor, and the status. */
 static void draw_reader(App *a) {
     notcurses_cursor_disable(a->nc);
@@ -308,8 +349,8 @@ static void draw_reader(App *a) {
     draw_selection(a);
     draw_hits(a);
 
-    /* block cursor on top (hidden while typing a command/search) */
-    if (!a->cmdmode && !a->searchmode && !a->tocmode) {
+    /* block cursor on top (hidden while typing a command/search/panel) */
+    if (!a->cmdmode && !a->searchmode && !a->tocmode && !a->blmode) {
         int cy = a->rcur_line - a->top;
         RGB black = {0, 0, 0}, white = {255, 255, 255};
         if (cy >= 0 && cy < body && a->rcur_col < a->cols)
@@ -317,6 +358,7 @@ static void draw_reader(App *a) {
     }
 
     if (a->tocmode) draw_toc(a);
+    if (a->blmode)  draw_backlinks(a);
     reader_bottom(a);
     notcurses_render(a->nc);
 }
@@ -370,7 +412,7 @@ static void draw_editor(App *a) {
     if (a->msg[0]) snprintf(status, sizeof status, " %s", a->msg);
     else snprintf(status, sizeof status,
                   " INSERT  %s%s  —  Ln %d, Col %d   Esc reader   ^S save",
-                  a->title ? a->title : "", e->dirty ? " *" : "",
+                  a->title, e->dirty ? " *" : "",
                   e->cy + 1, editor_cursor_col(e) + 1);
     status_bar(a, status);
 
@@ -421,7 +463,7 @@ static void draw_split(App *a) {
     if (a->msg[0]) snprintf(status, sizeof status, " %s", a->msg);
     else snprintf(status, sizeof status,
                   " SPLIT  %s%s  —  edit left, preview right   Esc reader   ^S save",
-                  a->title ? a->title : "", e->dirty ? " *" : "");
+                  a->title, e->dirty ? " *" : "");
     status_bar(a, status);
 
     notcurses_cursor_enable(a->nc, e->cy - e->top, editor_cursor_col(e) - e->xoff);
@@ -521,6 +563,11 @@ static void draw_help(App *a) {
         "    :w :wq :q :q!       write / quit",
         "    ?                   toggle this help",
         "",
+        "  Vault (linked notes)",
+        "    Enter               follow link / [[wikilink]] under cursor",
+        "    -  / Ctrl-O         back to the previous file",
+        "    b                   backlinks (files that link here)",
+        "",
         "  Insert / Split",
         "    Esc                 back to reader",
         "    Ctrl-S              save",
@@ -586,7 +633,7 @@ static int save_file(App *a) {
         return -1;
     }
     a->dirty = 0;
-    snprintf(a->msg, sizeof a->msg, "\"%s\" %zuB written", a->title ? a->title : a->path, a->srclen);
+    snprintf(a->msg, sizeof a->msg, "\"%s\" %zuB written", a->title, a->srclen);
     return 0;
 }
 
@@ -749,7 +796,7 @@ static int handle_visual(App *a, uint32_t id, const ncinput *ni) {
     return 1;
 }
 
-/* Return the link URL of the run under the Reader cursor, or NULL. */
+/* Return the link target of the run under the Reader cursor, or NULL. */
 static const char *link_at_cursor(App *a) {
     if (a->rcur_line >= (int)a->doc->nline) return NULL;
     Line *L = &a->doc->lines[a->rcur_line];
@@ -762,6 +809,135 @@ static const char *link_at_cursor(App *a) {
     return NULL;
 }
 
+/* ---- cross-file navigation (wikilinks / relative .md links) --------------- */
+
+/* Set the status title to a file's base name, or "stdin". */
+static void set_title(App *a, const char *path) {
+    if (!path) { snprintf(a->title, sizeof a->title, "stdin"); return; }
+    char tmp[1024]; snprintf(tmp, sizeof tmp, "%s", path);
+    snprintf(a->title, sizeof a->title, "%s", basename(tmp));
+}
+
+/* Resolve `rel` against the directory of `base`; returns an owned path. */
+static char *resolve_path(const char *base, const char *rel) {
+    if (rel[0] == '/' || !base) return strdup(rel);
+    char tmp[1024], out[2048];
+    snprintf(tmp, sizeof tmp, "%s", base);
+    snprintf(out, sizeof out, "%s/%s", dirname(tmp), rel);
+    return strdup(out);
+}
+
+/* Point the file watcher at the current file's directory. */
+static void rewatch(App *a) {
+    watch_close(&a->watch);
+    a->wfd = watch_open(&a->watch, a->path);
+}
+
+/* Load `path` into the app: swap in its content, re-render, reset the view, and
+ * rewatch its directory. Returns 0 on success, -1 if it can't be read. */
+static int load_into(App *a, const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) { snprintf(a->msg, sizeof a->msg, "can't open %s", path); return -1; }
+    size_t nlen; char *ns = read_file(f, &nlen);
+    fclose(f);
+    if (!ns) return -1;
+    free(a->src); a->src = ns; a->srclen = nlen;
+    free(a->path); a->path = strdup(path);
+    set_title(a, a->path);
+    a->dirty = 0;
+    clear_search(a);
+    a->rcur_line = a->rcur_col = a->rcur_goal = a->top = 0;
+    rerender(a);
+    rewatch(a);
+    return 0;
+}
+
+/* An external URL we open with the system handler rather than inside glance. */
+static int is_external(const char *u) {
+    return strncmp(u, "http://", 7) == 0 || strncmp(u, "https://", 8) == 0 ||
+           strncmp(u, "mailto:", 7) == 0 || strncmp(u, "ftp://", 6) == 0;
+}
+
+/* Follow a link: external URLs open in the browser; a wikilink or relative .md
+ * link opens that file in glance, pushing the current file onto the back-stack. */
+static void open_link_target(App *a, const char *u) {
+    if (is_external(u)) { open_url(u); snprintf(a->msg, sizeof a->msg, "opening %s", u); return; }
+    if (!a->path) { snprintf(a->msg, sizeof a->msg, "can't follow links from stdin"); return; }
+    if (a->dirty) { snprintf(a->msg, sizeof a->msg, "unsaved changes — :w before following links"); return; }
+
+    char file[1024];
+    size_t ul = strlen(u);
+    if (ul > 3 && strcasecmp(u + ul - 3, ".md") == 0) snprintf(file, sizeof file, "%s", u);
+    else snprintf(file, sizeof file, "%s.md", u);     /* wikilink page -> page.md */
+    char *full = resolve_path(a->path, file);
+    char *cur = strdup(a->path);
+    if (load_into(a, full) == 0) {
+        if (a->nback < 64) a->back[a->nback++] = cur; else free(cur);
+        snprintf(a->msg, sizeof a->msg, "→ %s", a->title);
+    } else {
+        free(cur);
+    }
+    free(full);
+}
+
+/* Return to the previously viewed file. */
+static void go_back(App *a) {
+    if (a->nback == 0) { snprintf(a->msg, sizeof a->msg, "no file to go back to"); return; }
+    if (a->dirty) { snprintf(a->msg, sizeof a->msg, "unsaved changes — :w first"); return; }
+    char *prev = a->back[--a->nback];
+    if (load_into(a, prev) == 0) snprintf(a->msg, sizeof a->msg, "← %s", a->title);
+    free(prev);
+}
+
+/* Scan the current file's directory for .md files that link back to it, and
+ * open the backlinks panel listing them. */
+static void open_backlinks(App *a) {
+    for (int i = 0; i < a->nbl; i++) free(a->bl[i]);
+    a->nbl = a->bl_sel = 0;
+    if (!a->path) { snprintf(a->msg, sizeof a->msg, "no vault (reading stdin)"); return; }
+
+    char dbuf[1024]; snprintf(dbuf, sizeof dbuf, "%s", a->path);
+    char *dir = dirname(dbuf);
+    char self[256]; vault_stem(a->path, self, sizeof self);
+
+    DIR *dp = opendir(dir);
+    if (!dp) { snprintf(a->msg, sizeof a->msg, "can't read directory"); return; }
+    struct dirent *e;
+    while ((e = readdir(dp)) && a->nbl < 256) {
+        size_t l = strlen(e->d_name);
+        if (!(l > 3 && strcasecmp(e->d_name + l - 3, ".md") == 0)) continue;
+        char nstem[256]; vault_stem(e->d_name, nstem, sizeof nstem);
+        if (strcasecmp(nstem, self) == 0) continue;          /* skip the file itself */
+        char full[2048]; snprintf(full, sizeof full, "%s/%s", dir, e->d_name);
+        FILE *f = fopen(full, "rb"); if (!f) continue;
+        size_t len; char *s = read_file(f, &len); fclose(f); if (!s) continue;
+        VLinks vl = {0}; vault_links(s, len, &vl);
+        for (int k = 0; k < vl.n; k++) {
+            char t[256]; vault_stem(vl.v[k].target, t, sizeof t);
+            if (strcasecmp(t, self) == 0) { a->bl[a->nbl++] = strdup(e->d_name); break; }
+        }
+        vlinks_free(&vl);
+        free(s);
+    }
+    closedir(dp);
+    if (a->nbl == 0) { snprintf(a->msg, sizeof a->msg, "no backlinks to %s", a->title); return; }
+    a->blmode = 1;
+}
+
+/* Backlinks-panel keys: move the selection, Enter opens, b/Esc/q close. */
+static int handle_backlinks(App *a, uint32_t id, const ncinput *ni) {
+    if (id == 'j' || id == NCKEY_DOWN)      { if (a->bl_sel + 1 < a->nbl) a->bl_sel++; }
+    else if (id == 'k' || id == NCKEY_UP)   { if (a->bl_sel > 0) a->bl_sel--; }
+    else if (id == NCKEY_ENTER || id == '\r' || id == '\n') {
+        a->blmode = 0;
+        if (a->nbl) open_link_target(a, a->bl[a->bl_sel]);
+    } else if (id == 'b' || id == NCKEY_ESC || id == 'q' ||
+               (id == 'c' && ncinput_ctrl_p(ni))) {
+        a->blmode = 0;
+    }
+    return 1;
+}
+
 /* Reader-mode keys: move the block cursor, search, enter Insert/command, quit. */
 static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     int body = content_rows(a);
@@ -769,6 +945,7 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     else if (id == ':')                          { a->cmdmode = 1; a->cmdbuf[0] = '\0'; a->cmdlen = 0; }
     else if (id == '/')                          { a->searchmode = 1; a->searchbuf[0] = '\0'; a->searchlen = 0; }
     else if (id == 't')                          open_toc(a);
+    else if (id == 'b')                          open_backlinks(a);
     else if (id == '?')                          a->helpmode = 1;
     else if (id == 's' && ncinput_ctrl_p(ni))    save_file(a);
     else if (id == 'n' && a->hits.n)             focus_hit(a, a->cur_hit + 1);
@@ -779,9 +956,10 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     else if (id == 'V')                          { a->visualmode = 1; a->visual_anchor = a->rcur_line; }
     else if (id == NCKEY_ENTER || id == '\r' || id == '\n') {
         const char *u = link_at_cursor(a);
-        if (u) { open_url(u); snprintf(a->msg, sizeof a->msg, "opening %s", u); }
+        if (u) open_link_target(a, u);
         else snprintf(a->msg, sizeof a->msg, "no link under cursor");
     }
+    else if (id == '-' || (id == 'o' && ncinput_ctrl_p(ni)))  go_back(a);
     else if (id == 'j' || id == NCKEY_DOWN)      { a->rcur_line++; a->rcur_col = a->rcur_goal; }
     else if (id == 'k' || id == NCKEY_UP)        { a->rcur_line--; a->rcur_col = a->rcur_goal; }
     else if (id == 'h' || id == NCKEY_LEFT)      { a->rcur_col--; a->rcur_goal = a->rcur_col; }
@@ -913,6 +1091,7 @@ static int dispatch_key(App *a, uint32_t id, ncinput *ni) {
     if (a->cmdmode)    return handle_command(a, id, ni);
     if (a->searchmode) return handle_search(a, id, ni);
     if (a->tocmode)    return handle_toc(a, id, ni);
+    if (a->blmode)     return handle_backlinks(a, id, ni);
     if (a->visualmode) return handle_visual(a, id, ni);
     if (a->mode == MODE_READER) return handle_reader(a, id, ni);
     if (a->mode == MODE_SPLIT)  return handle_split(a, id, ni);
@@ -951,9 +1130,11 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
 
     App a;
     memset(&a, 0, sizeof a);
-    a.title = title; a.path = path; a.mode = MODE_READER;
+    a.mode = MODE_READER;
+    a.path = path ? strdup(path) : NULL;
+    snprintf(a.title, sizeof a.title, "%s", title ? title : "stdin");
     a.src = malloc(len + 1);
-    if (!a.src) return 1;
+    if (!a.src) { free(a.path); return 1; }
     memcpy(a.src, src, len); a.src[len] = '\0'; a.srclen = len;
 
     a.nc = notcurses_init(&opts, NULL);
@@ -969,9 +1150,9 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
     redraw(&a);
 
     /* Watch the file for external edits, and poll it alongside terminal input.
-     * notcurses_inputready_fd lets us wait on both at once. */
-    Watch watch; watch.kq = watch.dir = -1;
-    int wfd = watch_open(&watch, path);
+     * The watcher fd lives in the App so cross-file navigation can re-point it. */
+    a.watch.kq = a.watch.dir = -1;
+    a.wfd = watch_open(&a.watch, a.path);
     int infd = notcurses_inputready_fd(a.nc);
 
     int running = 1;
@@ -987,10 +1168,10 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
         struct pollfd fds[2];
         fds[0].fd = infd; fds[0].events = POLLIN; fds[0].revents = 0;
         int nfds = 1;
-        if (wfd >= 0) { fds[1].fd = wfd; fds[1].events = POLLIN; fds[1].revents = 0; nfds = 2; }
+        if (a.wfd >= 0) { fds[1].fd = a.wfd; fds[1].events = POLLIN; fds[1].revents = 0; nfds = 2; }
         if (poll(fds, nfds, -1) < 0) { if (errno == EINTR) continue; break; }
         if (nfds == 2 && (fds[1].revents & POLLIN)) {
-            watch_drain(&watch); reload_file(&a); redraw(&a);
+            watch_drain(&a.watch); reload_file(&a); redraw(&a);
         }
         if (!(fds[0].revents & POLLIN)) continue;
         /* drain all available key events, then redraw once */
@@ -1000,7 +1181,7 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
         }
         if (running) redraw(&a);
     }
-    watch_close(&watch);
+    watch_close(&a.watch);
 
     /* drain anything the terminal already queued so leftover bytes don't spill
      * onto the shell prompt after we exit */
@@ -1013,6 +1194,9 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
     toc_free(&a.toc);
     doc_free(a.doc);
     shutdown_tui();
+    for (int i = 0; i < a.nbl; i++) free(a.bl[i]);
+    for (int i = 0; i < a.nback; i++) free(a.back[i]);
+    free(a.path);
     free(a.src);
     return 0;
 }

@@ -55,20 +55,11 @@ void agent_links(const char *src, size_t len) {
 
 /* ---- vault graph ---------------------------------------------------------- */
 
-/* The stem of a file/link name: drop any directory and a trailing ".md". */
-static void stem_of(const char *name, char *out, size_t cap) {
-    const char *base = strrchr(name, '/');
-    base = base ? base + 1 : name;
-    snprintf(out, cap, "%s", base);
-    size_t n = strlen(out);
-    if (n > 3 && strcasecmp(out + n - 3, ".md") == 0) out[n - 3] = '\0';
-}
-
 /* Index of the node whose stem matches `target` (case-insensitive), or -1. */
 static int node_for(const char *target, char names[][256], int n) {
-    char want[256]; stem_of(target, want, sizeof want);
+    char want[256]; vault_stem(target, want, sizeof want);
     for (int i = 0; i < n; i++) {
-        char have[256]; stem_of(names[i], have, sizeof have);
+        char have[256]; vault_stem(names[i], have, sizeof have);
         if (strcasecmp(have, want) == 0) return i;
     }
     return -1;

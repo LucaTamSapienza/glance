@@ -21,4 +21,8 @@ void vault_links(const char *src, size_t len, VLinks *out);
 
 void vlinks_free(VLinks *out);
 
+/* Write the "stem" of a file or link name into out: drop any directory part and
+ * a trailing ".md". Used to match a [[wikilink]] or relative path to a file. */
+void vault_stem(const char *name, char *out, size_t cap);
+
 #endif /* GLANCE_VAULT_H */

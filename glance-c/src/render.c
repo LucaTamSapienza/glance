@@ -387,9 +387,13 @@ static int cb_enter_span(MD_SPANTYPE type, void *detail, void *ud) {
             r->cur.underline = 1; r->cur.has_fg = 1; r->cur.fg = link_fg(r->dark);
             break;
         }
-        case MD_SPAN_WIKILINK:
+        case MD_SPAN_WIKILINK: {
+            MD_SPAN_WIKILINK_DETAIL *d = detail;
+            free(r->cur_link);
+            r->cur_link = d->target.size ? strndup(d->target.text, d->target.size) : NULL;
             r->cur.underline = 1; r->cur.has_fg = 1; r->cur.fg = link_fg(r->dark);
             break;
+        }
         default: break;
     }
     return 0;
@@ -399,7 +403,7 @@ static int cb_enter_span(MD_SPANTYPE type, void *detail, void *ud) {
 static int cb_leave_span(MD_SPANTYPE type, void *detail, void *ud) {
     R *r = ud;
     (void)detail;
-    if (type == MD_SPAN_A) { free(r->cur_link); r->cur_link = NULL; }
+    if (type == MD_SPAN_A || type == MD_SPAN_WIKILINK) { free(r->cur_link); r->cur_link = NULL; }
     style_pop(r);
     return 0;
 }
@@ -453,7 +457,7 @@ Doc *render_doc(const char *src, size_t len, int width, int dark) {
     MD_PARSER parser;
     memset(&parser, 0, sizeof parser);
     parser.abi_version = 0;
-    parser.flags = MD_DIALECT_GITHUB | MD_FLAG_PERMISSIVEATXHEADERS;
+    parser.flags = MD_DIALECT_GITHUB | MD_FLAG_PERMISSIVEATXHEADERS | MD_FLAG_WIKILINKS;
     parser.enter_block = cb_enter_block;
     parser.leave_block = cb_leave_block;
     parser.enter_span  = cb_enter_span;
