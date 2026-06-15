@@ -20,8 +20,9 @@ HDRS := $(wildcard $(SRC)/*.h)   # rebuild on any header change
 
 all: glance glance-render
 
-glance: $(SRC)/main.c $(SRC)/tui.c $(SRC)/editor.c $(SRC)/fswatch.c $(CORE) $(HDRS)
-	$(CC) $(CFLAGS) -o $@ $(SRC)/main.c $(SRC)/tui.c $(SRC)/editor.c $(SRC)/fswatch.c $(CORE) $(MD4C_LIBS) $(NC_LIBS)
+GUI := $(SRC)/main.c $(SRC)/tui.c $(SRC)/editor.c $(SRC)/fswatch.c $(SRC)/clipboard.c
+glance: $(GUI) $(CORE) $(HDRS)
+	$(CC) $(CFLAGS) -o $@ $(GUI) $(CORE) $(MD4C_LIBS) $(NC_LIBS)
 
 glance-render: $(SRC)/main_render.c $(CORE) $(HDRS)
 	$(CC) $(CFLAGS) -o $@ $(SRC)/main_render.c $(CORE) $(MD4C_LIBS)
