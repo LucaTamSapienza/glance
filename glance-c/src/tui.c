@@ -57,6 +57,16 @@ static void term_kbd_reset(void) {
     ssize_t w = write(STDOUT_FILENO, seq, strlen(seq));
     (void)w;
 }
+/* Decide dark vs light from the terminal's reported background colour. Falls
+ * back to dark when the terminal doesn't tell us (the common, safe default). */
+static int detect_dark(struct notcurses *nc) {
+    uint32_t bg;
+    if (notcurses_default_background(nc, &bg) != 0) return 1;
+    int r = (bg >> 16) & 0xff, g = (bg >> 8) & 0xff, b = bg & 0xff;
+    int luma = (299 * r + 587 * g + 114 * b) / 1000;   /* perceived brightness */
+    return luma < 128;
+}
+
 /* Tear down notcurses and restore the terminal's keyboard state. */
 static void shutdown_tui(void) {
     if (g_nc) { notcurses_stop(g_nc); g_nc = NULL; }
@@ -474,7 +484,7 @@ int tui_run(const char *src, unsigned long len, const char *title) {
 
     App a;
     memset(&a, 0, sizeof a);
-    a.title = title; a.dark = 1; a.mode = MODE_READER;
+    a.title = title; a.mode = MODE_READER;
     a.src = malloc(len + 1);
     if (!a.src) return 1;
     memcpy(a.src, src, len); a.src[len] = '\0'; a.srclen = len;
@@ -482,6 +492,7 @@ int tui_run(const char *src, unsigned long len, const char *title) {
     a.nc = notcurses_init(&opts, NULL);
     if (!a.nc) { free(a.src); return 1; }
     a.plane = notcurses_stdplane(a.nc);
+    a.dark = detect_dark(a.nc);   /* theme follows the terminal background */
 
     g_nc = a.nc;
     term_kbd_reset();              /* run in legacy keyboard mode (see above) */
