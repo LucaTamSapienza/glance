@@ -40,7 +40,11 @@ static int content_rows(App *a) { return a->rows - 1; }   /* last row = status *
 static struct notcurses *g_nc = NULL;
 
 static void term_kbd_reset(void) {
-    const char *seq = "\033[<u\033[=0u";
+    /* CSI < u : pop kitty keyboard stack;  CSI = 0 u : force all flags off;
+     * CSI > 4 ; 0 m : disable xterm modifyOtherKeys. Together these undo every
+     * enhanced-input mode notcurses may have enabled, so the shell receives
+     * plain keys again. Non-supporting terminals ignore unknown CSI. */
+    const char *seq = "\033[<u\033[=0u\033[>4;0m";
     ssize_t w = write(STDOUT_FILENO, seq, strlen(seq));
     (void)w;
 }
@@ -221,10 +225,13 @@ static void redraw(App *a) {
 
 /* ---- input ---------------------------------------------------------------- */
 
-/* a printable text key (not a synthesized special, no ctrl/alt) */
+/* a printable text key: a real codepoint, not a control char or synthesized
+ * special, and not a Ctrl-chord (those are commands). Alt/Option and Shift are
+ * allowed on purpose — on a macOS layout Option composes characters (e.g. an
+ * Italian keyboard types '#' as Option+3), so rejecting Alt drops them. */
 static int is_text_key(uint32_t id, const ncinput *ni) {
+    if (ncinput_ctrl_p(ni)) return 0;
     if (id < 0x20 || id == 0x7f || id > 0x10FFFF) return 0;
-    if (ncinput_ctrl_p(ni) || ncinput_alt_p(ni)) return 0;
     return 1;
 }
 
@@ -258,7 +265,8 @@ static int handle_insert(App *a, uint32_t id, const ncinput *ni) {
     else if (id == NCKEY_HOME)  editor_home(e);
     else if (id == NCKEY_END)   editor_end(e);
     else if (id == NCKEY_TAB || id == '\t') editor_insert(e, "    ", 4);
-    else if (is_text_key(id, ni)) editor_insert(e, ni->utf8, strlen(ni->utf8));
+    else if (is_text_key(id, ni) && ni->utf8[0])
+        editor_insert(e, ni->utf8, strlen(ni->utf8));
     return 1;
 }
 
@@ -304,6 +312,11 @@ int tui_run(const char *src, unsigned long len, const char *title) {
         else                       running = handle_insert(&a, id, &ni);
         if (running) redraw(&a);
     }
+
+    /* drain anything the terminal already queued so leftover bytes don't spill
+     * onto the shell prompt after we exit */
+    ncinput drain; uint32_t d;
+    while ((d = notcurses_get_nblock(a.nc, &drain)) != 0 && d != (uint32_t)-1) { }
 
     if (a.mode == MODE_INSERT) editor_free(&a.ed);
     doc_free(a.doc);
