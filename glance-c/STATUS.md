@@ -51,8 +51,12 @@ later needs no ANSI strip/re-inject.
    underline spans, links, ordered/unordered/nested lists, blockquotes, fenced
    code blocks, tables, thematic breaks, word-wrap. ASan/UBSan-clean.
 2. **Reader TUI (DONE)** — notcurses alt-screen, scrollable view, status bar,
-   resize re-render. Keys: q/Esc quit, j/k + arrows, Ctrl-D/U half-page,
-   PgUp/PgDn + Ctrl-F/B page, g/Home top, G/End bottom.
+   resize re-render. **Block cursor** (white rectangle) moved with hjkl/arrows,
+   Ctrl-D/U half-page, PgUp/PgDn + Ctrl-F/B page, g/Home top, G/End bottom; the
+   view scrolls to keep it visible. **vi-style quit: `:q`** (also `:quit`/`:q!`);
+   Ctrl-C is an escape hatch. The Reader cursor and the editor cursor sync
+   across mode switches *proportionally* (see source-map note — md4c gives no
+   offsets, so it's not yet an exact 1:1 line map).
 3. **Editor + Insert mode (DONE)** — line-array buffer, rune-aware cursor,
    horizontal + vertical scroll, hardware cursor. **vi-style: `i` enters
    Insert**, Esc returns to Reader and re-renders the edited text. Editing:

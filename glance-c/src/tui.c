@@ -27,10 +27,15 @@ typedef struct {
     const char *title;
     Doc   *doc;
     int    top;                  /* Reader: first visible doc line */
+    int    rcur_line, rcur_col;  /* Reader: block-cursor position (doc coords) */
+    int    rcur_goal;            /* desired column for vertical cursor moves */
     int    rows, cols;
     int    dark;
     int    mode;
     Editor ed;
+    int    cmdmode;              /* vi command line (':') active */
+    char   cmdbuf[64];
+    int    cmdlen;
 } App;
 
 static int content_rows(App *a) { return a->rows - 1; }   /* last row = status */
@@ -102,9 +107,61 @@ static void clamp_top(App *a) {
     if (a->top < 0) a->top = 0;
 }
 
+/* keep the Reader cursor in range of the document and its line width */
+static void reader_clamp_cursor(App *a) {
+    if (a->doc->nline == 0) { a->rcur_line = a->rcur_col = 0; return; }
+    if (a->rcur_line < 0) a->rcur_line = 0;
+    if (a->rcur_line >= (int)a->doc->nline) a->rcur_line = (int)a->doc->nline - 1;
+    int w = a->doc->lines[a->rcur_line].cols;
+    if (a->rcur_col < 0) a->rcur_col = 0;
+    if (a->rcur_col > w) a->rcur_col = w;
+}
+
+/* scroll the viewport so the Reader cursor line stays visible */
+static void reader_scroll(App *a) {
+    int body = content_rows(a);
+    if (a->rcur_line < a->top) a->top = a->rcur_line;
+    if (a->rcur_line >= a->top + body) a->top = a->rcur_line - body + 1;
+    clamp_top(a);
+}
+
+/* draw a white block cursor over the cell at screen (y,x), keeping its glyph */
+static void draw_block_cursor(App *a, int y, int x) {
+    struct ncplane *p = a->plane;
+    uint16_t sm; uint64_t ch;
+    char *egc = ncplane_at_yx(p, y, x, &sm, &ch);
+    ncplane_set_styles(p, NCSTYLE_NONE);
+    ncplane_set_fg_rgb8(p, 0, 0, 0);
+    ncplane_set_bg_rgb8(p, 255, 255, 255);
+    ncplane_putstr_yx(p, y, x, (egc && egc[0] && egc[0] != ' ') ? egc : " ");
+    free(egc);
+}
+
+/* draw the bottom line: the ':' command line when active, else the status */
+static void reader_bottom(App *a) {
+    if (a->cmdmode) {
+        struct ncplane *p = a->plane;
+        ncplane_set_styles(p, NCSTYLE_NONE);
+        ncplane_set_fg_default(p);
+        ncplane_set_bg_default(p);
+        for (int x = 0; x < a->cols; x++) ncplane_putchar_yx(p, a->rows - 1, x, ' ');
+        char cmd[80];
+        snprintf(cmd, sizeof cmd, ":%s", a->cmdbuf);
+        ncplane_putstr_yx(p, a->rows - 1, 0, cmd);
+        return;
+    }
+    int total = (int)a->doc->nline;
+    char status[320];
+    snprintf(status, sizeof status,
+             " READER  %s  —  Ln %d/%d, Col %d   i insert   :q quit   hjkl move",
+             a->title ? a->title : "", a->rcur_line + 1, total, a->rcur_col + 1);
+    status_bar(a, status);
+}
+
 static void draw_reader(App *a) {
     struct ncplane *p = a->plane;
     notcurses_cursor_disable(a->nc);
+    reader_scroll(a);
     ncplane_erase(p);
 
     int body = content_rows(a);
@@ -127,14 +184,14 @@ static void draw_reader(App *a) {
         }
     }
 
-    int total = (int)a->doc->nline;
-    int shown_end = a->top + body; if (shown_end > total) shown_end = total;
-    int pct = total > 0 ? (shown_end * 100) / total : 100;
-    char status[320];
-    snprintf(status, sizeof status,
-             " READER  %s  —  %d/%d (%d%%)   i insert   q quit   j/k scroll   g/G top/bottom",
-             a->title ? a->title : "", total ? a->top + 1 : 0, total, pct);
-    status_bar(a, status);
+    /* block cursor (only when not typing a command) */
+    if (!a->cmdmode) {
+        int cy = a->rcur_line - a->top;
+        if (cy >= 0 && cy < body && a->rcur_col < a->cols)
+            draw_block_cursor(a, cy, a->rcur_col);
+    }
+
+    reader_bottom(a);
     notcurses_render(a->nc);
 }
 
@@ -205,17 +262,40 @@ static int rerender(App *a) {
     return 0;
 }
 
+/* Map a line index between the rendered Doc and the source proportionally.
+ * md4c exposes no source offsets, so an exact rendered<->source line map isn't
+ * available yet; this keeps the cursor roughly in place across mode switches
+ * (the same approach the Go app uses). from in [0,nfrom), result in [0,nto). */
+static int map_line(int from, int nfrom, int nto) {
+    if (nfrom <= 1 || nto <= 1) return 0;
+    int r = (from * (nto - 1)) / (nfrom - 1);
+    if (r < 0) r = 0;
+    if (r >= nto) r = nto - 1;
+    return r;
+}
+
 static void enter_insert(App *a) {
     editor_init(&a->ed, a->src, a->srclen);
+    int sl = map_line(a->rcur_line, (int)a->doc->nline, (int)a->ed.n);
+    a->ed.cy = sl;
+    ELine *L = &a->ed.lines[sl];
+    a->ed.cx = (int)ed_col_to_byte(L->b ? L->b : "", L->len, a->rcur_col);
+    a->ed.goal_col = -1;
     a->mode = MODE_INSERT;
 }
 
 static void leave_insert(App *a) {
+    int src_cy = a->ed.cy, src_n = (int)a->ed.n;
+    int rcol = editor_cursor_col(&a->ed);
     size_t nlen; char *ns = editor_source(&a->ed, &nlen);
     if (ns) { free(a->src); a->src = ns; a->srclen = nlen; }
     editor_free(&a->ed);
     a->mode = MODE_READER;
     rerender(a);
+    a->rcur_line = map_line(src_cy, src_n, (int)a->doc->nline);
+    a->rcur_col = rcol;
+    a->rcur_goal = rcol;
+    reader_clamp_cursor(a);
 }
 
 static void redraw(App *a) {
@@ -260,20 +340,53 @@ static int try_insert_text(Editor *e, const ncinput *ni) {
     return 1;
 }
 
+/* execute a typed ':' command. Returns 0 to quit, 1 to keep running. */
+static int run_command(App *a) {
+    const char *c = a->cmdbuf;
+    a->cmdmode = 0;
+    if (!strcmp(c, "q") || !strcmp(c, "q!") || !strcmp(c, "quit")) return 0;
+    /* :w / :wq save — deferred to slice 5; for now no-op, keep running */
+    a->cmdbuf[0] = '\0'; a->cmdlen = 0;
+    return 1;
+}
+
+static int handle_command(App *a, uint32_t id, const ncinput *ni) {
+    if (id == NCKEY_ESC) { a->cmdmode = 0; a->cmdbuf[0] = '\0'; a->cmdlen = 0; return 1; }
+    if (id == NCKEY_ENTER || id == '\r' || id == '\n') return run_command(a);
+    if (id == NCKEY_BACKSPACE || id == 0x08 || id == 0x7f) {
+        if (a->cmdlen > 0) a->cmdbuf[--a->cmdlen] = '\0';
+        else a->cmdmode = 0;            /* backspace past ':' exits command mode */
+        return 1;
+    }
+    /* command text is ASCII (q, w, ...); take the effective codepoint */
+    uint32_t cp = ni->eff_text[0] ? ni->eff_text[0] : id;
+    if (!ncinput_ctrl_p(ni) && cp >= 0x20 && cp < 0x7f &&
+        a->cmdlen < (int)sizeof(a->cmdbuf) - 1) {
+        a->cmdbuf[a->cmdlen++] = (char)cp;
+        a->cmdbuf[a->cmdlen] = '\0';
+    }
+    return 1;
+}
+
 static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     int body = content_rows(a);
-    if (id == 'q' || id == NCKEY_ESC)            return 0;   /* quit */
+    if (id == 'c' && ncinput_ctrl_p(ni))         return 0;   /* escape hatch */
+    else if (id == ':')                          { a->cmdmode = 1; a->cmdbuf[0] = '\0'; a->cmdlen = 0; }
     else if (id == 'i')                          enter_insert(a);  /* vi-style */
     /* 'e' is reserved for Split view (slice 4) */
-    else if (id == 'j' || id == NCKEY_DOWN)      a->top++;
-    else if (id == 'k' || id == NCKEY_UP)        a->top--;
-    else if (id == NCKEY_PGDOWN || (id == 'f' && ncinput_ctrl_p(ni))) a->top += body;
-    else if (id == NCKEY_PGUP   || (id == 'b' && ncinput_ctrl_p(ni))) a->top -= body;
-    else if (id == 'd' && ncinput_ctrl_p(ni))    a->top += body / 2;
-    else if (id == 'u' && ncinput_ctrl_p(ni))    a->top -= body / 2;
-    else if (id == 'g' || id == NCKEY_HOME)      a->top = 0;
-    else if (id == 'G' || id == NCKEY_END)       a->top = (int)a->doc->nline;
-    clamp_top(a);
+    else if (id == 'j' || id == NCKEY_DOWN)      { a->rcur_line++; a->rcur_col = a->rcur_goal; }
+    else if (id == 'k' || id == NCKEY_UP)        { a->rcur_line--; a->rcur_col = a->rcur_goal; }
+    else if (id == 'h' || id == NCKEY_LEFT)      { a->rcur_col--; a->rcur_goal = a->rcur_col; }
+    else if (id == 'l' || id == NCKEY_RIGHT)     { a->rcur_col++; a->rcur_goal = a->rcur_col; }
+    else if (id == NCKEY_PGDOWN || (id == 'f' && ncinput_ctrl_p(ni))) { a->rcur_line += body; a->rcur_col = a->rcur_goal; }
+    else if (id == NCKEY_PGUP   || (id == 'b' && ncinput_ctrl_p(ni))) { a->rcur_line -= body; a->rcur_col = a->rcur_goal; }
+    else if (id == 'd' && ncinput_ctrl_p(ni))    { a->rcur_line += body / 2; a->rcur_col = a->rcur_goal; }
+    else if (id == 'u' && ncinput_ctrl_p(ni))    { a->rcur_line -= body / 2; a->rcur_col = a->rcur_goal; }
+    else if (id == 'g' || id == NCKEY_HOME)      a->rcur_line = 0;
+    else if (id == 'G' || id == NCKEY_END)       a->rcur_line = (int)a->doc->nline - 1;
+    reader_clamp_cursor(a);
+    if (id == 'h' || id == 'l' || id == NCKEY_LEFT || id == NCKEY_RIGHT)
+        a->rcur_goal = a->rcur_col;     /* horizontal move resets the goal col */
     return 1;
 }
 
@@ -392,7 +505,8 @@ int tui_run(const char *src, unsigned long len, const char *title) {
             redraw(&a);
             continue;
         }
-        if (a.mode == MODE_READER) running = handle_reader(&a, id, &ni);
+        if (a.cmdmode)             running = handle_command(&a, id, &ni);
+        else if (a.mode == MODE_READER) running = handle_reader(&a, id, &ni);
         else                       running = handle_insert(&a, id, &ni);
         if (running) redraw(&a);
     }
