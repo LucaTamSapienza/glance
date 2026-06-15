@@ -13,6 +13,7 @@
 #include "search.h"
 #include "toc.h"
 #include "fs_save.h"
+#include "fswatch.h"
 #include "util.h"
 
 #include <notcurses/notcurses.h>
@@ -20,6 +21,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include <poll.h>
 #include <unistd.h>
 
 enum { MODE_READER, MODE_INSERT, MODE_SPLIT };
@@ -795,8 +797,47 @@ int tui_keyprobe(void) {
     return 0;
 }
 
-/* Bring up notcurses, then loop: read a key, dispatch by mode, redraw. See
- * tui.h. Owns a mutable copy of the source that the editor syncs back into. */
+/* Handle one input event; returns 0 to quit, 1 to keep running. */
+static int dispatch_key(App *a, uint32_t id, ncinput *ni) {
+    if (ni->evtype == NCTYPE_RELEASE) return 1;
+    a->msg[0] = '\0';                            /* clear the transient message */
+    if (a->helpmode) { a->helpmode = 0; return 1; }   /* any key closes help */
+    if (id == NCKEY_RESIZE) {
+        if (a->mode == MODE_READER) rerender(a);
+        else update_dims(a);
+        return 1;
+    }
+    if (a->cmdmode)    return handle_command(a, id, ni);
+    if (a->searchmode) return handle_search(a, id, ni);
+    if (a->tocmode)    return handle_toc(a, id, ni);
+    if (a->mode == MODE_READER) return handle_reader(a, id, ni);
+    if (a->mode == MODE_SPLIT)  return handle_split(a, id, ni);
+    return handle_insert(a, id, ni);
+}
+
+/* Re-read the file after an external change. Reloads only in Reader mode with
+ * no unsaved edits; identical content (e.g. our own save) is ignored silently. */
+static void reload_file(App *a) {
+    if (!a->path) return;
+    FILE *f = fopen(a->path, "rb");
+    if (!f) return;
+    size_t nlen; char *ns = read_file(f, &nlen);
+    fclose(f);
+    if (!ns) return;
+    if (nlen == a->srclen && memcmp(ns, a->src, nlen) == 0) { free(ns); return; }
+    if (a->dirty || a->mode != MODE_READER) {
+        snprintf(a->msg, sizeof a->msg, "file changed on disk — unsaved edits kept");
+        free(ns);
+        return;
+    }
+    free(a->src); a->src = ns; a->srclen = nlen;
+    rerender(a);
+    reader_clamp_cursor(a);
+    snprintf(a->msg, sizeof a->msg, "reloaded from disk");
+}
+
+/* Bring up notcurses, then loop: wait for terminal input or a file change,
+ * dispatch, redraw. See tui.h. Owns a mutable copy of the source. */
 int tui_run(const char *src, unsigned long len, const char *path, const char *title) {
     term_kbd_reset();   /* normalize before notcurses probes (slice-2 fix) */
 
@@ -823,27 +864,39 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
     if (rerender(&a) != 0) { shutdown_tui(); free(a.src); return 1; }
     redraw(&a);
 
-    ncinput ni;
-    uint32_t id;
+    /* Watch the file for external edits, and poll it alongside terminal input.
+     * notcurses_inputready_fd lets us wait on both at once. */
+    Watch watch; watch.kq = watch.dir = -1;
+    int wfd = watch_open(&watch, path);
+    int infd = notcurses_inputready_fd(a.nc);
+
     int running = 1;
-    while (running && (id = notcurses_get_blocking(a.nc, &ni)) != (uint32_t)-1) {
-        if (ni.evtype == NCTYPE_RELEASE) continue;
-        a.msg[0] = '\0';                 /* clear the previous transient message */
-        if (a.helpmode) { a.helpmode = 0; redraw(&a); continue; }   /* any key closes help */
-        if (id == NCKEY_RESIZE) {
-            if (a.mode == MODE_READER) rerender(&a);
-            else update_dims(&a);
-            redraw(&a);
+    ncinput ni; uint32_t id;
+    while (running) {
+        if (infd < 0) {                          /* no pollable fd: just block */
+            id = notcurses_get_blocking(a.nc, &ni);
+            if (id == (uint32_t)-1) break;
+            running = dispatch_key(&a, id, &ni);
+            if (running) redraw(&a);
             continue;
         }
-        if (a.cmdmode)             running = handle_command(&a, id, &ni);
-        else if (a.searchmode)     running = handle_search(&a, id, &ni);
-        else if (a.tocmode)        running = handle_toc(&a, id, &ni);
-        else if (a.mode == MODE_READER) running = handle_reader(&a, id, &ni);
-        else if (a.mode == MODE_SPLIT)  running = handle_split(&a, id, &ni);
-        else                       running = handle_insert(&a, id, &ni);
+        struct pollfd fds[2];
+        fds[0].fd = infd; fds[0].events = POLLIN; fds[0].revents = 0;
+        int nfds = 1;
+        if (wfd >= 0) { fds[1].fd = wfd; fds[1].events = POLLIN; fds[1].revents = 0; nfds = 2; }
+        if (poll(fds, nfds, -1) < 0) { if (errno == EINTR) continue; break; }
+        if (nfds == 2 && (fds[1].revents & POLLIN)) {
+            watch_drain(&watch); reload_file(&a); redraw(&a);
+        }
+        if (!(fds[0].revents & POLLIN)) continue;
+        /* drain all available key events, then redraw once */
+        while ((id = notcurses_get_nblock(a.nc, &ni)) != 0 && id != (uint32_t)-1) {
+            running = dispatch_key(&a, id, &ni);
+            if (!running) break;
+        }
         if (running) redraw(&a);
     }
+    watch_close(&watch);
 
     /* drain anything the terminal already queued so leftover bytes don't spill
      * onto the shell prompt after we exit */
