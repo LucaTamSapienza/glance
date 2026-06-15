@@ -10,12 +10,12 @@
 #include "tui.h"
 #include "render.h"
 #include "editor.h"
+#include "util.h"
 
 #include <notcurses/notcurses.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <signal.h>
 #include <unistd.h>
 
 enum { MODE_READER, MODE_INSERT };
@@ -57,6 +57,7 @@ static void term_kbd_reset(void) {
     ssize_t w = write(STDOUT_FILENO, seq, strlen(seq));
     (void)w;
 }
+/* Tear down notcurses and restore the terminal's keyboard state. */
 static void shutdown_tui(void) {
     if (g_nc) { notcurses_stop(g_nc); g_nc = NULL; }
     term_kbd_reset();
@@ -64,13 +65,7 @@ static void shutdown_tui(void) {
 
 /* ---- shared helpers ------------------------------------------------------- */
 
-static int run_cols(const Run *r) {
-    int w = 0;
-    for (size_t k = 0; k < r->len; k++)
-        if (((unsigned char)r->text[k] & 0xC0) != 0x80) w++;
-    return w;
-}
-
+/* Apply a Style to plane p: emphasis flags plus fg/bg (default when unset). */
 static void apply_style(struct ncplane *p, const Style *st) {
     unsigned s = 0;
     if (st->bold)      s |= NCSTYLE_BOLD;
@@ -84,6 +79,7 @@ static void apply_style(struct ncplane *p, const Style *st) {
     else            ncplane_set_bg_default(p);
 }
 
+/* Draw `text` on the bottom row as a highlighted status bar. */
 static void status_bar(App *a, const char *text) {
     struct ncplane *p = a->plane;
     ncplane_set_styles(p, NCSTYLE_BOLD);
@@ -99,6 +95,7 @@ static void status_bar(App *a, const char *text) {
 
 /* ---- Reader mode ---------------------------------------------------------- */
 
+/* Keep the scroll offset within [0, last full page]. */
 static void clamp_top(App *a) {
     int max = (int)a->doc->nline - content_rows(a);
     if (max < 0) max = 0;
@@ -157,6 +154,7 @@ static void reader_bottom(App *a) {
     status_bar(a, status);
 }
 
+/* Render the visible Doc lines, overlay the block cursor, and the status. */
 static void draw_reader(App *a) {
     struct ncplane *p = a->plane;
     notcurses_cursor_disable(a->nc);
@@ -179,7 +177,7 @@ static void draw_reader(App *a) {
         for (size_t j = 0; j < L->nrun && x < a->cols; j++) {
             apply_style(p, &L->runs[j].st);
             ncplane_putstr_yx(p, row, x, L->runs[j].text);
-            x += run_cols(&L->runs[j]);
+            x += u8_width(L->runs[j].text, L->runs[j].len);
         }
     }
 
@@ -209,6 +207,8 @@ static void editor_scroll(App *a) {
     if (e->xoff < 0) e->xoff = 0;
 }
 
+/* Render the editor's visible lines (clipped to the h-scroll window) and place
+ * the hardware cursor. */
 static void draw_editor(App *a) {
     struct ncplane *p = a->plane;
     Editor *e = &a->ed;
@@ -246,12 +246,14 @@ static void draw_editor(App *a) {
 
 /* ---- mode transitions ----------------------------------------------------- */
 
+/* Refresh the cached terminal size from the plane. */
 static void update_dims(App *a) {
     unsigned r, c;
     ncplane_dim_yx(a->plane, &r, &c);
     a->rows = (int)r; a->cols = (int)c;
 }
 
+/* Re-render the document at the current width (after edits or a resize). */
 static int rerender(App *a) {
     update_dims(a);
     if (a->doc) doc_free(a->doc);
@@ -273,6 +275,7 @@ static int map_line(int from, int nfrom, int nto) {
     return r;
 }
 
+/* Switch Reader -> Insert, seeding the editor cursor from the Reader cursor. */
 static void enter_insert(App *a) {
     editor_init(&a->ed, a->src, a->srclen);
     int sl = map_line(a->rcur_line, (int)a->doc->nline, (int)a->ed.n);
@@ -283,6 +286,8 @@ static void enter_insert(App *a) {
     a->mode = MODE_INSERT;
 }
 
+/* Switch Insert -> Reader: sync the buffer into the source, re-render, and map
+ * the editor cursor back onto the rendered view. */
 static void leave_insert(App *a) {
     int src_cy = a->ed.cy, src_n = (int)a->ed.n;
     int rcol = editor_cursor_col(&a->ed);
@@ -297,6 +302,7 @@ static void leave_insert(App *a) {
     reader_clamp_cursor(a);
 }
 
+/* Draw whichever mode is active. */
 static void redraw(App *a) {
     if (a->mode == MODE_READER) draw_reader(a);
     else                        draw_editor(a);
@@ -304,22 +310,11 @@ static void redraw(App *a) {
 
 /* ---- input ---------------------------------------------------------------- */
 
-/* encode one Unicode codepoint as UTF-8; returns the byte count (1..4) */
-static int cp_to_utf8(uint32_t cp, char *o) {
-    if (cp < 0x80)    { o[0] = (char)cp; return 1; }
-    if (cp < 0x800)   { o[0] = 0xC0 | (cp >> 6);  o[1] = 0x80 | (cp & 0x3F); return 2; }
-    if (cp < 0x10000) { o[0] = 0xE0 | (cp >> 12); o[1] = 0x80 | ((cp >> 6) & 0x3F);
-                        o[2] = 0x80 | (cp & 0x3F); return 3; }
-    o[0] = 0xF0 | (cp >> 18); o[1] = 0x80 | ((cp >> 12) & 0x3F);
-    o[2] = 0x80 | ((cp >> 6) & 0x3F); o[3] = 0x80 | (cp & 0x3F); return 4;
-}
-
-/* Insert the key's *effective* text — the character the user actually meant,
- * with layout/modifier composition applied. The kitty keyboard protocol reports
- * the physical key in id/utf8 (e.g. '3' for Option+3, '+' for Shift+'+') and the
- * composed result in eff_text (e.g. '#', '*'), so eff_text is the right source.
- * Falls back to utf8 when eff_text is empty. Ctrl-chords are commands, not text.
- * Returns 1 if something was inserted. */
+/* Insert the key's effective text — the character the user actually meant,
+ * with layout/modifier composition applied. notcurses reports the physical key
+ * in id/utf8 and the composed result in eff_text (e.g. '#' for Option+à on an
+ * Italian layout), so eff_text is the preferred source; fall back to utf8 when
+ * it is empty. Ctrl-chords are commands, not text. Returns 1 if it inserted. */
 static int try_insert_text(Editor *e, const ncinput *ni) {
     if (ncinput_ctrl_p(ni)) return 0;
     char buf[NCINPUT_MAX_EFF_TEXT_CODEPOINTS * 4];
@@ -327,7 +322,7 @@ static int try_insert_text(Editor *e, const ncinput *ni) {
     for (int i = 0; i < NCINPUT_MAX_EFF_TEXT_CODEPOINTS && ni->eff_text[i]; i++) {
         uint32_t cp = ni->eff_text[i];
         if (cp < 0x20 || cp == 0x7f || cp > 0x10FFFF) continue;
-        len += cp_to_utf8(cp, buf + len);
+        len += u8_encode(cp, buf + len);
     }
     if (len == 0 && ni->utf8[0] && (unsigned char)ni->utf8[0] >= 0x20 &&
         (unsigned char)ni->utf8[0] != 0x7f && ni->id <= 0x10FFFF) {
@@ -349,6 +344,7 @@ static int run_command(App *a) {
     return 1;
 }
 
+/* Edit the ':' command line: type, backspace, Enter to run, Esc to cancel. */
 static int handle_command(App *a, uint32_t id, const ncinput *ni) {
     if (id == NCKEY_ESC) { a->cmdmode = 0; a->cmdbuf[0] = '\0'; a->cmdlen = 0; return 1; }
     if (id == NCKEY_ENTER || id == '\r' || id == '\n') return run_command(a);
@@ -367,6 +363,7 @@ static int handle_command(App *a, uint32_t id, const ncinput *ni) {
     return 1;
 }
 
+/* Reader-mode keys: move the block cursor, enter Insert/command mode, quit. */
 static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     int body = content_rows(a);
     if (id == 'c' && ncinput_ctrl_p(ni))         return 0;   /* escape hatch */
@@ -389,6 +386,7 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     return 1;
 }
 
+/* Insert-mode keys: editing commands, cursor motion, and text entry. */
 static int handle_insert(App *a, uint32_t id, const ncinput *ni) {
     Editor *e = &a->ed;
     if (id == NCKEY_ESC) { leave_insert(a); return 1; }
@@ -406,6 +404,7 @@ static int handle_insert(App *a, uint32_t id, const ncinput *ni) {
     return 1;
 }
 
+/* Diagnostic loop printing each key's raw fields; see tui.h. */
 int tui_keyprobe(void) {
     term_kbd_reset();
     notcurses_options opts;
@@ -464,6 +463,8 @@ int tui_keyprobe(void) {
     return 0;
 }
 
+/* Bring up notcurses, then loop: read a key, dispatch by mode, redraw. See
+ * tui.h. Owns a mutable copy of the source that the editor syncs back into. */
 int tui_run(const char *src, unsigned long len, const char *title) {
     term_kbd_reset();   /* normalize before notcurses probes (slice-2 fix) */
 

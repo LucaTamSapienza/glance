@@ -7,31 +7,14 @@
  *     -l        light theme (default: dark)
  */
 #include "render.h"
+#include "util.h"
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
 
-static char *read_all(FILE *f, size_t *out_len) {
-    size_t cap = 1 << 16, len = 0;
-    char *buf = malloc(cap);
-    if (!buf) return NULL;
-    size_t n;
-    while ((n = fread(buf + len, 1, cap - len, f)) > 0) {
-        len += n;
-        if (len == cap) {
-            cap *= 2;
-            char *p = realloc(buf, cap);
-            if (!p) { free(buf); return NULL; }
-            buf = p;
-        }
-    }
-    *out_len = len;
-    return buf;
-}
-
+/* Width of the controlling terminal, or 80 when it can't be determined. */
 static int term_width(void) {
     struct winsize ws;
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
@@ -39,6 +22,7 @@ static int term_width(void) {
     return 80;
 }
 
+/* Parse flags, render the input Markdown, and print the ANSI to stdout. */
 int main(int argc, char **argv) {
     int width = 0, dark = 1, opt;
     while ((opt = getopt(argc, argv, "w:l")) != -1) {
@@ -59,7 +43,7 @@ int main(int argc, char **argv) {
     }
 
     size_t len = 0;
-    char *src = read_all(f, &len);
+    char *src = read_file(f, &len);
     if (f != stdin) fclose(f);
     if (!src) { fprintf(stderr, "read failed\n"); return 1; }
 

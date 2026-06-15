@@ -1,47 +1,33 @@
 /* editor.c — line-array text buffer with a rune-aware cursor.
  *
  * Pure model: split source into lines, edit them, serialize back. No terminal
- * dependency. Display width is approximated as one column per rune (matching
- * the renderer for now); the column<->byte helpers are the single place that
- * assumption lives, so swapping in real wide-char widths later is localized.
+ * dependency, which makes it unit-testable on its own. Display width comes from
+ * util.h's u8_* helpers, so the editor and renderer agree on column counting.
  */
 #include "editor.h"
+#include "util.h"
 
 #include <stdlib.h>
 #include <string.h>
 
-/* ---- UTF-8 helpers -------------------------------------------------------- */
+/* ---- column <-> byte conversion ------------------------------------------ */
 
-static int is_cont(unsigned char c) { return (c & 0xC0) == 0x80; }
-
-/* byte length of the UTF-8 sequence whose lead byte is c */
-static int rune_len(unsigned char c) {
-    if (c < 0x80) return 1;
-    if ((c & 0xE0) == 0xC0) return 2;
-    if ((c & 0xF0) == 0xE0) return 3;
-    if ((c & 0xF8) == 0xF0) return 4;
-    return 1;  /* invalid lead byte: treat as 1 */
-}
-
+/* Display column of the byte offset `byte` within line b. */
 int ed_byte_to_col(const char *b, size_t byte) {
-    int col = 0;
-    for (size_t i = 0; i < byte; i++)
-        if (!is_cont((unsigned char)b[i])) col++;
-    return col;
+    return u8_width(b, byte);
 }
 
+/* Byte offset of display column `col` within the `len`-byte line b. */
 size_t ed_col_to_byte(const char *b, size_t len, int col) {
     size_t i = 0;
-    int c = 0;
-    while (i < len && c < col) {
-        i += rune_len((unsigned char)b[i]);
-        c++;
-    }
+    for (int c = 0; i < len && c < col; c++)
+        i += u8_runelen((unsigned char)b[i]);
     return i > len ? len : i;
 }
 
 /* ---- line primitives ------------------------------------------------------ */
 
+/* Ensure line L can hold `need` more bytes (plus a trailing NUL). */
 static void el_reserve(ELine *L, size_t need) {
     if (L->len + need + 1 <= L->cap) return;
     size_t cap = L->cap ? L->cap : 16;
@@ -51,6 +37,7 @@ static void el_reserve(ELine *L, size_t need) {
     L->b = p; L->cap = cap;
 }
 
+/* Replace L's contents with the n bytes at s. */
 static void el_set(ELine *L, const char *s, size_t n) {
     el_reserve(L, n);
     if (!L->b) return;
@@ -58,6 +45,7 @@ static void el_set(ELine *L, const char *s, size_t n) {
     L->len = n; L->b[n] = '\0';
 }
 
+/* Insert n bytes from s at byte offset pos within L. */
 static void el_insert(ELine *L, size_t pos, const char *s, size_t n) {
     el_reserve(L, n);
     if (!L->b) return;
@@ -66,6 +54,7 @@ static void el_insert(ELine *L, size_t pos, const char *s, size_t n) {
     L->len += n; L->b[L->len] = '\0';
 }
 
+/* Remove n bytes at byte offset pos within L (clamped to the line end). */
 static void el_erase(ELine *L, size_t pos, size_t n) {
     if (pos + n > L->len) n = L->len - pos;
     memmove(L->b + pos, L->b + pos + n, L->len - pos - n);
@@ -75,6 +64,7 @@ static void el_erase(ELine *L, size_t pos, size_t n) {
 
 /* ---- line-array primitives ------------------------------------------------ */
 
+/* Ensure the line array can hold `need` more lines. */
 static void lines_reserve(Editor *e, size_t need) {
     if (e->n + need <= e->cap) return;
     size_t cap = e->cap ? e->cap : 32;
@@ -84,7 +74,7 @@ static void lines_reserve(Editor *e, size_t need) {
     e->lines = p; e->cap = cap;
 }
 
-/* insert a fresh empty line at index idx */
+/* Insert a fresh empty line at index idx and return it. */
 static ELine *lines_insert(Editor *e, size_t idx) {
     lines_reserve(e, 1);
     memmove(&e->lines[idx + 1], &e->lines[idx], (e->n - idx) * sizeof(ELine));
@@ -93,6 +83,7 @@ static ELine *lines_insert(Editor *e, size_t idx) {
     return &e->lines[idx];
 }
 
+/* Free and remove the line at idx, closing the gap. */
 static void lines_remove(Editor *e, size_t idx) {
     free(e->lines[idx].b);
     memmove(&e->lines[idx], &e->lines[idx + 1], (e->n - idx - 1) * sizeof(ELine));
@@ -101,6 +92,7 @@ static void lines_remove(Editor *e, size_t idx) {
 
 /* ---- init / teardown / serialize ----------------------------------------- */
 
+/* Split src into lines (on '\n'); the cursor starts at the top-left. */
 void editor_init(Editor *e, const char *src, size_t len) {
     memset(e, 0, sizeof *e);
     e->goal_col = -1;
@@ -116,12 +108,14 @@ void editor_init(Editor *e, const char *src, size_t len) {
     if (e->n == 0) lines_insert(e, 0);   /* always at least one line */
 }
 
+/* Release the buffer and reset it to an empty state. */
 void editor_free(Editor *e) {
     for (size_t i = 0; i < e->n; i++) free(e->lines[i].b);
     free(e->lines);
     memset(e, 0, sizeof *e);
 }
 
+/* Join the lines with '\n' (no trailing newline) into an owned string. */
 char *editor_source(const Editor *e, size_t *out_len) {
     size_t total = 0;
     for (size_t i = 0; i < e->n; i++) total += e->lines[i].len + 1; /* + '\n' */
@@ -140,8 +134,10 @@ char *editor_source(const Editor *e, size_t *out_len) {
 
 /* ---- editing -------------------------------------------------------------- */
 
+/* The line the cursor is on. */
 static ELine *cur(Editor *e) { return &e->lines[e->cy]; }
 
+/* Insert n bytes (no '\n') at the cursor and advance past them. */
 void editor_insert(Editor *e, const char *s, size_t n) {
     el_insert(cur(e), e->cx, s, n);
     e->cx += n;
@@ -149,6 +145,7 @@ void editor_insert(Editor *e, const char *s, size_t n) {
     e->goal_col = -1;
 }
 
+/* Split the current line at the cursor, moving the tail to a new line below. */
 void editor_newline(Editor *e) {
     ELine *L = cur(e);
     size_t tail_len = L->len - e->cx;
@@ -164,11 +161,12 @@ void editor_newline(Editor *e) {
     e->goal_col = -1;
 }
 
+/* Delete the rune before the cursor, or join with the previous line at col 0. */
 void editor_backspace(Editor *e) {
     if (e->cx > 0) {
         ELine *L = cur(e);
         size_t prev = e->cx - 1;
-        while (prev > 0 && is_cont((unsigned char)L->b[prev])) prev--;
+        while (prev > 0 && u8_cont((unsigned char)L->b[prev])) prev--;
         el_erase(L, prev, e->cx - prev);
         e->cx = prev;
     } else if (e->cy > 0) {
@@ -185,11 +183,12 @@ void editor_backspace(Editor *e) {
     e->goal_col = -1;
 }
 
+/* Delete the rune at the cursor, or pull up the next line at end of line. */
 void editor_delete(Editor *e) {
     ELine *L = cur(e);
     if ((size_t)e->cx < L->len) {
         size_t next = e->cx + 1;
-        while (next < L->len && is_cont((unsigned char)L->b[next])) next++;
+        while (next < L->len && u8_cont((unsigned char)L->b[next])) next++;
         el_erase(L, e->cx, next - e->cx);
     } else if ((size_t)e->cy + 1 < e->n) {
         ELine *nl = &e->lines[e->cy + 1];
@@ -204,15 +203,17 @@ void editor_delete(Editor *e) {
 
 /* ---- movement ------------------------------------------------------------- */
 
+/* Display column of the cursor within its line. */
 int editor_cursor_col(const Editor *e) {
     return ed_byte_to_col(e->lines[e->cy].b ? e->lines[e->cy].b : "", e->cx);
 }
 
+/* Move one rune left, wrapping to the end of the previous line. */
 void editor_left(Editor *e) {
     if (e->cx > 0) {
         ELine *L = cur(e);
         size_t p = e->cx - 1;
-        while (p > 0 && is_cont((unsigned char)L->b[p])) p--;
+        while (p > 0 && u8_cont((unsigned char)L->b[p])) p--;
         e->cx = (int)p;
     } else if (e->cy > 0) {
         e->cy--;
@@ -221,10 +222,11 @@ void editor_left(Editor *e) {
     e->goal_col = -1;
 }
 
+/* Move one rune right, wrapping to the start of the next line. */
 void editor_right(Editor *e) {
     ELine *L = cur(e);
     if ((size_t)e->cx < L->len) {
-        e->cx += rune_len((unsigned char)L->b[e->cx]);
+        e->cx += u8_runelen((unsigned char)L->b[e->cx]);
         if ((size_t)e->cx > L->len) e->cx = (int)L->len;
     } else if ((size_t)e->cy + 1 < e->n) {
         e->cy++; e->cx = 0;
@@ -238,15 +240,18 @@ static void seek_goal(Editor *e) {
     e->cx = (int)ed_col_to_byte(L->b ? L->b : "", L->len, e->goal_col);
 }
 
+/* Move up one line, keeping the goal column (set on the first vertical move). */
 void editor_up(Editor *e) {
     if (e->goal_col < 0) e->goal_col = editor_cursor_col(e);
     if (e->cy > 0) { e->cy--; seek_goal(e); }
 }
 
+/* Move down one line, keeping the goal column. */
 void editor_down(Editor *e) {
     if (e->goal_col < 0) e->goal_col = editor_cursor_col(e);
     if ((size_t)e->cy + 1 < e->n) { e->cy++; seek_goal(e); }
 }
 
+/* Jump to the start / end of the current line. */
 void editor_home(Editor *e) { e->cx = 0; e->goal_col = -1; }
 void editor_end(Editor *e)  { e->cx = (int)cur(e)->len; e->goal_col = -1; }

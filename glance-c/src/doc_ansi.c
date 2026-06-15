@@ -9,8 +9,10 @@
 #include <string.h>
 #include <stdio.h>
 
+/* A growable, NUL-terminated string builder. */
 typedef struct { char *data; size_t len, cap; } SB;
 
+/* Append n bytes of s to the builder, growing as needed. */
 static void sb_putn(SB *sb, const char *s, size_t n) {
     if (sb->len + n + 1 > sb->cap) {
         size_t cap = sb->cap ? sb->cap : 256;
@@ -22,8 +24,11 @@ static void sb_putn(SB *sb, const char *s, size_t n) {
     memcpy(sb->data + sb->len, s, n);
     sb->len += n; sb->data[sb->len] = '\0';
 }
+
+/* Append a NUL-terminated string. */
 static void sb_puts(SB *sb, const char *s) { sb_putn(sb, s, strlen(s)); }
 
+/* Emit the SGR escape for a Style (reset + flags + truecolor fg/bg). */
 static void emit_sgr(SB *sb, const Style *st) {
     char buf[96];
     int p = snprintf(buf, sizeof buf, "\033[0");
@@ -42,6 +47,8 @@ static void emit_sgr(SB *sb, const Style *st) {
     sb_puts(sb, buf);
 }
 
+/* Serialize a Doc to an ANSI string: per run, emit its SGR then text; pad
+ * code-block lines with their background to the document width. See render.h. */
 char *doc_to_ansi(const Doc *d) {
     SB sb; memset(&sb, 0, sizeof sb);
     for (size_t i = 0; i < d->nline; i++) {

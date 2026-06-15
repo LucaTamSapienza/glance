@@ -13,21 +13,14 @@
 #include <string.h>
 #include <stdio.h>
 
-/* ---- display width (slice-1/2 approximation) ------------------------------ */
-
-static int utf8_is_cont(unsigned char c) { return (c & 0xC0) == 0x80; }
-
-static int vis_cols(const char *s, size_t n) {
-    int cols = 0;
-    for (size_t i = 0; i < n; i++)
-        if (!utf8_is_cont((unsigned char)s[i])) cols++;
-    return cols;
-}
+#include "util.h"   /* u8_width for display-column counting */
 
 /* ---- palette -------------------------------------------------------------- */
+/* Theme colours, chosen per element for dark vs light terminals. */
 
 static RGB rgb(uint8_t r, uint8_t g, uint8_t b) { RGB c = {r, g, b}; return c; }
 
+/* Heading colour by level (1..6), brighter on dark backgrounds. */
 static RGB heading_fg(int dark, int level) {
     if (dark) switch (level) {
         case 1:  return rgb(255, 135, 255);
@@ -85,6 +78,7 @@ typedef struct {
 
 /* ---- run / line builders -------------------------------------------------- */
 
+/* Append a copy of (text,len,st) to a growable run array. Returns -1 on OOM. */
 static int runs_push(Run **arr, size_t *n, size_t *cap,
                      const char *text, size_t len, Style st) {
     if (*n == *cap) {
@@ -103,6 +97,7 @@ static int runs_push(Run **arr, size_t *n, size_t *cap,
     return 0;
 }
 
+/* Save / restore the current inline style around a nested span or block. */
 static void style_push(R *r) { if (r->sp < MAX_STYLE) r->stack[r->sp++] = r->cur; }
 static void style_pop(R *r)  { if (r->sp > 0) r->cur = r->stack[--r->sp]; }
 
@@ -172,7 +167,7 @@ static void flush_word(R *r) {
 /* push a styled run onto the pending word */
 static void word_run(R *r, const char *text, size_t len, Style st) {
     runs_push(&r->word, &r->word_n, &r->word_cap, text, len, st);
-    r->word_cols += vis_cols(text, len);
+    r->word_cols += u8_width(text, len);
 }
 
 /* feed normal inline text, splitting on whitespace into wrappable words */
@@ -190,6 +185,7 @@ static void feed_text(R *r, const char *s, size_t n) {
     }
 }
 
+/* Accumulate raw code-block bytes; split into lines on leave_block. */
 static void code_buf_append(R *r, const char *s, size_t n) {
     if (r->code_len + n + 1 > r->code_cap) {
         size_t nc = r->code_cap ? r->code_cap : 256;
@@ -211,7 +207,7 @@ static void code_line(R *r, const char *s, size_t n) {
     /* leading space inside the box */
     runs_push(&r->line, &r->line_n, &r->line_cap, " ", 1, cs);
     runs_push(&r->line, &r->line_n, &r->line_cap, s, n, cs);
-    r->line_cols += 1 + vis_cols(s, n);
+    r->line_cols += 1 + u8_width(s, n);
     /* mark the line for bg fill to the right edge */
     r->line_has = 1;
     line_commit(r);
@@ -220,7 +216,10 @@ static void code_line(R *r, const char *s, size_t n) {
 }
 
 /* ---- md4c callbacks ------------------------------------------------------- */
+/* md4c invokes enter/leave_block, enter/leave_span, and text in document order;
+ * each one mutates the renderer state R and emits runs/lines. */
 
+/* Emit a pending list item's bullet ("•") or number ("N.") before its text. */
 static void li_marker(R *r) {
     if (!r->li_pending) return;
     r->li_pending = 0;
@@ -238,6 +237,7 @@ static void li_marker(R *r) {
     word_run(r, " ", 1, plain);
 }
 
+/* Open a block: set up styling, indentation, list/quote nesting, or a rule. */
 static int cb_enter_block(MD_BLOCKTYPE type, void *detail, void *ud) {
     R *r = ud;
     switch (type) {
@@ -293,6 +293,7 @@ static int cb_enter_block(MD_BLOCKTYPE type, void *detail, void *ud) {
     return 0;
 }
 
+/* Close a block: flush its line(s) and add the trailing blank line / spacing. */
 static int cb_leave_block(MD_BLOCKTYPE type, void *detail, void *ud) {
     R *r = ud;
     (void)detail;
@@ -355,6 +356,7 @@ static int cb_leave_block(MD_BLOCKTYPE type, void *detail, void *ud) {
     return 0;
 }
 
+/* Open an inline span: push the style and apply the span's emphasis/colour. */
 static int cb_enter_span(MD_SPANTYPE type, void *detail, void *ud) {
     R *r = ud;
     (void)detail;
@@ -377,6 +379,7 @@ static int cb_enter_span(MD_SPANTYPE type, void *detail, void *ud) {
     return 0;
 }
 
+/* Close an inline span: restore the style that was active before it. */
 static int cb_leave_span(MD_SPANTYPE type, void *detail, void *ud) {
     R *r = ud;
     (void)detail; (void)type;
@@ -384,6 +387,7 @@ static int cb_leave_span(MD_SPANTYPE type, void *detail, void *ud) {
     return 0;
 }
 
+/* Handle a run of text: buffer code, wrap normal text, or break lines. */
 static int cb_text(MD_TEXTTYPE type, const MD_CHAR *text, MD_SIZE size, void *ud) {
     R *r = ud;
     switch (type) {
@@ -417,6 +421,7 @@ static int cb_text(MD_TEXTTYPE type, const MD_CHAR *text, MD_SIZE size, void *ud
 
 /* ---- entry / teardown ----------------------------------------------------- */
 
+/* Parse src with md4c (GFM dialect) and build the Doc; see render.h. */
 Doc *render_doc(const char *src, size_t len, int width, int dark) {
     Doc *doc = calloc(1, sizeof *doc);
     if (!doc) return NULL;
@@ -452,6 +457,7 @@ Doc *render_doc(const char *src, size_t len, int width, int dark) {
     return doc;
 }
 
+/* Free a Doc and all the runs it owns. */
 void doc_free(Doc *d) {
     if (!d) return;
     for (size_t i = 0; i < d->nline; i++) {
