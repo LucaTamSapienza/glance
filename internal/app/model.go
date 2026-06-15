@@ -95,6 +95,14 @@ type Model struct {
 
 	// pending double-key (gg)
 	pendingG bool
+	// pending double-key (yy) — yank current line
+	pendingY bool
+
+	// line-wise visual selection (vi-style). selecting is true between `v`/`V`
+	// and the yank/cancel. selAnchor is the source line where selection began;
+	// the other end follows m.srcLine.
+	selecting bool
+	selAnchor int
 
 	// file watcher
 	watchCh <-chan gfs.ChangeEvent

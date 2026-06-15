@@ -38,6 +38,8 @@ Reader keys:
   Space / Ctrl+F        page down
   Ctrl+B                page up
   /                     incremental search (n / N to cycle matches)
+  v / V                 visual line select (y to copy, esc to cancel)
+  yy                    copy current line to the clipboard
   t                     toggle Table of Contents sidebar
   i                     enter Insert mode (full-screen editor)
   e                     enter Split mode  (editor + live preview)
@@ -61,6 +63,7 @@ Command line  (available in Reader and Split):
 
 Mouse:
   Wheel                 scroll the reader / preview pane
+  Option + drag         native terminal text selection (then ⌘C to copy)
 `)
 	}
 	flag.Parse()

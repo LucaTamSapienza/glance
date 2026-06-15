@@ -58,15 +58,39 @@ func (m Model) viewReader(bodyH int) string {
 	cursorRow := m.cursorLine - m.reader.YOffset
 	hitLines := m.hitLineSet()
 	q := m.search.Value()
+
+	// Rendered-row range covered by an active line-wise visual selection.
+	selStart, selEnd := -1, -1
+	if m.selecting {
+		a, b := m.selAnchor, m.srcLine
+		if a > b {
+			a, b = b, a
+		}
+		selStart = m.srcLineToRow(a)
+		if b+1 < len(m.srcToRendered) {
+			selEnd = m.srcToRendered[b+1] - 1
+		} else {
+			selEnd = m.totalLines - 1
+		}
+		if selEnd < selStart {
+			selEnd = selStart
+		}
+	}
+
 	for i, line := range rawLines {
 		absLine := i + m.reader.YOffset
 		if q != "" && hitLines[absLine] {
 			line = highlightMatches(line, q)
 		}
-		if i == cursorRow {
+		selected := selStart >= 0 && absLine >= selStart && absLine <= selEnd
+		switch {
+		case i == cursorRow:
 			line = injectColCursor(line, m.cursorCol)
 			rawLines[i] = "\x1b[1;36m❯ \x1b[0m" + line
-		} else {
+		case selected:
+			// Blue gutter bar marks lines included in the selection.
+			rawLines[i] = "\x1b[48;5;24m \x1b[0m " + line
+		default:
 			rawLines[i] = "  " + line
 		}
 	}
@@ -165,6 +189,13 @@ func (m Model) viewStatus() string {
 	if m.status != "" && time.Now().Before(m.statusExpires) {
 		mid = m.status
 	}
+	if m.selecting {
+		n := m.srcLine - m.selAnchor
+		if n < 0 {
+			n = -n
+		}
+		mid = fmt.Sprintf("-- VISUAL -- %d line(s) · y copy · esc cancel", n+1)
+	}
 	if len(m.searchHits) > 0 {
 		mid = fmt.Sprintf("%s  %d/%d", mid, m.searchIdx+1, len(m.searchHits))
 	}
@@ -180,6 +211,7 @@ func overlayHelp(body string, w, h int) string {
 		"glance — help",
 		"",
 		"Reader:   j/k arrows scroll · gg/G top/bottom · / search (rendered) · t TOC · ? help · :q quit",
+		"          v/V visual line select → y copy · yy copy line (to system clipboard)",
 		"          i  → insert mode (edit raw text)   e  → split view (live preview)",
 		"Insert:   Esc back to reader · ctrl+s quick save",
 		"          opt+←/→ jump word · opt+↑/↓ jump paragraph",

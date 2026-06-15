@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -364,6 +365,37 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Scrolling / motion in reader and unfocused split.
 	if m.mode == ModeReader || (m.mode == ModeSplit && !m.editor.Focused()) {
+		// Visual selection + yank (line-wise, vi-style). Reader mode only.
+		if m.mode == ModeReader {
+			switch msg.String() {
+			case "v", "V":
+				m.selecting = !m.selecting
+				if m.selecting {
+					m.selAnchor = m.srcLine
+				}
+				m.pendingY = false
+				return m, nil
+			case "y":
+				if m.selecting {
+					return m.yankLines(m.selAnchor, m.srcLine)
+				}
+				if m.pendingY {
+					m.pendingY = false
+					return m.yankLines(m.srcLine, m.srcLine)
+				}
+				m.pendingY = true
+				return m, nil
+			case "esc":
+				if m.selecting {
+					m.selecting = false
+					m.pendingY = false
+					return m, nil
+				}
+			}
+			// Any other key cancels a pending `yy`.
+			m.pendingY = false
+		}
+
 		if m.pendingG {
 			m.pendingG = false
 			if msg.String() == "g" {
@@ -454,6 +486,40 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var c tea.Cmd
 	m.reader, c = m.reader.Update(msg)
 	return m, c
+}
+
+// yankLines copies the inclusive range of source lines [a, b] to the system
+// clipboard (markdown source, so it can be pasted outside glance) and clears
+// any active visual selection.
+func (m Model) yankLines(a, b int) (tea.Model, tea.Cmd) {
+	text, n := selectionText(m.source, a, b)
+
+	m.selecting = false
+	m.pendingY = false
+
+	if err := copyToClipboard(text); err != nil {
+		m.flash("copy failed: " + err.Error())
+		return m, nil
+	}
+	if n == 1 {
+		m.flash("copied 1 line")
+	} else {
+		m.flash(fmt.Sprintf("copied %d lines", n))
+	}
+	return m, nil
+}
+
+// selectionText returns the inclusive range of source lines [a, b] joined by
+// newlines, along with the number of lines. Indices are clamped to the source
+// and may be given in either order.
+func selectionText(source string, a, b int) (string, int) {
+	if a > b {
+		a, b = b, a
+	}
+	lines := strings.Split(source, "\n")
+	a = clamp(a, 0, len(lines)-1)
+	b = clamp(b, 0, len(lines)-1)
+	return strings.Join(lines[a:b+1], "\n"), b - a + 1
 }
 
 // runCommand executes a colon command entered in the command line.

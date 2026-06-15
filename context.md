@@ -2,7 +2,7 @@
 
 > A recap of what this project is, where it's going, and its current status.
 > Intended as orientation context for anyone (including Claude) picking up the work.
-> Last updated: 2026-06-15.
+> Last updated: 2026-06-15 (visual-select copy added).
 
 ## What it is
 
@@ -60,6 +60,7 @@ internal/app/
   keys.go                   KeyMap / DefaultKeys()
   search.go                 ANSI-aware search over the rendered output
   toc.go                    table-of-contents extraction
+  clipboard.go              copyToClipboard wrapper (atotto/clipboard → pbcopy)
   helpers.go                small shared helpers
 internal/render/
   glamour.go                Glamour renderer config (dark/light, code blocks)
@@ -80,6 +81,33 @@ Glamour).
 Active work lives on the **`bugfixes` branch**, pushed to GitHub at
 `git@github.com:LucaTamSapienza/glance.git`. Build is clean
 (`go build ./...`) and **all tests pass** (`go test ./...`).
+
+### 2026-06-15 — copy-to-clipboard (vi-style visual line select)
+
+User couldn't copy text out of glance: `tea.WithMouseCellMotion()` (main.go)
+enables mouse reporting, so the terminal's native click-drag selection is
+disabled, and there was no in-app copy command. Added a vi-style copy path that
+writes **source markdown** to the **system clipboard** (so it survives outside
+glance, via `pbcopy`/atotto):
+
+- **`v` / `V`** in Reader toggles line-wise visual selection (anchor = current
+  `srcLine`, other end follows the cursor as you move with j/k/g/G). A blue
+  gutter bar marks selected rendered rows; the status bar shows
+  `-- VISUAL -- N line(s)`.
+- **`y`** in visual mode copies the selected source-line range and exits.
+- **`yy`** in normal Reader copies the current line (pendingY double-key, like
+  `gg`). Any other key cancels a pending `y`.
+- **`esc`** cancels an active selection.
+- New `internal/app/clipboard.go` (`copyToClipboard` → `atotto/clipboard`,
+  promoted from indirect to direct dep). `yankLines`/pure `selectionText` in
+  `update.go`; `srcLineToRow` helper in `cursor.go`; highlight + status in
+  `view.go`; help/usage text updated in `view.go` + `main.go`.
+- Tests: `yank_test.go` (`TestSelectionText`). Build/vet/`go test ./...` clean.
+
+Note: native **mouse** click-drag selection is still captured by mouse
+reporting — on macOS terminals hold **Option** (Ghostty/iTerm) while dragging
+for native select, or use `v`/`yy`. Not changed in code (wheel-scroll relies on
+mouse reporting).
 
 ### 2026-06-15 — v0.1.0 released + CI/install fixes
 

@@ -112,6 +112,18 @@ func (m *Model) renderedLineToSourceLine(renderedRow int) int {
 	return best
 }
 
+// srcLineToRow maps a source line index to its starting rendered row using the
+// srcToRendered map, clamping out-of-range indices to the last rendered row.
+func (m *Model) srcLineToRow(src int) int {
+	if src < 0 {
+		return 0
+	}
+	if src < len(m.srcToRendered) {
+		return m.srcToRendered[src]
+	}
+	return max(0, m.totalLines-1)
+}
+
 // editorSourceCol returns the logical character offset of the textarea
 // cursor within its current source line. Unlike LineInfo().ColumnOffset
 // (which is the visual column within a soft-wrapped row), this value
