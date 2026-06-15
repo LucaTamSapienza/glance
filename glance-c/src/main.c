@@ -32,7 +32,7 @@ int main(int argc, char **argv) {
     if (f != stdin) fclose(f);
     if (!src) { fprintf(stderr, "read failed\n"); return 1; }
 
-    int rc = tui_run(src, len, title);
+    int rc = tui_run(src, len, f == stdin ? NULL : argv[1], title);
     free(src);
     return rc;
 }

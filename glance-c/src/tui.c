@@ -12,12 +12,14 @@
 #include "editor.h"
 #include "search.h"
 #include "toc.h"
+#include "fs_save.h"
 #include "util.h"
 
 #include <notcurses/notcurses.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <errno.h>
 #include <unistd.h>
 
 enum { MODE_READER, MODE_INSERT };
@@ -46,6 +48,9 @@ typedef struct {
     int    tocmode;              /* table-of-contents panel open */
     TOC    toc;
     int    toc_sel;              /* selected TOC entry */
+    const char *path;            /* file to save to, or NULL for stdin */
+    int    dirty;                /* unsaved changes since the last write */
+    char   msg[160];             /* transient status message (one keypress) */
 } App;
 
 #define TOC_W 30                 /* table-of-contents panel width */
@@ -181,10 +186,12 @@ static void prompt_line(App *a, char lead, const char *text) {
     ncplane_putstr_yx(p, a->rows - 1, 0, line);
 }
 
-/* Draw the bottom line: an active ':'/'/' prompt, else the Reader status. */
+/* Draw the bottom line: an active ':'/'/' prompt, a transient message, else the
+ * Reader status. */
 static void reader_bottom(App *a) {
     if (a->cmdmode)    { prompt_line(a, ':', a->cmdbuf); return; }
     if (a->searchmode) { prompt_line(a, '/', a->searchbuf); return; }
+    if (a->msg[0])     { status_bar(a, a->msg); return; }
     char status[320];
     if (a->hits.n > 0) {
         snprintf(status, sizeof status,
@@ -320,10 +327,14 @@ static void draw_editor(App *a) {
     }
 
     char status[320];
-    snprintf(status, sizeof status,
-             " INSERT  %s%s  —  Ln %d, Col %d   Esc reader",
-             a->title ? a->title : "", e->dirty ? " *" : "",
-             e->cy + 1, editor_cursor_col(e) + 1);
+    if (a->msg[0]) {
+        snprintf(status, sizeof status, " %s", a->msg);
+    } else {
+        snprintf(status, sizeof status,
+                 " INSERT  %s%s  —  Ln %d, Col %d   Esc reader   ^S save",
+                 a->title ? a->title : "", e->dirty ? " *" : "",
+                 e->cy + 1, editor_cursor_col(e) + 1);
+    }
     status_bar(a, status);
 
     notcurses_cursor_enable(a->nc, e->cy - e->top, editor_cursor_col(e) - e->xoff);
@@ -377,13 +388,19 @@ static void enter_insert(App *a) {
     a->mode = MODE_INSERT;
 }
 
+/* Copy the editor's buffer back into the app source (editor stays alive). */
+static void sync_source(App *a) {
+    size_t nlen; char *ns = editor_source(&a->ed, &nlen);
+    if (ns) { free(a->src); a->src = ns; a->srclen = nlen; }
+    if (a->ed.dirty) a->dirty = 1;
+}
+
 /* Switch Insert -> Reader: sync the buffer into the source, re-render, and map
  * the editor cursor back onto the rendered view. */
 static void leave_insert(App *a) {
     int src_cy = a->ed.cy, src_n = (int)a->ed.n;
     int rcol = editor_cursor_col(&a->ed);
-    size_t nlen; char *ns = editor_source(&a->ed, &nlen);
-    if (ns) { free(a->src); a->src = ns; a->srclen = nlen; }
+    sync_source(a);
     editor_free(&a->ed);
     a->mode = MODE_READER;
     rerender(a);
@@ -425,14 +442,38 @@ static int try_insert_text(Editor *e, const ncinput *ni) {
     return 1;
 }
 
-/* execute a typed ':' command. Returns 0 to quit, 1 to keep running. */
+/* Write the current source to disk atomically, updating the status message and
+ * the dirty flag. Returns 0 on success. */
+static int save_file(App *a) {
+    if (!a->path) { snprintf(a->msg, sizeof a->msg, "no file name — can't write (reading stdin)"); return -1; }
+    if (atomic_write(a->path, a->src, a->srclen) != 0) {
+        snprintf(a->msg, sizeof a->msg, "write failed: %s", strerror(errno));
+        return -1;
+    }
+    a->dirty = 0;
+    snprintf(a->msg, sizeof a->msg, "\"%s\" %zuB written", a->title ? a->title : a->path, a->srclen);
+    return 0;
+}
+
+/* Execute a typed ':' command. Returns 0 to quit, 1 to keep running. */
 static int run_command(App *a) {
     const char *c = a->cmdbuf;
     a->cmdmode = 0;
-    if (!strcmp(c, "q") || !strcmp(c, "q!") || !strcmp(c, "quit")) return 0;
-    /* :w / :wq save — deferred to slice 5; for now no-op, keep running */
+    int ret = 1;
+    if (!strcmp(c, "q") || !strcmp(c, "quit")) {
+        if (a->dirty) snprintf(a->msg, sizeof a->msg, "unsaved changes — :w to save or :q! to discard");
+        else ret = 0;
+    } else if (!strcmp(c, "q!")) {
+        ret = 0;
+    } else if (!strcmp(c, "w")) {
+        save_file(a);
+    } else if (!strcmp(c, "wq") || !strcmp(c, "x")) {
+        if (save_file(a) == 0) ret = 0;
+    } else if (c[0]) {
+        snprintf(a->msg, sizeof a->msg, "not a command: :%s", c);
+    }
     a->cmdbuf[0] = '\0'; a->cmdlen = 0;
-    return 1;
+    return ret;
 }
 
 /* Edit the ':' command line: type, backspace, Enter to run, Esc to cancel. */
@@ -535,6 +576,7 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     else if (id == ':')                          { a->cmdmode = 1; a->cmdbuf[0] = '\0'; a->cmdlen = 0; }
     else if (id == '/')                          { a->searchmode = 1; a->searchbuf[0] = '\0'; a->searchlen = 0; }
     else if (id == 't')                          open_toc(a);
+    else if (id == 's' && ncinput_ctrl_p(ni))    save_file(a);
     else if (id == 'n' && a->hits.n)             focus_hit(a, a->cur_hit + 1);
     else if (id == 'N' && a->hits.n)             focus_hit(a, a->cur_hit - 1);
     else if (id == NCKEY_ESC)                    clear_search(a);
@@ -560,6 +602,7 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
 static int handle_insert(App *a, uint32_t id, const ncinput *ni) {
     Editor *e = &a->ed;
     if (id == NCKEY_ESC) { leave_insert(a); return 1; }
+    else if (id == 's' && ncinput_ctrl_p(ni)) { sync_source(a); save_file(a); }
     else if (id == NCKEY_ENTER || id == '\r' || id == '\n') editor_newline(e);
     else if (id == NCKEY_BACKSPACE || id == 0x08 || id == 0x7f) editor_backspace(e);
     else if (id == NCKEY_DEL)   editor_delete(e);
@@ -635,7 +678,7 @@ int tui_keyprobe(void) {
 
 /* Bring up notcurses, then loop: read a key, dispatch by mode, redraw. See
  * tui.h. Owns a mutable copy of the source that the editor syncs back into. */
-int tui_run(const char *src, unsigned long len, const char *title) {
+int tui_run(const char *src, unsigned long len, const char *path, const char *title) {
     term_kbd_reset();   /* normalize before notcurses probes (slice-2 fix) */
 
     notcurses_options opts;
@@ -644,7 +687,7 @@ int tui_run(const char *src, unsigned long len, const char *title) {
 
     App a;
     memset(&a, 0, sizeof a);
-    a.title = title; a.mode = MODE_READER;
+    a.title = title; a.path = path; a.mode = MODE_READER;
     a.src = malloc(len + 1);
     if (!a.src) return 1;
     memcpy(a.src, src, len); a.src[len] = '\0'; a.srclen = len;
@@ -666,6 +709,7 @@ int tui_run(const char *src, unsigned long len, const char *title) {
     int running = 1;
     while (running && (id = notcurses_get_blocking(a.nc, &ni)) != (uint32_t)-1) {
         if (ni.evtype == NCTYPE_RELEASE) continue;
+        a.msg[0] = '\0';                 /* clear the previous transient message */
         if (id == NCKEY_RESIZE) {
             if (a.mode == MODE_READER) rerender(&a);
             else update_dims(&a);
