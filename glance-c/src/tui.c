@@ -10,6 +10,7 @@
 #include "tui.h"
 #include "render.h"
 #include "editor.h"
+#include "search.h"
 #include "util.h"
 
 #include <notcurses/notcurses.h>
@@ -36,6 +37,11 @@ typedef struct {
     int    cmdmode;              /* vi command line (':') active */
     char   cmdbuf[64];
     int    cmdlen;
+    int    searchmode;           /* '/' search prompt active */
+    char   searchbuf[128];
+    int    searchlen;
+    Hits   hits;                 /* current search matches */
+    int    cur_hit;              /* index of the focused match, or -1 */
 } App;
 
 static int content_rows(App *a) { return a->rows - 1; }   /* last row = status */
@@ -131,36 +137,59 @@ static void reader_scroll(App *a) {
     clamp_top(a);
 }
 
-/* draw a white block cursor over the cell at screen (y,x), keeping its glyph */
-static void draw_block_cursor(App *a, int y, int x) {
-    struct ncplane *p = a->plane;
+/* Recolour the cell at screen (y,x) to fg-on-bg, preserving its glyph. Used to
+ * overlay the block cursor and search highlights on top of rendered content. */
+static void overlay_cell(struct ncplane *p, int y, int x, RGB fg, RGB bg) {
     uint16_t sm; uint64_t ch;
     char *egc = ncplane_at_yx(p, y, x, &sm, &ch);
     ncplane_set_styles(p, NCSTYLE_NONE);
-    ncplane_set_fg_rgb8(p, 0, 0, 0);
-    ncplane_set_bg_rgb8(p, 255, 255, 255);
+    ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b);
+    ncplane_set_bg_rgb8(p, bg.r, bg.g, bg.b);
     ncplane_putstr_yx(p, y, x, (egc && egc[0] && egc[0] != ' ') ? egc : " ");
     free(egc);
 }
 
-/* draw the bottom line: the ':' command line when active, else the status */
-static void reader_bottom(App *a) {
-    if (a->cmdmode) {
-        struct ncplane *p = a->plane;
-        ncplane_set_styles(p, NCSTYLE_NONE);
-        ncplane_set_fg_default(p);
-        ncplane_set_bg_default(p);
-        for (int x = 0; x < a->cols; x++) ncplane_putchar_yx(p, a->rows - 1, x, ' ');
-        char cmd[80];
-        snprintf(cmd, sizeof cmd, ":%s", a->cmdbuf);
-        ncplane_putstr_yx(p, a->rows - 1, 0, cmd);
-        return;
+/* Highlight every visible search hit (yellow), brighter for the focused one. */
+static void draw_hits(App *a) {
+    int body = content_rows(a);
+    RGB black = {0, 0, 0}, yellow = {220, 200, 60}, amber = {255, 170, 40};
+    for (int i = 0; i < a->hits.n; i++) {
+        Hit *h = &a->hits.v[i];
+        int y = h->line - a->top;
+        if (y < 0 || y >= body) continue;
+        RGB bg = (i == a->cur_hit) ? amber : yellow;
+        for (int c = 0; c < h->width && h->col + c < a->cols; c++)
+            overlay_cell(a->plane, y, h->col + c, black, bg);
     }
-    int total = (int)a->doc->nline;
+}
+
+/* Draw the bottom row as a plain prompt line (for ':' and '/'). */
+static void prompt_line(App *a, char lead, const char *text) {
+    struct ncplane *p = a->plane;
+    ncplane_set_styles(p, NCSTYLE_NONE);
+    ncplane_set_fg_default(p);
+    ncplane_set_bg_default(p);
+    for (int x = 0; x < a->cols; x++) ncplane_putchar_yx(p, a->rows - 1, x, ' ');
+    char line[160];
+    snprintf(line, sizeof line, "%c%s", lead, text);
+    ncplane_putstr_yx(p, a->rows - 1, 0, line);
+}
+
+/* Draw the bottom line: an active ':'/'/' prompt, else the Reader status. */
+static void reader_bottom(App *a) {
+    if (a->cmdmode)    { prompt_line(a, ':', a->cmdbuf); return; }
+    if (a->searchmode) { prompt_line(a, '/', a->searchbuf); return; }
     char status[320];
-    snprintf(status, sizeof status,
-             " READER  %s  —  Ln %d/%d, Col %d   i insert   :q quit   hjkl move",
-             a->title ? a->title : "", a->rcur_line + 1, total, a->rcur_col + 1);
+    if (a->hits.n > 0) {
+        snprintf(status, sizeof status,
+                 " READER  %s  —  match %d/%d for \"%s\"   n/N next/prev   Esc clear",
+                 a->title ? a->title : "", a->cur_hit + 1, a->hits.n, a->searchbuf);
+    } else {
+        snprintf(status, sizeof status,
+                 " READER  %s  —  Ln %d/%d, Col %d   i insert   / search   :q quit   hjkl move",
+                 a->title ? a->title : "", a->rcur_line + 1, (int)a->doc->nline,
+                 a->rcur_col + 1);
+    }
     status_bar(a, status);
 }
 
@@ -191,11 +220,14 @@ static void draw_reader(App *a) {
         }
     }
 
-    /* block cursor (only when not typing a command) */
-    if (!a->cmdmode) {
+    draw_hits(a);
+
+    /* block cursor on top (hidden while typing a command/search) */
+    if (!a->cmdmode && !a->searchmode) {
         int cy = a->rcur_line - a->top;
+        RGB black = {0, 0, 0}, white = {255, 255, 255};
         if (cy >= 0 && cy < body && a->rcur_col < a->cols)
-            draw_block_cursor(a, cy, a->rcur_col);
+            overlay_cell(a->plane, cy, a->rcur_col, black, white);
     }
 
     reader_bottom(a);
@@ -263,12 +295,17 @@ static void update_dims(App *a) {
     a->rows = (int)r; a->cols = (int)c;
 }
 
-/* Re-render the document at the current width (after edits or a resize). */
+/* Re-render the document at the current width (after edits or a resize). Any
+ * live search is recomputed, since hit line indices refer to the old Doc. */
 static int rerender(App *a) {
     update_dims(a);
     if (a->doc) doc_free(a->doc);
     a->doc = render_doc(a->src, a->srclen, a->cols, a->dark);
     if (!a->doc) return -1;
+    if (a->searchbuf[0]) {
+        search_doc(a->doc, a->searchbuf, &a->hits);
+        if (a->cur_hit >= a->hits.n) a->cur_hit = a->hits.n - 1;
+    }
     clamp_top(a);
     return 0;
 }
@@ -373,11 +410,60 @@ static int handle_command(App *a, uint32_t id, const ncinput *ni) {
     return 1;
 }
 
-/* Reader-mode keys: move the block cursor, enter Insert/command mode, quit. */
+/* Move the block cursor onto search hit `idx` (wrapping handled by caller). */
+static void focus_hit(App *a, int idx) {
+    if (a->hits.n == 0) return;
+    a->cur_hit = (idx % a->hits.n + a->hits.n) % a->hits.n;
+    a->rcur_line = a->hits.v[a->cur_hit].line;
+    a->rcur_col = a->hits.v[a->cur_hit].col;
+    a->rcur_goal = a->rcur_col;
+    reader_clamp_cursor(a);
+}
+
+/* Run the typed query, populate hits, and jump to the first one. */
+static void run_search(App *a) {
+    a->searchmode = 0;                       /* searchbuf stays as the query */
+    search_doc(a->doc, a->searchbuf, &a->hits);
+    a->cur_hit = -1;
+    if (a->hits.n > 0) focus_hit(a, 0);
+}
+
+/* Clear the active search and its highlights. */
+static void clear_search(App *a) {
+    hits_free(&a->hits);
+    a->cur_hit = -1;
+    a->searchbuf[0] = '\0';
+    a->searchlen = 0;
+}
+
+/* Edit the '/' search prompt: type, backspace, Enter to run, Esc to cancel. */
+static int handle_search(App *a, uint32_t id, const ncinput *ni) {
+    if (id == NCKEY_ESC) { a->searchmode = 0; a->searchbuf[0] = '\0'; a->searchlen = 0; return 1; }
+    if (id == NCKEY_ENTER || id == '\r' || id == '\n') { run_search(a); return 1; }
+    if (id == NCKEY_BACKSPACE || id == 0x08 || id == 0x7f) {
+        if (a->searchlen > 0) a->searchbuf[--a->searchlen] = '\0';
+        else a->searchmode = 0;
+        return 1;
+    }
+    if (!ncinput_ctrl_p(ni) && ni->eff_text[0] >= 0x20) {
+        char buf[8]; int k = u8_encode(ni->eff_text[0], buf);
+        if (a->searchlen + k < (int)sizeof(a->searchbuf) - 1) {
+            memcpy(a->searchbuf + a->searchlen, buf, k);
+            a->searchlen += k; a->searchbuf[a->searchlen] = '\0';
+        }
+    }
+    return 1;
+}
+
+/* Reader-mode keys: move the block cursor, search, enter Insert/command, quit. */
 static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     int body = content_rows(a);
     if (id == 'c' && ncinput_ctrl_p(ni))         return 0;   /* escape hatch */
     else if (id == ':')                          { a->cmdmode = 1; a->cmdbuf[0] = '\0'; a->cmdlen = 0; }
+    else if (id == '/')                          { a->searchmode = 1; a->searchbuf[0] = '\0'; a->searchlen = 0; }
+    else if (id == 'n' && a->hits.n)             focus_hit(a, a->cur_hit + 1);
+    else if (id == 'N' && a->hits.n)             focus_hit(a, a->cur_hit - 1);
+    else if (id == NCKEY_ESC)                    clear_search(a);
     else if (id == 'i')                          enter_insert(a);  /* vi-style */
     /* 'e' is reserved for Split view (slice 4) */
     else if (id == 'j' || id == NCKEY_DOWN)      { a->rcur_line++; a->rcur_col = a->rcur_goal; }
@@ -513,6 +599,7 @@ int tui_run(const char *src, unsigned long len, const char *title) {
             continue;
         }
         if (a.cmdmode)             running = handle_command(&a, id, &ni);
+        else if (a.searchmode)     running = handle_search(&a, id, &ni);
         else if (a.mode == MODE_READER) running = handle_reader(&a, id, &ni);
         else                       running = handle_insert(&a, id, &ni);
         if (running) redraw(&a);
@@ -524,6 +611,7 @@ int tui_run(const char *src, unsigned long len, const char *title) {
     while ((d = notcurses_get_nblock(a.nc, &drain)) != 0 && d != (uint32_t)-1) { }
 
     if (a.mode == MODE_INSERT) editor_free(&a.ed);
+    hits_free(&a.hits);
     doc_free(a.doc);
     shutdown_tui();
     free(a.src);

@@ -12,7 +12,7 @@ NC_LIBS   := $(shell pkg-config --libs notcurses)
 SRC := src
 
 # renderer + shared helpers, linked into both binaries
-CORE := $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/preprocess.c $(SRC)/util.c
+CORE := $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/preprocess.c $(SRC)/search.c $(SRC)/util.c
 HDRS := $(wildcard $(SRC)/*.h)   # rebuild on any header change
 
 .PHONY: all test clean
@@ -31,6 +31,8 @@ test:
 	@set -e; \
 	$(CC) $(TCFLAGS) -o build-t-editor tests/editor_test.c $(SRC)/editor.c $(SRC)/util.c && ./build-t-editor; \
 	$(CC) $(TCFLAGS) -o build-t-preprocess tests/preprocess_test.c $(SRC)/preprocess.c && ./build-t-preprocess; \
+	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-search tests/search_test.c \
+	  $(SRC)/search.c $(SRC)/render.c $(SRC)/preprocess.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-search; \
 	rm -rf build-t-*
 
 clean:
