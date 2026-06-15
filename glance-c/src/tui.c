@@ -11,6 +11,9 @@
 #include <notcurses/notcurses.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+#include <signal.h>
+#include <unistd.h>
 
 typedef struct {
     struct notcurses *nc;
@@ -24,6 +27,32 @@ typedef struct {
 } App;
 
 static int content_rows(App *a) { return a->rows - 1; }   /* last row = status */
+
+/* notcurses enables the kitty keyboard protocol (CSI u) on startup. If the
+ * process dies on a signal before notcurses_stop() runs, the terminal is left
+ * in that mode and the shell prints every key as an escape sequence. We keep a
+ * handle for the signal path and, belt-and-suspenders, emit an explicit reset
+ * after teardown: pop the keyboard stack (CSI < u) and force flags off
+ * (CSI = 0 u). Popping an already-baseline stack is a defined no-op, so this is
+ * safe whether or not notcurses already cleaned up. */
+static struct notcurses *g_nc = NULL;
+
+static void term_kbd_reset(void) {
+    const char *seq = "\033[<u\033[=0u";
+    ssize_t w = write(STDOUT_FILENO, seq, strlen(seq));
+    (void)w;
+}
+
+static void shutdown_tui(void) {
+    if (g_nc) { notcurses_stop(g_nc); g_nc = NULL; }
+    term_kbd_reset();
+}
+
+static void on_fatal_signal(int sig) {
+    shutdown_tui();
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
 
 /* clamp scroll so we never run past the end / before the start */
 static void clamp_top(App *a) {
@@ -121,6 +150,13 @@ int tui_run(const char *src, unsigned long len, const char *title) {
     if (!a.nc) return 1;
     a.plane = notcurses_stdplane(a.nc);
 
+    /* restore the terminal even if we're killed mid-run */
+    g_nc = a.nc;
+    signal(SIGINT,  on_fatal_signal);
+    signal(SIGTERM, on_fatal_signal);
+    signal(SIGSEGV, on_fatal_signal);
+    signal(SIGABRT, on_fatal_signal);
+
     if (rerender(&a) != 0) { notcurses_stop(a.nc); return 1; }
     draw(&a);
 
@@ -159,6 +195,6 @@ int tui_run(const char *src, unsigned long len, const char *title) {
     }
 
     doc_free(a.doc);
-    notcurses_stop(a.nc);
+    shutdown_tui();
     return 0;
 }
