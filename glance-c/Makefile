@@ -18,12 +18,20 @@ all: glance glance-render
 RENDER_SRC := $(SRC)/render.c $(SRC)/doc_ansi.c
 RENDER_HDR := $(SRC)/render.h
 
-glance: $(SRC)/main.c $(SRC)/tui.c $(SRC)/tui.h $(RENDER_SRC) $(RENDER_HDR)
-	$(CC) $(CFLAGS) -o $@ $(SRC)/main.c $(SRC)/tui.c $(RENDER_SRC) $(MD4C_LIBS) $(NC_LIBS)
+glance: $(SRC)/main.c $(SRC)/tui.c $(SRC)/tui.h $(SRC)/editor.c $(SRC)/editor.h $(RENDER_SRC) $(RENDER_HDR)
+	$(CC) $(CFLAGS) -o $@ $(SRC)/main.c $(SRC)/tui.c $(SRC)/editor.c $(RENDER_SRC) $(MD4C_LIBS) $(NC_LIBS)
 
 glance-render: $(SRC)/main_render.c $(RENDER_SRC) $(RENDER_HDR)
 	$(CC) $(CFLAGS) -o $@ $(SRC)/main_render.c $(RENDER_SRC) $(MD4C_LIBS)
 
+.PHONY: test
+# unit tests (pure modules) under ASan/UBSan
+test:
+	$(CC) -std=c11 -g -fsanitize=address,undefined -Wall -Wextra \
+	  -o build-editor-test tests/editor_test.c $(SRC)/editor.c
+	./build-editor-test
+	@rm -f build-editor-test
+
 clean:
-	rm -f glance glance-render
+	rm -f glance glance-render build-editor-test
 	rm -rf build *.dSYM

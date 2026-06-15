@@ -29,12 +29,12 @@ map for free.
 ```
 src/render.h/.c   THE renderer: md4c → structured Doc        [DONE — slice 1/2]
 src/doc_ansi.c    Doc → ANSI string (CLI + tests sink)        [DONE]
-src/tui.h/.c      notcurses Reader: blit Doc → cells, scroll  [DONE — slice 2]
+src/tui.h/.c      notcurses front-end: Reader + Insert modes   [DONE — slice 2/3]
+src/editor.h/.c   line-array editor model (rune-aware cursor)   [DONE — slice 3]
 src/main.c        glance TUI entry: load file/stdin, run tui   [DONE]
 src/main_render.c glance-render CLI entry (render-only)        [DONE]
+tests/editor_test.c  unit tests for the editor (make test)     [DONE]
 -- planned --
-src/app.c/.h      mode state machine once >1 mode exists
-src/editor.c      line-array editor widget (Insert/Split)
 src/preprocess.c  tolerant markdown (bold tighten, setext neutralize)
 src/toc.c  search.c  completion.c
 src/fswatch.c (kqueue)  save.c (atomic write)  clipboard.c  util.c
@@ -53,16 +53,24 @@ later needs no ANSI strip/re-inject.
 2. **Reader TUI (DONE)** — notcurses alt-screen, scrollable view, status bar,
    resize re-render. Keys: q/Esc quit, j/k + arrows, Ctrl-D/U half-page,
    PgUp/PgDn + Ctrl-F/B page, g/Home top, G/End bottom.
-3. Editor + Insert mode (line-array editor, Unicode-aware).
+3. **Editor + Insert mode (DONE)** — line-array buffer, rune-aware cursor,
+   horizontal + vertical scroll, hardware cursor. 'e' enters Insert, Esc
+   returns to Reader and re-renders the edited text. Editing: printable insert,
+   Enter split, Backspace/Del (with line join), arrows/Home/End, Tab=4 spaces.
+   Source round-trips through the buffer. Unit-tested (make test).
 4. Split + live preview.
 5. Search / TOC / file-watch / atomic save / clipboard parity.
+
+Not yet wired: **save to disk** (Ctrl-S) lands in slice 5 with atomic write;
+for now edits live in memory and reflect in Reader on Esc, but are lost on quit.
 
 ## Build & run
 
 ```sh
 cd glance-c
-make
-./glance ../testdata/sample.md          # Reader TUI (needs a real terminal)
+make                                    # builds glance + glance-render
+make test                               # editor unit tests (ASan/UBSan)
+./glance ../testdata/sample.md          # Reader TUI; press e to edit, Esc back
 ./glance-render -w 80 ../testdata/sample.md   # render-only; -l light, stdin ok
 ```
 
