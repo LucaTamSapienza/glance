@@ -12,7 +12,7 @@ NC_LIBS   := $(shell pkg-config --libs notcurses)
 SRC := src
 
 # renderer + shared helpers, linked into both binaries
-CORE := $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/util.c
+CORE := $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/preprocess.c $(SRC)/util.c
 HDRS := $(wildcard $(SRC)/*.h)   # rebuild on any header change
 
 .PHONY: all test clean
@@ -25,12 +25,14 @@ glance: $(SRC)/main.c $(SRC)/tui.c $(SRC)/editor.c $(CORE) $(HDRS)
 glance-render: $(SRC)/main_render.c $(CORE) $(HDRS)
 	$(CC) $(CFLAGS) -o $@ $(SRC)/main_render.c $(CORE) $(MD4C_LIBS)
 
+# Each test binary links the modules it exercises; all run under ASan/UBSan.
+TCFLAGS := -std=c11 -g -fsanitize=address,undefined -Wall -Wextra
 test:
-	$(CC) -std=c11 -g -fsanitize=address,undefined -Wall -Wextra \
-	  -o build-editor-test tests/editor_test.c $(SRC)/editor.c $(SRC)/util.c
-	./build-editor-test
-	@rm -f build-editor-test
+	@set -e; \
+	$(CC) $(TCFLAGS) -o build-t-editor tests/editor_test.c $(SRC)/editor.c $(SRC)/util.c && ./build-t-editor; \
+	$(CC) $(TCFLAGS) -o build-t-preprocess tests/preprocess_test.c $(SRC)/preprocess.c && ./build-t-preprocess; \
+	rm -rf build-t-*
 
 clean:
-	rm -f glance glance-render build-editor-test
+	rm -f glance glance-render build-t-*
 	rm -rf build *.dSYM

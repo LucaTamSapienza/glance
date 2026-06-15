@@ -7,13 +7,13 @@
  * that was active before it (including a heading's colour).
  */
 #include "render.h"
+#include "preprocess.h"
+#include "util.h"   /* u8_width for display-column counting */
 
 #include <md4c.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-
-#include "util.h"   /* u8_width for display-column counting */
 
 /* ---- palette -------------------------------------------------------------- */
 /* Theme colours, chosen per element for dark vs light terminals. */
@@ -443,7 +443,11 @@ Doc *render_doc(const char *src, size_t len, int width, int dark) {
     parser.leave_span  = cb_leave_span;
     parser.text        = cb_text;
 
-    int rc = md_parse(src, (MD_SIZE)len, &parser, &r);
+    /* apply tolerant-Markdown fix-ups, then parse the result */
+    size_t plen = len;
+    char *pre = preprocess(src, len, &plen);
+    int rc = md_parse(pre ? pre : src, (MD_SIZE)(pre ? plen : len), &parser, &r);
+    free(pre);
     flush_word(&r);
     if (r.line_has || r.line_n > 0) line_commit(&r);
 
