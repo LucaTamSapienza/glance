@@ -44,11 +44,15 @@ static int content_rows(App *a) { return a->rows - 1; }   /* last row = status *
 
 static struct notcurses *g_nc = NULL;
 
+/* Disable enhanced keyboard input modes. CSI < u pops the kitty keyboard stack;
+ * CSI = 0 u forces all its flags off; CSI > 4 ; 0 m clears xterm modifyOtherKeys.
+ * We call this right after notcurses_init (notcurses 3.0.17 enables the kitty
+ * protocol but does not reliably disable it on iTerm2, leaking CSI-u sequences
+ * to the shell). Running the whole session in legacy input mode sidesteps that:
+ * the terminal delivers final composed characters directly, which is all an
+ * editor needs. Also used at teardown as a belt-and-suspenders. Non-supporting
+ * terminals ignore the unknown CSI. */
 static void term_kbd_reset(void) {
-    /* CSI < u : pop kitty keyboard stack;  CSI = 0 u : force all flags off;
-     * CSI > 4 ; 0 m : disable xterm modifyOtherKeys. Together these undo every
-     * enhanced-input mode notcurses may have enabled, so the shell receives
-     * plain keys again. Non-supporting terminals ignore unknown CSI. */
     const char *seq = "\033[<u\033[=0u\033[>4;0m";
     ssize_t w = write(STDOUT_FILENO, seq, strlen(seq));
     (void)w;
@@ -56,11 +60,6 @@ static void term_kbd_reset(void) {
 static void shutdown_tui(void) {
     if (g_nc) { notcurses_stop(g_nc); g_nc = NULL; }
     term_kbd_reset();
-}
-static void on_fatal_signal(int sig) {
-    shutdown_tui();
-    signal(sig, SIG_DFL);
-    raise(sig);
 }
 
 /* ---- shared helpers ------------------------------------------------------- */
@@ -411,14 +410,12 @@ int tui_keyprobe(void) {
     term_kbd_reset();
     notcurses_options opts;
     memset(&opts, 0, sizeof opts);
-    opts.flags = NCOPTION_SUPPRESS_BANNERS | NCOPTION_NO_QUIT_SIGHANDLERS;
+    opts.flags = NCOPTION_SUPPRESS_BANNERS;
     struct notcurses *nc = notcurses_init(&opts, NULL);
     if (!nc) return 1;
     g_nc = nc;
-    signal(SIGINT,  on_fatal_signal);
-    signal(SIGTERM, on_fatal_signal);
-    signal(SIGSEGV, on_fatal_signal);
-    signal(SIGABRT, on_fatal_signal);
+    term_kbd_reset();              /* legacy keyboard mode (see term_kbd_reset) */
+    atexit(term_kbd_reset);
 
     struct ncplane *p = notcurses_stdplane(nc);
     unsigned rows, cols; ncplane_dim_yx(p, &rows, &cols);
@@ -472,7 +469,7 @@ int tui_run(const char *src, unsigned long len, const char *title) {
 
     notcurses_options opts;
     memset(&opts, 0, sizeof opts);
-    opts.flags = NCOPTION_SUPPRESS_BANNERS | NCOPTION_NO_QUIT_SIGHANDLERS;
+    opts.flags = NCOPTION_SUPPRESS_BANNERS;   /* let notcurses own signal cleanup */
 
     App a;
     memset(&a, 0, sizeof a);
@@ -486,10 +483,8 @@ int tui_run(const char *src, unsigned long len, const char *title) {
     a.plane = notcurses_stdplane(a.nc);
 
     g_nc = a.nc;
-    signal(SIGINT,  on_fatal_signal);
-    signal(SIGTERM, on_fatal_signal);
-    signal(SIGSEGV, on_fatal_signal);
-    signal(SIGABRT, on_fatal_signal);
+    term_kbd_reset();              /* run in legacy keyboard mode (see above) */
+    atexit(term_kbd_reset);        /* and restore on any normal exit path */
 
     if (rerender(&a) != 0) { shutdown_tui(); free(a.src); return 1; }
     redraw(&a);
