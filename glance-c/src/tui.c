@@ -15,6 +15,7 @@
 #include "fs_save.h"
 #include "fswatch.h"
 #include "clipboard.h"
+#include "completion.h"
 #include "util.h"
 
 #include <notcurses/notcurses.h>
@@ -797,6 +798,18 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     return 1;
 }
 
+/* Insert text with bracket auto-pairing: an opener adds its closer (cursor in
+ * between), and typing a closer that already sits at the cursor steps over it. */
+static void insert_with_pairing(Editor *e, uint32_t id, const ncinput *ni) {
+    uint32_t cp = ni->eff_text[0] ? ni->eff_text[0] : id;
+    ELine *L = &e->lines[e->cy];
+    char next = (size_t)e->cx < L->len ? L->b[e->cx] : 0;
+    if (pair_should_skip(cp, next)) { editor_right(e); return; }
+    if (!try_insert_text(e, ni)) return;
+    char close = pair_closer(cp);
+    if (close) { editor_insert(e, &close, 1); editor_left(e); }
+}
+
 /* Apply one editing key (motion, structural edit, or text entry) to e. */
 static void apply_edit_key(Editor *e, uint32_t id, const ncinput *ni) {
     if (id == NCKEY_ENTER || id == '\r' || id == '\n') editor_newline(e);
@@ -809,7 +822,7 @@ static void apply_edit_key(Editor *e, uint32_t id, const ncinput *ni) {
     else if (id == NCKEY_HOME)  editor_home(e);
     else if (id == NCKEY_END)   editor_end(e);
     else if (id == NCKEY_TAB || id == '\t') editor_insert(e, "    ", 4);
-    else try_insert_text(e, ni);
+    else insert_with_pairing(e, id, ni);
 }
 
 /* Insert-mode keys: Esc leaves, Ctrl-S saves, everything else edits. */
