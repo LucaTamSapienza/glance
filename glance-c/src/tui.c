@@ -225,13 +225,38 @@ static void redraw(App *a) {
 
 /* ---- input ---------------------------------------------------------------- */
 
-/* a printable text key: a real codepoint, not a control char or synthesized
- * special, and not a Ctrl-chord (those are commands). Alt/Option and Shift are
- * allowed on purpose — on a macOS layout Option composes characters (e.g. an
- * Italian keyboard types '#' as Option+3), so rejecting Alt drops them. */
-static int is_text_key(uint32_t id, const ncinput *ni) {
+/* encode one Unicode codepoint as UTF-8; returns the byte count (1..4) */
+static int cp_to_utf8(uint32_t cp, char *o) {
+    if (cp < 0x80)    { o[0] = (char)cp; return 1; }
+    if (cp < 0x800)   { o[0] = 0xC0 | (cp >> 6);  o[1] = 0x80 | (cp & 0x3F); return 2; }
+    if (cp < 0x10000) { o[0] = 0xE0 | (cp >> 12); o[1] = 0x80 | ((cp >> 6) & 0x3F);
+                        o[2] = 0x80 | (cp & 0x3F); return 3; }
+    o[0] = 0xF0 | (cp >> 18); o[1] = 0x80 | ((cp >> 12) & 0x3F);
+    o[2] = 0x80 | ((cp >> 6) & 0x3F); o[3] = 0x80 | (cp & 0x3F); return 4;
+}
+
+/* Insert the key's *effective* text — the character the user actually meant,
+ * with layout/modifier composition applied. The kitty keyboard protocol reports
+ * the physical key in id/utf8 (e.g. '3' for Option+3, '+' for Shift+'+') and the
+ * composed result in eff_text (e.g. '#', '*'), so eff_text is the right source.
+ * Falls back to utf8 when eff_text is empty. Ctrl-chords are commands, not text.
+ * Returns 1 if something was inserted. */
+static int try_insert_text(Editor *e, const ncinput *ni) {
     if (ncinput_ctrl_p(ni)) return 0;
-    if (id < 0x20 || id == 0x7f || id > 0x10FFFF) return 0;
+    char buf[NCINPUT_MAX_EFF_TEXT_CODEPOINTS * 4];
+    int len = 0;
+    for (int i = 0; i < NCINPUT_MAX_EFF_TEXT_CODEPOINTS && ni->eff_text[i]; i++) {
+        uint32_t cp = ni->eff_text[i];
+        if (cp < 0x20 || cp == 0x7f || cp > 0x10FFFF) continue;
+        len += cp_to_utf8(cp, buf + len);
+    }
+    if (len == 0 && ni->utf8[0] && (unsigned char)ni->utf8[0] >= 0x20 &&
+        (unsigned char)ni->utf8[0] != 0x7f && ni->id <= 0x10FFFF) {
+        len = (int)strlen(ni->utf8);
+        memcpy(buf, ni->utf8, len);
+    }
+    if (len == 0) return 0;
+    editor_insert(e, buf, len);
     return 1;
 }
 
@@ -265,8 +290,7 @@ static int handle_insert(App *a, uint32_t id, const ncinput *ni) {
     else if (id == NCKEY_HOME)  editor_home(e);
     else if (id == NCKEY_END)   editor_end(e);
     else if (id == NCKEY_TAB || id == '\t') editor_insert(e, "    ", 4);
-    else if (is_text_key(id, ni) && ni->utf8[0])
-        editor_insert(e, ni->utf8, strlen(ni->utf8));
+    else try_insert_text(e, ni);
     return 1;
 }
 
@@ -301,12 +325,17 @@ int tui_keyprobe(void) {
         for (int i = 0; ni.utf8[i] && i < 4; i++)
             hp += snprintf(hex + hp, sizeof hex - hp, "%02x ", (unsigned char)ni.utf8[i]);
 
+        char eff[64] = {0};
+        int ep = 0;
+        for (int i = 0; i < NCINPUT_MAX_EFF_TEXT_CODEPOINTS && ni.eff_text[i]; i++)
+            ep += snprintf(eff + ep, sizeof eff - ep, "U+%04X ", ni.eff_text[i]);
+
         char buf[256];
         snprintf(buf, sizeof buf,
-                 "id=0x%06X  utf8=\"%s\"  hex=[%s]  alt=%d shift=%d ctrl=%d  evtype=%d",
-                 id, ni.utf8, hex,
+                 "id=0x%06X  utf8=\"%s\"  hex=[%s]  eff=[%s]  alt=%d shift=%d ctrl=%d",
+                 id, ni.utf8, hex, eff,
                  ncinput_alt_p(&ni) ? 1 : 0, ncinput_shift_p(&ni) ? 1 : 0,
-                 ncinput_ctrl_p(&ni) ? 1 : 0, (int)ni.evtype);
+                 ncinput_ctrl_p(&ni) ? 1 : 0);
 
         if (line >= (int)rows - 1) {
             line = 2;
