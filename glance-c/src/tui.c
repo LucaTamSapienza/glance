@@ -128,7 +128,7 @@ static void draw_reader(App *a) {
     int pct = total > 0 ? (shown_end * 100) / total : 100;
     char status[320];
     snprintf(status, sizeof status,
-             " READER  %s  —  %d/%d (%d%%)   e edit   q quit   j/k scroll   g/G top/bottom",
+             " READER  %s  —  %d/%d (%d%%)   i insert   q quit   j/k scroll   g/G top/bottom",
              a->title ? a->title : "", total ? a->top + 1 : 0, total, pct);
     status_bar(a, status);
     notcurses_render(a->nc);
@@ -231,7 +231,8 @@ static int is_text_key(uint32_t id, const ncinput *ni) {
 static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     int body = content_rows(a);
     if (id == 'q' || id == NCKEY_ESC)            return 0;   /* quit */
-    else if (id == 'e')                          enter_insert(a);
+    else if (id == 'i')                          enter_insert(a);  /* vi-style */
+    /* 'e' is reserved for Split view (slice 4) */
     else if (id == 'j' || id == NCKEY_DOWN)      a->top++;
     else if (id == 'k' || id == NCKEY_UP)        a->top--;
     else if (id == NCKEY_PGDOWN || (id == 'f' && ncinput_ctrl_p(ni))) a->top += body;

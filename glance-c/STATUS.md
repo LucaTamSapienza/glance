@@ -54,11 +54,12 @@ later needs no ANSI strip/re-inject.
    resize re-render. Keys: q/Esc quit, j/k + arrows, Ctrl-D/U half-page,
    PgUp/PgDn + Ctrl-F/B page, g/Home top, G/End bottom.
 3. **Editor + Insert mode (DONE)** — line-array buffer, rune-aware cursor,
-   horizontal + vertical scroll, hardware cursor. 'e' enters Insert, Esc
-   returns to Reader and re-renders the edited text. Editing: printable insert,
-   Enter split, Backspace/Del (with line join), arrows/Home/End, Tab=4 spaces.
-   Source round-trips through the buffer. Unit-tested (make test).
-4. Split + live preview.
+   horizontal + vertical scroll, hardware cursor. **vi-style: `i` enters
+   Insert**, Esc returns to Reader and re-renders the edited text. Editing:
+   printable insert, Enter split, Backspace/Del (with line join),
+   arrows/Home/End, Tab=4 spaces. Source round-trips through the buffer.
+   Unit-tested (make test).
+4. Split + live preview. **`e` enters Split** (reserved; not yet wired).
 5. Search / TOC / file-watch / atomic save / clipboard parity.
 
 Not yet wired: **save to disk** (Ctrl-S) lands in slice 5 with atomic write;
