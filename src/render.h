@@ -56,6 +56,11 @@ typedef struct {
  */
 Doc *render_doc(const char *src, size_t len, int width, int dark);
 
+/* Like render_doc, but `basedir` is the document's directory, used to find
+ * local images so an image block can be sized to the picture's aspect ratio.
+ * render_doc is this with basedir = NULL. */
+Doc *render_doc_at(const char *src, size_t len, int width, int dark, const char *basedir);
+
 void doc_free(Doc *d);
 
 /* Serialize a Doc to a newly malloc'd, NUL-terminated ANSI string (caller

@@ -78,6 +78,8 @@ typedef struct {
     int    graph_sel;            /* selected neighbour (backlinks then outbound) */
     struct ncplane *imgpl[16];   /* planes the reader blits decoded images onto */
     int    nimgpl;
+    struct { char *path; struct ncvisual *v; } imgcache[8];  /* decoded images, by path */
+    int    nimgcache;
 } App;
 
 #define TOC_W 30                 /* table-of-contents panel width */
@@ -85,6 +87,7 @@ typedef struct {
 static int content_rows(App *a) { return a->rows - 1; }   /* last row = status */
 
 static int map_line(int from, int nfrom, int nto);        /* defined below */
+static const char *doc_dir(App *a, char *buf, size_t cap);/* defined below */
 static int doc_src_line(const Doc *d, int line);          /* defined below */
 static int src_doc_line(const Doc *d, int srcline);       /* defined below */
 static void open_graph(App *a);                           /* defined below */
@@ -438,32 +441,45 @@ static void clear_images(App *a) {
     a->nimgpl = 0;
 }
 
-/* Resolve an image src to a local filesystem path (relative to the document's
- * directory), or NULL for a URL we can't blit. Caller frees. */
-static char *resolve_image_path(App *a, const char *src) {
-    if (!src) return NULL;
-    if (strncmp(src, "http://", 7) == 0 || strncmp(src, "https://", 8) == 0) return NULL;
-    if (src[0] == '/' || !a->path) return strdup(src);
-    char tmp[4096]; snprintf(tmp, sizeof tmp, "%s", a->path);
-    char *dir = dirname(tmp);
-    size_t need = strlen(dir) + 1 + strlen(src) + 1;
-    char *out = malloc(need);
-    if (out) snprintf(out, need, "%s/%s", dir, src);
-    return out;
+/* Decode an image once and keep it, so scrolling doesn't re-decode the file on
+ * every frame. Returns a cached ncvisual (owned by the cache), or NULL. */
+static struct ncvisual *cached_visual(App *a, const char *path) {
+    for (int i = 0; i < a->nimgcache; i++)
+        if (strcmp(a->imgcache[i].path, path) == 0) return a->imgcache[i].v;
+    struct ncvisual *v = ncvisual_from_file(path);
+    if (!v) return NULL;
+    int cap = (int)(sizeof a->imgcache / sizeof a->imgcache[0]);
+    if (a->nimgcache == cap) {                       /* evict the oldest */
+        free(a->imgcache[0].path);
+        ncvisual_destroy(a->imgcache[0].v);
+        memmove(a->imgcache, a->imgcache + 1, (cap - 1) * sizeof a->imgcache[0]);
+        a->nimgcache--;
+    }
+    a->imgcache[a->nimgcache].path = strdup(path);
+    a->imgcache[a->nimgcache].v = v;
+    a->nimgcache++;
+    return v;
 }
 
-/* Decode an image and blit it onto a child plane covering the reserved rows.
- * Anything that can't be drawn (a URL, a missing file, a terminal without image
- * support) silently leaves the ▦ placeholder text the renderer already drew. */
+/* Free every decoded image (at teardown). */
+static void clear_image_cache(App *a) {
+    for (int i = 0; i < a->nimgcache; i++) { free(a->imgcache[i].path); ncvisual_destroy(a->imgcache[i].v); }
+    a->nimgcache = 0;
+}
+
+/* Blit an image onto a child plane covering the reserved rows. Anything that
+ * can't be drawn (a URL, a missing file, a terminal without image support)
+ * silently leaves the ▦ placeholder text the renderer already drew. */
 static void blit_image(App *a, const char *src, int row, int rows) {
     if (a->nimgpl >= (int)(sizeof a->imgpl / sizeof a->imgpl[0])) return;
     int body = content_rows(a);
     int h = rows; if (row + h > body) h = body - row;
     int w = a->cols;
     if (h < 1 || w < 2) return;
-    char *path = resolve_image_path(a, src);
+    char dirbuf[4096];
+    char *path = path_resolve(doc_dir(a, dirbuf, sizeof dirbuf), src);
     if (!path) return;
-    struct ncvisual *v = ncvisual_from_file(path);
+    struct ncvisual *v = cached_visual(a, path);
     free(path);
     if (!v) return;
     /* Wipe the placeholder text from the reserved rows so it can't show through
@@ -477,12 +493,11 @@ static void blit_image(App *a, const char *src, int row, int rows) {
     struct ncplane_options no; memset(&no, 0, sizeof no);
     no.y = row; no.x = 0; no.rows = (unsigned)h; no.cols = (unsigned)w;
     struct ncplane *ip = ncplane_create(a->plane, &no);
-    if (!ip) { ncvisual_destroy(v); return; }
+    if (!ip) return;             /* v stays in the cache */
     struct ncvisual_options vo; memset(&vo, 0, sizeof vo);
     vo.n = ip; vo.scaling = NCSCALE_SCALE; vo.blitter = NCBLIT_DEFAULT;
     if (ncvisual_blit(a->nc, v, &vo) == NULL) ncplane_destroy(ip);
     else a->imgpl[a->nimgpl++] = ip;
-    ncvisual_destroy(v);
 }
 
 static void draw_reader(App *a) {
@@ -582,13 +597,23 @@ static void draw_editor(App *a) {
     notcurses_render(a->nc);
 }
 
+/* The document's directory (for resolving relative image paths), into buf, or
+ * NULL for stdin input that has no path. */
+static const char *doc_dir(App *a, char *buf, size_t cap) {
+    if (!a->path) return NULL;
+    snprintf(buf, cap, "%s", a->path);
+    return dirname(buf);
+}
+
 /* Re-render the live preview from the editor text at the right-pane width. */
 static void render_preview(App *a) {
     if (a->preview) { doc_free(a->preview); a->preview = NULL; }
     int rw = a->cols - a->cols / 2 - 1;
     if (rw < 4) rw = 4;
+    char dirbuf[4096];
+    const char *base = doc_dir(a, dirbuf, sizeof dirbuf);
     size_t nlen; char *s = editor_source(&a->ed, &nlen);
-    if (s) { a->preview = render_doc(s, nlen, rw, a->dark); free(s); }
+    if (s) { a->preview = render_doc_at(s, nlen, rw, a->dark, base); free(s); }
 }
 
 /* Split mode: editor on the left, a live preview on the right, a divider
@@ -647,7 +672,9 @@ static void update_dims(App *a) {
 static int rerender(App *a) {
     update_dims(a);
     if (a->doc) doc_free(a->doc);
-    a->doc = render_doc(a->src, a->srclen, a->cols, a->dark);
+    char dirbuf[4096];
+    const char *base = doc_dir(a, dirbuf, sizeof dirbuf);
+    a->doc = render_doc_at(a->src, a->srclen, a->cols, a->dark, base);
     if (!a->doc) return -1;
     if (a->searchbuf[0]) {
         search_doc(a->doc, a->searchbuf, &a->hits);
@@ -1446,6 +1473,7 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
     hits_free(&a.hits);
     toc_free(&a.toc);
     doc_free(a.doc);
+    clear_image_cache(&a);     /* notcurses_stop frees the planes, not the visuals */
     shutdown_tui();
     for (int i = 0; i < a.nbl; i++) free(a.bl[i]);
     for (int i = 0; i < a.nback; i++) free(a.back[i]);

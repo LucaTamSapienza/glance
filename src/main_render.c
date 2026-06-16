@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <libgen.h>
 #include <sys/ioctl.h>
 
 /* Width of the controlling terminal, or 80 when it can't be determined. */
@@ -37,9 +38,12 @@ int main(int argc, char **argv) {
     if (width <= 0) width = term_width();
 
     FILE *f = stdin;
+    char dirbuf[4096]; const char *base = NULL;
     if (optind < argc) {
         f = fopen(argv[optind], "rb");
         if (!f) { perror(argv[optind]); return 1; }
+        snprintf(dirbuf, sizeof dirbuf, "%s", argv[optind]);
+        base = dirname(dirbuf);   /* resolve relative image paths for sizing */
     }
 
     size_t len = 0;
@@ -47,7 +51,7 @@ int main(int argc, char **argv) {
     if (f != stdin) fclose(f);
     if (!src) { fprintf(stderr, "read failed\n"); return 1; }
 
-    Doc *doc = render_doc(src, len, width, dark);
+    Doc *doc = render_doc_at(src, len, width, dark, base);
     free(src);
     if (!doc) { fprintf(stderr, "render failed\n"); return 1; }
 

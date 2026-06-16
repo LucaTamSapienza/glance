@@ -91,8 +91,9 @@ The four gaps the user prioritised are all **done** (see above). Residual polish
 
 - Syntax highlighting: more languages, multi-line raw strings (Go backticks),
   better YAML scalar typing.
-- Images: fixed reserved height (no aspect sizing), decoded per frame (no cache),
+- Images: aspect-ratio sized (`image_size.c`) and decoded once (cached); still
   hidden until the top row scrolls in, and remote (`http`) images aren't fetched.
+  Cell-aspect is an approximation, not queried from the terminal.
 - Cursor sync: soft-wrapped multi-line paragraphs map to the block, not the exact
   wrapped sub-line (bounded by md4c having no source offsets).
 - Wide tables overflow rather than wrap/truncate.

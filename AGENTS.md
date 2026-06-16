@@ -70,6 +70,7 @@ toc.c        table of contents from the tagged heading lines
 editor.c     rune-aware line-array text buffer
 completion.c bracket auto-pairing
 highlight.c  spec-driven per-language code highlighter (token classes)
+image_size.c pixel dimensions from an image header (aspect-ratio sizing)
 fs_save.c    atomic write (temp file + rename, preserving mode)
 fswatch.c    kqueue watch of the parent directory (survives atomic rename)
 clipboard.c  pbcopy + open (system clipboard / opening links)

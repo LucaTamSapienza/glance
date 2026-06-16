@@ -38,6 +38,7 @@ toc.c          table of contents from tagged heading lines
 editor.c       line-array text buffer with a rune-aware cursor
 completion.c   bracket auto-pairing (no backtick/fence)
 highlight.c    spec-driven per-language code highlighter (token classes)
+image_size.c   pixel dimensions from an image header (for aspect-ratio sizing)
 fs_save.c      atomic write (temp + rename, preserve mode)
 fswatch.c      kqueue watch of the parent directory
 clipboard.c    pbcopy + open (system clipboard / link opening)
@@ -117,7 +118,8 @@ real terminal and is verified interactively.
 - Syntax highlighting is line-by-line and best-effort (no full grammar): it
   covers common languages and may mis-tokenise exotic constructs; unknown
   languages fall back to a plain styled background.
-- Inline images use a fixed reserved height, are decoded per frame (no cache),
-  and only blit once the image's top row scrolls into view; remote (`http`)
-  images aren't fetched — they keep the placeholder and open with Enter.
+- Inline images are sized to the picture's aspect ratio (via `image_size.c`) and
+  decoded once (cached), but only blit when the image's top row is on screen, and
+  remote (`http`) images aren't fetched — they keep the placeholder and open with
+  Enter. The cell-aspect factor is an approximation, not read from the terminal.
 - Very wide tables overflow the width rather than wrapping/truncating.

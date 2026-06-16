@@ -9,7 +9,8 @@
 #include "render.h"
 #include "preprocess.h"
 #include "highlight.h"
-#include "util.h"   /* u8_width for display-column counting */
+#include "image_size.h"
+#include "util.h"   /* u8_width, path_resolve */
 
 #include <md4c.h>
 #include <stdlib.h>
@@ -75,6 +76,7 @@ typedef struct { Cell cells[MAX_COLS]; int ncell, header; } TRow;
 typedef struct {
     Doc  *doc;
     int   width, dark;
+    const char *basedir;   /* document directory, for sizing local images */
 
     /* pending visual line being assembled */
     Run  *line; size_t line_n, line_cap;
@@ -422,6 +424,21 @@ static void table_free(R *r) {
  * TUI blits the decoded picture over (the CLI just shows the placeholder). */
 #define IMG_ROWS 8
 
+/* Reserve a row count matching the picture's aspect ratio (a terminal cell is
+ * about twice as tall as wide, so a square image needs roughly half as many
+ * rows as columns). Falls back to a default when the file can't be measured. */
+static int image_rows(R *r, const char *src) {
+    char *path = path_resolve(r->basedir, src);
+    int rows = IMG_ROWS, iw, ih;
+    if (path && img_pixel_size(path, &iw, &ih) && iw > 0 && ih > 0) {
+        int target = r->width > 72 ? 72 : r->width;            /* cap display width */
+        int rr = (int)((double)ih / iw * target * 0.5 + 0.5);  /* 0.5 = cell w/h */
+        rows = rr < 3 ? 3 : (rr > 20 ? 20 : rr);
+    }
+    free(path);
+    return rows;
+}
+
 /* Accumulate an image's alt text (it arrives as text events inside the span). */
 static void img_alt_append(R *r, const char *s, size_t n) {
     if (r->img_alt_len + n + 1 > r->img_alt_cap) {
@@ -454,10 +471,11 @@ static void emit_image(R *r) {
     r->line_cols += 2 + u8_width(label, ll);
     r->line_has = 1;
     line_commit(r);
+    int rows = r->img_src ? image_rows(r, r->img_src) : IMG_ROWS;
     Line *L = &r->doc->lines[r->doc->nline - 1];
     L->image = r->img_src ? strdup(r->img_src) : NULL;
-    L->img_rows = IMG_ROWS;
-    for (int i = 1; i < IMG_ROWS; i++) line_commit(r);       /* reserved rows */
+    L->img_rows = rows;
+    for (int i = 1; i < rows; i++) line_commit(r);           /* reserved rows */
     r->img_alt_len = 0;
 }
 
@@ -795,8 +813,13 @@ static void tag_source_lines(Doc *d, const char *src, size_t len) {
 
 /* ---- entry / teardown ----------------------------------------------------- */
 
-/* Parse src with md4c (GFM dialect) and build the Doc; see render.h. */
+/* render_doc with basedir = NULL; see render.h. */
 Doc *render_doc(const char *src, size_t len, int width, int dark) {
+    return render_doc_at(src, len, width, dark, NULL);
+}
+
+/* Parse src with md4c (GFM dialect) and build the Doc; see render.h. */
+Doc *render_doc_at(const char *src, size_t len, int width, int dark, const char *basedir) {
     Doc *doc = calloc(1, sizeof *doc);
     if (!doc) return NULL;
     doc->width = width > 4 ? width : 80;
@@ -806,6 +829,7 @@ Doc *render_doc(const char *src, size_t len, int width, int dark) {
     r.doc = doc;
     r.width = doc->width;
     r.dark = dark;
+    r.basedir = basedir;
 
     MD_PARSER parser;
     memset(&parser, 0, sizeof parser);

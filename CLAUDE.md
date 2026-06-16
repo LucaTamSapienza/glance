@@ -46,6 +46,7 @@ src/
   editor.c       rune-aware line-array text buffer
   completion.c   bracket auto-pairing (no backtick/fence pairing)
   highlight.c    spec-driven per-language code highlighter (token classes)
+  image_size.c   pixel dimensions from an image header (aspect-ratio sizing)
   fs_save.c      atomic write (temp file + rename, preserve mode)
   fswatch.c      kqueue watch of the parent directory
   clipboard.c    pbcopy + open (system clipboard / opening links)

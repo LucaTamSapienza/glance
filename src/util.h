@@ -27,4 +27,10 @@ int u8_encode(uint32_t cp, char *out);
  * byte length. Returns NULL on allocation failure. */
 char *read_file(FILE *f, size_t *len);
 
+/* Resolve `src` against directory `basedir`: an absolute path is copied as-is,
+ * a relative one is joined onto basedir (or the cwd when basedir is NULL), and a
+ * URL (http/https) yields NULL. Returns a malloc'd path the caller frees, or
+ * NULL for a URL / allocation failure. */
+char *path_resolve(const char *basedir, const char *src);
+
 #endif /* GLANCE_UTIL_H */

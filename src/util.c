@@ -2,6 +2,8 @@
 #include "util.h"
 
 #include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
 
 /* True if b is a UTF-8 continuation byte. */
 int u8_cont(unsigned char b) { return (b & 0xC0) == 0x80; }
@@ -49,4 +51,15 @@ char *read_file(FILE *f, size_t *len) {
     buf[n] = '\0';   /* n < cap here: the buffer grows whenever it fills */
     *len = n;
     return buf;
+}
+
+/* Resolve a path against a base directory; see util.h. */
+char *path_resolve(const char *basedir, const char *src) {
+    if (!src) return NULL;
+    if (strncmp(src, "http://", 7) == 0 || strncmp(src, "https://", 8) == 0) return NULL;
+    if (src[0] == '/' || !basedir || !*basedir) return strdup(src);
+    size_t need = strlen(basedir) + 1 + strlen(src) + 1;
+    char *out = malloc(need);
+    if (out) snprintf(out, need, "%s/%s", basedir, src);
+    return out;
 }
