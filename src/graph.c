@@ -18,11 +18,15 @@ int graph_find(const Graph *g, const char *target) {
     return -1;
 }
 
-static void edge_push(Graph *g, int cap_hint, int from, int to, int wiki) {
-    (void)cap_hint;
-    GEdge *p = realloc(g->edge, (g->ne + 1) * sizeof(GEdge));
-    if (!p) return;
-    g->edge = p;
+/* Append an edge, growing the array geometrically (doubling) so building a
+ * densely-linked vault's graph stays linear rather than O(edges squared). */
+static void edge_push(Graph *g, int from, int to, int wiki) {
+    if (g->ne == g->ecap) {
+        int nc = g->ecap ? g->ecap * 2 : 64;
+        GEdge *p = realloc(g->edge, (size_t)nc * sizeof(GEdge));
+        if (!p) return;
+        g->edge = p; g->ecap = nc;
+    }
     g->edge[g->ne].from = from; g->edge[g->ne].to = to; g->edge[g->ne].wiki = wiki;
     g->ne++;
 }
@@ -48,7 +52,7 @@ void graph_build(const char *root, Graph *g) {
         vault_links(src, len, &l);
         for (int k = 0; k < l.n; k++) {
             int j = graph_find(g, l.v[k].target);
-            if (j >= 0) edge_push(g, 0, i, j, l.v[k].wiki);
+            if (j >= 0) edge_push(g, i, j, l.v[k].wiki);
         }
         vlinks_free(&l);
         free(src);

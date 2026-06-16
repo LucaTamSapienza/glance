@@ -19,6 +19,7 @@
 #include "vault.h"
 #include "graph.h"
 #include "util.h"
+#include "image_size.h"
 
 #include <notcurses/notcurses.h>
 #include <stdlib.h>
@@ -84,7 +85,8 @@ typedef struct {
 
 #define TOC_W 30                 /* table-of-contents panel width */
 
-static int content_rows(App *a) { return a->rows - 1; }   /* last row = status */
+/* Rows available for content: every terminal row except the bottom status bar. */
+static int content_rows(App *a) { return a->rows - 1; }
 
 /* True if the event is Ctrl-<c> (c a lowercase letter). Terminals encode such a
  * chord in three ways and we accept all: the raw control code (Ctrl-V = 0x16),
@@ -454,42 +456,58 @@ static void clear_images(App *a) {
  * decoded fresh each frame: reusing one ncvisual across frames confuses
  * notcurses' pixel-sprite bookkeeping and leaks escape sequences to the screen.
  * Anything that can't be drawn (a URL, a missing file, a terminal without image
- * support) silently leaves the ▦ placeholder text the renderer already drew. */
+ * support) silently leaves the ▦ placeholder text the renderer already drew.
+ *
+ * The plane is sized to the picture's own aspect ratio — width in cells derived
+ * from its pixel dimensions, given that a terminal cell is roughly twice as tall
+ * as it is wide — and the picture is STRETCHed to fill it exactly. That leaves no
+ * letterbox margin, which matters for NCBLIT_PIXEL: blank margin cells under a
+ * pixel sprixel get "annihilated" and would punch holes in the surrounding text.
+ * With a tight plane the crisp pixel blitter is safe on terminals that support
+ * it; elsewhere we fall back to the cell blitter (quadrants/sextants). */
 static void blit_image(App *a, const char *src, int row, int rows) {
     if (a->nimgpl >= (int)(sizeof a->imgpl / sizeof a->imgpl[0])) return;
     int body = content_rows(a);
     int h = rows; if (row + h > body) h = body - row;
-    int w = a->cols;
-    if (h < 1 || w < 2) return;
+    if (h < 1 || a->cols < 2) return;
     char dirbuf[4096];
     char *path = path_resolve(doc_dir(a, dirbuf, sizeof dirbuf), src);
     if (!path) return;
+
+    int iw = 0, ih = 0, w = a->cols;
+    if (img_pixel_size(path, &iw, &ih) == 1 && iw > 0 && ih > 0) {
+        w = (int)((double)iw / ih * h * 2.0 + 0.5);   /* cells ≈ 2:1 tall:wide */
+        if (w > a->cols) w = a->cols;
+        if (w < 2) w = 2;
+    }
+    int x = (a->cols - w) / 2;                          /* centre horizontally */
+
     struct ncvisual *v = ncvisual_from_file(path);
     free(path);
     if (!v) return;
-    /* Wipe the placeholder text from the reserved rows so it can't show through
-     * the letterbox margins NCSCALE_SCALE leaves around the picture. */
+
+    /* Wipe the placeholder text from the reserved rows so nothing peeks beside
+     * the centred picture. (The base plane is redrawn every frame anyway.) */
     ncplane_set_fg_default(a->plane);
     ncplane_set_bg_default(a->plane);
     for (int ry = row; ry < row + h; ry++)
-        for (int rx = 0; rx < w; rx++) ncplane_putchar_yx(a->plane, ry, rx, ' ');
-    /* Cover the full row width (from column 0); NCSCALE_SCALE letterboxes the
-     * picture within the box. */
+        for (int rx = 0; rx < a->cols; rx++) ncplane_putchar_yx(a->plane, ry, rx, ' ');
+
     struct ncplane_options no; memset(&no, 0, sizeof no);
-    no.y = row; no.x = 0; no.rows = (unsigned)h; no.cols = (unsigned)w;
+    no.y = row; no.x = x; no.rows = (unsigned)h; no.cols = (unsigned)w;
     struct ncplane *ip = ncplane_create(a->plane, &no);
     if (!ip) { ncvisual_destroy(v); return; }
-    /* Cell-based blitter (quadrants/sextants/braille as the terminal allows).
-     * NCBLIT_PIXEL would be crisper but, recreated per frame over a full-width
-     * plane, it annihilated the surrounding text on some terminals — that needs
-     * the persistent-plane rework before it can be turned on. */
     struct ncvisual_options vo; memset(&vo, 0, sizeof vo);
-    vo.n = ip; vo.scaling = NCSCALE_SCALE; vo.blitter = NCBLIT_DEFAULT;
+    vo.n = ip; vo.scaling = NCSCALE_STRETCH;
+    vo.blitter = a->pixel ? NCBLIT_PIXEL : NCBLIT_DEFAULT;
     if (ncvisual_blit(a->nc, v, &vo) == NULL) ncplane_destroy(ip);
     else a->imgpl[a->nimgpl++] = ip;
     ncvisual_destroy(v);
 }
 
+/* Draw the Reader screen: the visible Doc lines, selection and search overlays,
+ * the block cursor, any inline images, plus the TOC/backlinks panel and status
+ * bar. The whole frame is composed here and pushed with one notcurses_render. */
 static void draw_reader(App *a) {
     notcurses_cursor_disable(a->nc);
     reader_scroll(a);
@@ -690,6 +708,9 @@ static int map_line(int from, int nfrom, int nto) {
  * above it), or -1 if the Doc carries no source tags. render.c fills the tags
  * by content matching; this turns them into an exact reader->editor map. */
 static int doc_src_line(const Doc *d, int line) {
+    if (d->nline == 0) return -1;                       /* empty doc (new file) */
+    if (line >= (int)d->nline) line = (int)d->nline - 1;
+    if (line < 0) line = 0;
     for (int i = line; i >= 0; i--) if (d->lines[i].source_line > 0) return d->lines[i].source_line - 1;
     for (int i = line + 1; i < (int)d->nline; i++) if (d->lines[i].source_line > 0) return d->lines[i].source_line - 1;
     return -1;
@@ -764,6 +785,7 @@ static void draw_help(App *a) {
         "    e                   split: editor + live preview",
         "    t                   table of contents",
         "    /                   search    (n / N next / prev)",
+        "    v / V               select lines   (y yanks to clipboard)",
         "    Ctrl-S              save",
         "    :w :wq :q :q!       write / quit",
         "    ?                   toggle this help",
@@ -777,6 +799,9 @@ static void draw_help(App *a) {
         "  Insert / Split",
         "    Esc                 back to reader",
         "    Ctrl-S              save",
+        "    Ctrl-V              paste a clipboard image",
+        "    Alt/Ctrl + arrows   jump word left / right",
+        "    Cmd + arrows        line start / end  (also Ctrl-A / Ctrl-E)",
         "",
         "  press any key to close",
     };
@@ -963,6 +988,7 @@ static int handle_toc(App *a, uint32_t id, const ncinput *ni) {
 
 /* Yank the selected visual lines (their plain text) to the system clipboard. */
 static void yank_selection(App *a) {
+    if (a->doc->nline == 0) { a->visualmode = 0; return; }   /* nothing to yank (empty doc) */
     int lo = a->visual_anchor, hi = a->rcur_line;
     if (lo > hi) { int t = lo; lo = hi; hi = t; }
     /* gather the run text of each selected Doc line, joined by newlines */
@@ -1257,8 +1283,33 @@ static void insert_with_pairing(Editor *e, uint32_t id, const ncinput *ni) {
     if (close) { editor_insert(e, &close, 1); editor_left(e); }
 }
 
+/* Fast cursor motion from modifier chords, mapping the several encodings macOS
+ * terminals use. Returns 1 if it handled the key.
+ *   - Ctrl-A / Ctrl-E  -> line start / end. This is the readline convention, and
+ *     several terminals (incl. the default macOS one) send exactly these for
+ *     Cmd+Left / Cmd+Right, so this is what makes Cmd+arrows work.
+ *   - Cmd (super) + Left/Right -> line start / end, for terminals that report the
+ *     super modifier directly.
+ *   - Alt/Meta/Ctrl + Left/Right, and Meta-b / Meta-f -> previous / next word.
+ * Caveat: some terminals send Option+Left/Right as a *bare* 'b'/'f' with no
+ * modifier bit (verified with `glance --keys`), which is indistinguishable from
+ * typing those letters — so word-jump on Option+arrows can't be done here and
+ * needs a terminal-side key binding instead. */
+static int try_nav_key(Editor *e, uint32_t id, const ncinput *ni) {
+    int meta = ncinput_alt_p(ni) || ncinput_meta_p(ni);   /* Option, either bit */
+    int word = meta || ncinput_ctrl_p(ni);
+    if (ctrl_is(id, ni, 'a')) { editor_home(e); return 1; }
+    if (ctrl_is(id, ni, 'e')) { editor_end(e);  return 1; }
+    if (id == NCKEY_LEFT  && ncinput_super_p(ni)) { editor_home(e); return 1; }
+    if (id == NCKEY_RIGHT && ncinput_super_p(ni)) { editor_end(e);  return 1; }
+    if ((id == NCKEY_LEFT  && word) || (meta && (id == 'b' || id == 'B'))) { editor_word_left(e);  return 1; }
+    if ((id == NCKEY_RIGHT && word) || (meta && (id == 'f' || id == 'F'))) { editor_word_right(e); return 1; }
+    return 0;
+}
+
 /* Apply one editing key (motion, structural edit, or text entry) to e. */
 static void apply_edit_key(Editor *e, uint32_t id, const ncinput *ni) {
+    if (try_nav_key(e, id, ni)) return;
     if (id == NCKEY_ENTER || id == '\r' || id == '\n') editor_newline(e);
     else if (id == NCKEY_BACKSPACE || id == 0x08 || id == 0x7f) editor_backspace(e);
     else if (id == NCKEY_DEL)   editor_delete(e);
@@ -1372,9 +1423,10 @@ int tui_keyprobe(void) {
 
         char buf[256];
         snprintf(buf, sizeof buf,
-                 "id=0x%06X  utf8=\"%s\"  hex=[%s]  eff=[%s]  alt=%d shift=%d ctrl=%d",
+                 "id=0x%06X  utf8=\"%s\"  hex=[%s]  eff=[%s]  alt=%d meta=%d super=%d shift=%d ctrl=%d",
                  id, ni.utf8, hex, eff,
-                 ncinput_alt_p(&ni) ? 1 : 0, ncinput_shift_p(&ni) ? 1 : 0,
+                 ncinput_alt_p(&ni) ? 1 : 0, ncinput_meta_p(&ni) ? 1 : 0,
+                 ncinput_super_p(&ni) ? 1 : 0, ncinput_shift_p(&ni) ? 1 : 0,
                  ncinput_ctrl_p(&ni) ? 1 : 0);
 
         if (line >= (int)rows - 1) {

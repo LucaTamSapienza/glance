@@ -1,6 +1,7 @@
 /* main.c — glance TUI entry point.
  *
  *   glance [file.md]      open a file (or stdin) in the Reader/Insert TUI
+ *   glance --help         full usage and key bindings
  *   glance --keys         diagnostic: print raw key events (see tui_keyprobe)
  *   glance --outline FILE  JSON heading tree   (agent-facing)
  *   glance --links FILE    JSON outbound links (agent-facing)
@@ -14,6 +15,44 @@
 #include <stdlib.h>
 #include <string.h>
 #include <libgen.h>
+#include <errno.h>
+
+/* Print the full usage: invocation forms, subcommands, and every key binding,
+ * so `glance --help` is the single place that documents the whole program. */
+static void print_help(void) {
+    fputs(
+"glance — a terminal Markdown reader & editor.\n"
+"\n"
+"USAGE\n"
+"  glance [FILE]            open FILE in the TUI (a missing path starts a new,\n"
+"                           empty file, created on first save)\n"
+"  cat FILE | glance        read Markdown from stdin\n"
+"  glance --keys            diagnostic: print raw key events, Esc to quit\n"
+"  glance --outline FILE    print the heading tree as JSON (for agents)\n"
+"  glance --links FILE      print the file's outbound links as JSON\n"
+"  glance --graph DIR       print the vault's link graph as JSON\n"
+"  glance --help            show this help\n"
+"\n"
+"  glance-render [-w WIDTH] [-l] [FILE]   render to ANSI on stdout (-l = light)\n"
+"\n"
+"KEYS — Reader\n"
+"  h j k l / arrows     move the cursor          g / G        top / bottom\n"
+"  Ctrl-D / Ctrl-U      half page down / up      PgDn / PgUp  page down / up\n"
+"  i                    insert mode (edit)       e            split: edit + preview\n"
+"  t                    table of contents        / n N        search, next, prev\n"
+"  v / V                start line selection      y            yank selection to clipboard\n"
+"  Enter                open link / follow [[wikilink]] under the cursor\n"
+"  - / Ctrl-O           back to the previous file (after following a link)\n"
+"  b                    backlinks panel          Ctrl-G       graph explorer\n"
+"  Ctrl-S               save                     ?            toggle the help overlay\n"
+"  :w :wq :q :q!        write / quit (vi-style)  Ctrl-C       quit\n"
+"\n"
+"KEYS — Insert / Split\n"
+"  Esc                  back to reader           Ctrl-S       save\n"
+"  Ctrl-V               paste a clipboard image into a <name>_media/ folder\n"
+"  Alt/Ctrl + arrows    jump word left / right   Cmd + arrows / Ctrl-A / Ctrl-E  line start / end\n",
+        stdout);
+}
 
 /* Read a whole file into a buffer; prints an error and returns NULL on failure. */
 static char *load(const char *path, size_t *len) {
@@ -36,6 +75,10 @@ static int run_export(void (*fn)(const char *, size_t), const char *path) {
 /* Load a file (or stdin) and run the TUI on it. The status-bar title is the
  * file's base name, or "stdin". Non-interactive subcommands print JSON & exit. */
 int main(int argc, char **argv) {
+    if (argc > 1 && (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help"))) {
+        print_help();
+        return 0;
+    }
     if (argc > 1 && (!strcmp(argv[1], "-k") || !strcmp(argv[1], "--keys")))
         return tui_keyprobe();
     if (argc > 2 && !strcmp(argv[1], "--outline")) return run_export(agent_outline, argv[2]);
@@ -44,20 +87,32 @@ int main(int argc, char **argv) {
 
     FILE *f = stdin;
     char title[256] = "stdin";
+    const char *path = NULL;
+    char *src = NULL;
+    size_t len = 0;
+
     if (argc > 1) {
-        f = fopen(argv[1], "rb");
-        if (!f) { perror(argv[1]); return 1; }
+        path = argv[1];
         char tmp[1024];
         snprintf(tmp, sizeof tmp, "%s", argv[1]);
         snprintf(title, sizeof title, "%s", basename(tmp));
+        f = fopen(argv[1], "rb");
+        if (!f) {
+            /* A missing path is not an error: open an empty buffer and keep the
+             * name, so the first :w / Ctrl-S creates the file (like vim). Any
+             * other failure (permissions, a directory) is still fatal. */
+            if (errno != ENOENT) { perror(argv[1]); return 1; }
+            src = calloc(1, 1);
+        }
     }
 
-    size_t len = 0;
-    char *src = read_file(f, &len);
-    if (f != stdin) fclose(f);
-    if (!src) { fprintf(stderr, "read failed\n"); return 1; }
+    if (!src) {
+        src = read_file(f, &len);
+        if (f != stdin) fclose(f);
+        if (!src) { fprintf(stderr, "read failed\n"); return 1; }
+    }
 
-    int rc = tui_run(src, len, f == stdin ? NULL : argv[1], title);
+    int rc = tui_run(src, len, path, title);
     free(src);
     return rc;
 }

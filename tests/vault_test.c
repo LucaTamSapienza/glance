@@ -56,6 +56,20 @@ int main(void) {
         expect(f.n == 2, "scan finds two files across subdir");
         vfiles_free(&f);
 
+        /* A symlink cycle (loop -> ..) must not hang or crash the scan: the
+         * scan uses lstat + a depth cap, so the symlink is skipped and the scan
+         * still terminates. (If this regressed it would recurse until OOM/abort
+         * under the test's AddressSanitizer build.) */
+        char lp[1024];
+        snprintf(lp, sizeof lp, "%s/loop", dir);
+        if (symlink("..", lp) == 0) {
+            VFiles fl = {0};
+            vault_scan(dir, &fl);
+            expect(fl.n == 2, "symlink cycle skipped; scan still terminates");
+            vfiles_free(&fl);
+            unlink(lp);
+        }
+
         char *hit = vault_find(dir, "Deep Note");   /* by stem, in a subdir */
         expect(hit && strstr(hit, "sub/Deep Note.md") != NULL, "wikilink resolves into subdir");
         free(hit);

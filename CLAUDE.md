@@ -23,8 +23,10 @@ notcurses cell blitter. No glamour, no black box.
 ```sh
 make                 # build ./glance (TUI) and ./glance-render (CLI)
 make test            # all unit tests under AddressSanitizer + UBSan
+make install         # copy both binaries to $(PREFIX)/bin (default /usr/local)
 make clean           # remove binaries and build artifacts
 
+./glance --help                         # full usage + every key binding
 ./glance testdata/sample.md             # open in the TUI
 ./glance-render -w 80 testdata/sample.md   # render to ANSI on stdout (-l = light)
 cat note.md | ./glance                  # read from stdin

@@ -199,8 +199,10 @@ static void flush_word(R *r) {
     }
     for (size_t i = 0; i < r->word_n; i++) {
         Run *w = &r->word[i];
-        runs_push(&r->line, &r->line_n, &r->line_cap, w->text, w->len, w->st);
-        r->line[r->line_n - 1].link = w->link;   /* transfer link ownership */
+        if (runs_push(&r->line, &r->line_n, &r->line_cap, w->text, w->len, w->st) == 0)
+            r->line[r->line_n - 1].link = w->link;   /* transfer link ownership */
+        else
+            free(w->link);                           /* push failed (OOM): don't leak it */
         free(w->text);
     }
     r->line_cols += r->word_cols;
@@ -211,7 +213,7 @@ static void flush_word(R *r) {
 
 /* push a styled run onto the pending word, tagging it with the active link */
 static void word_run(R *r, const char *text, size_t len, Style st) {
-    runs_push(&r->word, &r->word_n, &r->word_cap, text, len, st);
+    if (runs_push(&r->word, &r->word_n, &r->word_cap, text, len, st) != 0) return;
     if (r->cur_link) r->word[r->word_n - 1].link = strdup(r->cur_link);
     r->word_cols += u8_width(text, len);
 }
@@ -369,8 +371,8 @@ static void emit_row(R *r, TRow *row, const int *colw, int ncol) {
         push_spaces(r, lpad);
         if (cell) for (size_t k = 0; k < cell->nrun; k++) {
             Run *rn = &cell->runs[k];
-            runs_push(&r->line, &r->line_n, &r->line_cap, rn->text, rn->len, rn->st);
-            if (rn->link) r->line[r->line_n - 1].link = strdup(rn->link);
+            if (runs_push(&r->line, &r->line_n, &r->line_cap, rn->text, rn->len, rn->st) == 0 && rn->link)
+                r->line[r->line_n - 1].link = strdup(rn->link);
             r->line_cols += u8_width(rn->text, rn->len);
         }
         push_spaces(r, rpad);
@@ -464,7 +466,7 @@ static void emit_image(R *r) {
     const char *label = r->img_alt_len ? r->img_alt : (r->img_src ? r->img_src : "image");
     size_t ll = r->img_alt_len ? r->img_alt_len : strlen(label);
     runs_push(&r->line, &r->line_n, &r->line_cap, label, ll, is);
-    if (r->img_src) {
+    if (r->img_src && r->line_n >= 2) {                       /* >= 2: both runs pushed */
         r->line[r->line_n - 1].link = strdup(r->img_src);   /* Enter opens it */
         r->line[r->line_n - 2].link = strdup(r->img_src);
     }
@@ -862,6 +864,21 @@ Doc *render_doc_at(const char *src, size_t len, int width, int dark, const char 
     if (rc != 0) { doc_free(doc); return NULL; }
     tag_source_lines(doc, src, len);   /* map visual lines back to source lines */
     return doc;
+}
+
+/* Concatenate a line's run text into a newly malloc'd, NUL-terminated string. */
+char *line_text(const Line *L) {
+    size_t len = 0;
+    for (size_t j = 0; j < L->nrun; j++) len += L->runs[j].len;
+    char *s = malloc(len + 1);
+    if (!s) return NULL;
+    size_t p = 0;
+    for (size_t j = 0; j < L->nrun; j++) {
+        memcpy(s + p, L->runs[j].text, L->runs[j].len);
+        p += L->runs[j].len;
+    }
+    s[p] = '\0';
+    return s;
 }
 
 /* Free a Doc and all the runs it owns. */

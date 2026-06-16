@@ -63,6 +63,11 @@ Doc *render_doc_at(const char *src, size_t len, int width, int dark, const char 
 
 void doc_free(Doc *d);
 
+/* Concatenate a line's run text into a newly malloc'd, NUL-terminated string
+ * (caller frees), or NULL on OOM. This is the plain text behind the styling —
+ * what search and the table of contents match against. */
+char *line_text(const Line *L);
+
 /* Serialize a Doc to a newly malloc'd, NUL-terminated ANSI string (caller
  * frees). Used by the render-only CLI and by tests. */
 char *doc_to_ansi(const Doc *d);

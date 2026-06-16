@@ -149,7 +149,7 @@ void editor_insert(Editor *e, const char *s, size_t n) {
 void editor_newline(Editor *e) {
     ELine *L = cur(e);
     size_t tail_len = L->len - e->cx;
-    char *tail = L->b + e->cx;
+    char *tail = L->b ? L->b + e->cx : "";        /* avoid memcpy(NULL,0) UB on an empty line */
     ELine *nl = lines_insert(e, e->cy + 1);
     el_set(nl, tail, tail_len);
     /* truncate current line at the cursor (note lines_insert may realloc) */
@@ -255,3 +255,32 @@ void editor_down(Editor *e) {
 /* Jump to the start / end of the current line. */
 void editor_home(Editor *e) { e->cx = 0; e->goal_col = -1; }
 void editor_end(Editor *e)  { e->cx = (int)cur(e)->len; e->goal_col = -1; }
+
+/* A word separator: ASCII space or tab. Multibyte runes are continuation/lead
+ * bytes (>= 0x80), never separators, so word jumps stop on real boundaries and
+ * the cursor stays on a rune boundary. */
+static int ed_wordsep(unsigned char b) { return b == ' ' || b == '\t'; }
+
+/* Move to the start of the previous word (skip separators, then the word);
+ * wraps to the end of the previous line when already at column 0. */
+void editor_word_left(Editor *e) {
+    if (e->cx == 0) { editor_left(e); return; }
+    ELine *L = cur(e);
+    int p = e->cx;
+    while (p > 0 && ed_wordsep((unsigned char)L->b[p - 1])) p--;
+    while (p > 0 && !ed_wordsep((unsigned char)L->b[p - 1])) p--;
+    e->cx = p;
+    e->goal_col = -1;
+}
+
+/* Move to the start of the next word (skip the word, then separators); wraps to
+ * the start of the next line when already at the end. */
+void editor_word_right(Editor *e) {
+    ELine *L = cur(e);
+    if ((size_t)e->cx >= L->len) { editor_right(e); return; }
+    int p = e->cx, n = (int)L->len;
+    while (p < n && !ed_wordsep((unsigned char)L->b[p])) p++;
+    while (p < n && ed_wordsep((unsigned char)L->b[p])) p++;
+    e->cx = p;
+    e->goal_col = -1;
+}

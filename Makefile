@@ -11,13 +11,17 @@ NC_LIBS   := $(shell pkg-config --libs notcurses)
 
 SRC := src
 
+# Where `make install` puts the two binaries (override: make install PREFIX=~/.local).
+PREFIX ?= /usr/local
+BINDIR := $(DESTDIR)$(PREFIX)/bin
+
 # renderer + shared helpers, linked into both binaries
 CORE := $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/preprocess.c $(SRC)/search.c \
         $(SRC)/toc.c $(SRC)/fs_save.c $(SRC)/vault.c $(SRC)/graph.c \
         $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c
 HDRS := $(wildcard $(SRC)/*.h)   # rebuild on any header change
 
-.PHONY: all test clean
+.PHONY: all test clean install uninstall
 
 all: glance glance-render
 
@@ -53,6 +57,16 @@ test:
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-graph tests/graph_test.c \
 	  $(SRC)/graph.c $(SRC)/vault.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-graph; \
 	rm -rf build-t-*
+
+# Install both binaries onto PATH (default /usr/local/bin; may need sudo).
+install: all
+	install -d $(BINDIR)
+	install -m 755 glance $(BINDIR)/glance
+	install -m 755 glance-render $(BINDIR)/glance-render
+	@echo "installed glance and glance-render to $(BINDIR)"
+
+uninstall:
+	rm -f $(BINDIR)/glance $(BINDIR)/glance-render
 
 clean:
 	rm -f glance glance-render build-t-*

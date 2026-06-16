@@ -2,7 +2,6 @@
 #include "toc.h"
 
 #include <stdlib.h>
-#include <string.h>
 
 /* Append an item (taking ownership of title), growing as needed. */
 static void toc_push(TOC *t, int level, int line, char *title) {
@@ -14,21 +13,6 @@ static void toc_push(TOC *t, int level, int line, char *title) {
     }
     t->v[t->n].level = level; t->v[t->n].line = line; t->v[t->n].title = title;
     t->n++;
-}
-
-/* Concatenate a line's run text into a newly malloc'd string. */
-static char *line_text(const Line *L) {
-    size_t len = 0;
-    for (size_t j = 0; j < L->nrun; j++) len += L->runs[j].len;
-    char *s = malloc(len + 1);
-    if (!s) return NULL;
-    size_t p = 0;
-    for (size_t j = 0; j < L->nrun; j++) {
-        memcpy(s + p, L->runs[j].text, L->runs[j].len);
-        p += L->runs[j].len;
-    }
-    s[p] = '\0';
-    return s;
 }
 
 void toc_build(const Doc *d, TOC *out) {

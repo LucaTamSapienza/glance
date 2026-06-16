@@ -78,8 +78,10 @@ Full parity with the original Go app, plus the vault/agent features:
   comments, function calls, shell `$vars`, and YAML/JSON keys.
 - **Tables** are bordered and column-aligned, honouring the `:---:` markers
   (left/center/right); the table is buffered, then emitted once widths are known.
-- **Inline images:** drawn in the reader via notcurses (pixel graphics or
-  Unicode half-blocks), with a `▦ alt` placeholder + Enter-to-open fallback.
+- **Inline images:** drawn in the reader via notcurses on a plane sized to the
+  picture's aspect ratio, so it fills its cells with no letterbox margin — crisp
+  pixel graphics (`NCBLIT_PIXEL`) where the terminal supports them, Unicode
+  half-blocks otherwise — with a `▦ alt` placeholder + Enter-to-open fallback.
   `Ctrl-V` in the editor pastes a clipboard image: it saves the bytes as a PNG
   in a `<name>_media/` folder beside the document (osascript / sips) and inserts
   a `![](…)` reference.
@@ -92,22 +94,32 @@ Reader: `hjkl`/arrows move · `g`/`G` top/bottom · `Ctrl-D/U` half page · `i`
 insert · `e` split · `V` visual select (`y` yank) · `/` search (`n`/`N`) · `t`
 toc · `?` help · Enter open link · `:w`/`:q`/`:wq`/`:q!` · `Ctrl-S` save ·
 `Ctrl-C` quit. Insert/Split: type to edit, `Esc` back, `Ctrl-S` save, `Ctrl-V`
-paste a clipboard image.
+paste a clipboard image, `Alt`/`Ctrl`+`←`/`→` jump a word, `Ctrl-A`/`Ctrl-E` (and
+`Cmd`+`←`/`→`, which many terminals send as those) go to line start/end. Some
+terminals send `Option`+`←`/`→` as a bare `b`/`f` with no modifier — those can't
+be distinguished from typed letters, so word-jump on Option+arrows needs a
+terminal-side key binding (`glance --keys` shows what your terminal sends).
+
+Opening a path that doesn't exist starts an empty buffer and creates the file on
+the first `:w` / `Ctrl-S` (vim-style).
 
 ## Build & run
 
 ```sh
 make                  # glance (TUI) + glance-render (CLI)
 make test             # all module unit tests, ASan/UBSan
+make install          # -> $(PREFIX)/bin (default /usr/local; honours PREFIX/DESTDIR)
+./glance --help       # full usage + every key binding
 ./glance file.md
 ./glance-render -w 80 file.md   # -l light theme; stdin ok; --keys diagnostic
 ```
 
 ## Tests
 
-Pure modules are unit-tested under ASan/UBSan (`make test`) — eleven suites:
-editor, preprocess, search, toc, fs_save, completion, highlight, render, vault,
-agent, graph. `render_test` covers table alignment, source-line attribution, and
+Pure modules are unit-tested under ASan/UBSan (`make test`) — twelve suites:
+editor, preprocess, search, toc, fs_save, completion, highlight, image_size,
+render, vault, agent, graph. `editor_test` covers word-wise motion; `render_test`
+covers table alignment, source-line attribution, and
 the image placeholder model. The renderer is also exercised through the
 `glance-render` CLI. The notcurses front-end (including image blitting) needs a
 real terminal and is verified interactively.
@@ -122,10 +134,34 @@ real terminal and is verified interactively.
 - Syntax highlighting is line-by-line and best-effort (no full grammar): it
   covers common languages and may mis-tokenise exotic constructs; unknown
   languages fall back to a plain styled background.
-- Inline images are sized to the picture's aspect ratio (via `image_size.c`) but
-  decoded once per frame (a decode cache reused one `ncvisual` across frames,
-  which corrupted notcurses' pixel-sprite state and leaked escapes — so it was
-  removed; a persistent-plane cache is the correct future optimisation). They only
-  blit when the image's top row is on screen, and remote (`http`) images aren't
-  fetched. The cell-aspect factor is an approximation, not read from the terminal.
+- Inline images are sized to the picture's aspect ratio (via `image_size.c`) and
+  STRETCHed to fill the plane, then blitted with `NCBLIT_PIXEL` when the terminal
+  supports it (else the cell blitter). They are decoded once per frame (a decode
+  cache reused one `ncvisual` across frames, which corrupted notcurses' pixel-sprite
+  state and leaked escapes — so it was removed; a persistent-plane cache that moves
+  planes on scroll is the correct future optimisation). They only blit when the
+  image's top row is on screen, and remote (`http`) images aren't fetched. The
+  cell-aspect factor is an approximation, not read from the terminal.
 - Very wide tables overflow the width rather than wrapping/truncating.
+
+## Robustness & security
+
+Audited (static review + AddressSanitizer/UBSan fuzzing of the headless paths)
+for crashes and injection. Hardened:
+
+- **Clipboard paste** passes the file path to `osascript` as an `on run argv`
+  parameter, never interpolated into the script text — a document folder named
+  with a `"` or newline can no longer inject AppleScript (was a real RCE vector).
+- **Vault scan** (`--graph`, `--outline`, backlinks, Ctrl-G) uses `lstat` and
+  skips symlinks, plus a recursion depth cap, so a symlink cycle (`loop -> ..`)
+  or a very deep tree can't drive infinite recursion / stack overflow. Regression-
+  tested under ASan in `vault_test`.
+- **Empty/degenerate documents**: yank, the empty-line newline split, and the
+  reader↔editor cursor map all guard the zero-line / empty-buffer cases.
+- **JSON exports** escape quotes/backslashes/control chars, so odd filenames
+  can't break the output. Renderer run-builders no longer write `arr[n-1]` after
+  a failed (OOM) push. Graph edges grow geometrically.
+
+Residual notes: relative `../` image/link targets are not confined to the vault
+(they can reference any file the user can already read); display width is one
+column per codepoint.

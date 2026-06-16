@@ -1,7 +1,8 @@
 # glance — Project Context
 
 > Orientation for anyone (including Claude) picking up the work.
-> Last updated: 2026-06-16 (C-at-root migration; highlighting, tables, images, cursor sync).
+> Last updated: 2026-06-16 (aspect-tight pixel images; open a non-existent path
+> as a new empty file).
 
 ## What it is
 
@@ -72,7 +73,31 @@ pass** under ASan/UBSan.
    a source line by content (forward, monotonic); `tui.c` uses `Line.source_line`
    for an exact reader↔editor map, with the proportional map as fallback.
 
-All covered by `render_test.c` (+ `highlight_test.c`); 11 test suites total.
+All covered by `render_test.c` (+ `highlight_test.c`); 12 test suites total.
+
+**Recent fixes.** Opening a non-existent path now starts an empty buffer and
+creates the file on first save (was a fatal error). Word-wise editor motion
+(`editor_word_left/right`) bound to Alt/Ctrl+arrows and the `Meta-b`/`Meta-f`
+some terminals send for `Option`+arrows (so those no longer type stray letters);
+`Cmd`+arrows go to line start/end. A segfault when entering Insert on an empty
+document (`doc_src_line` indexing an empty `Doc`) is guarded. Clipboard image
+paste now checks `clipboard info` and retries (~1.5s) so a single `Ctrl-V`
+captures a promised pasteboard (screenshots / "copy image"), not just files.
+`glance --help` (and `glance-render -h`) now print full usage + every key
+binding, kept in sync with the in-app `?` overlay; `make install` (honours
+`PREFIX`/`DESTDIR`) puts both binaries on `PATH`. A small renderer cleanup
+exported `line_text()` so search and the TOC share one run-concatenation helper.
+
+**Security & stability audit (pre-merge).** Static review plus ASan/UBSan fuzzing
+of the headless paths (`glance-render`, `--graph`/`--outline`/`--links`) against
+hostile input. Fixed: an **AppleScript injection / RCE** in the clipboard paste
+(the path is now an `osascript` argv parameter, not interpolated — verified the
+old form executed a payload and the new one does not); a **symlink-cycle / deep-
+recursion crash** in the vault scan (`lstat` + skip symlinks + depth cap, with an
+ASan regression test); an empty-document **yank** NULL-deref and an empty-line
+`editor_newline` UB; and OOM-only out-of-bounds writes in the renderer's run
+builders. Graph edges now grow geometrically. See STATUS.md "Robustness &
+security" for the residual notes.
 
 Branch `master`, pushed to `git@github.com:LucaTamSapienza/glance.git` (the
 default branch is `master`; there is no `main`). Backup branches retained:
@@ -93,10 +118,14 @@ The four gaps the user prioritised are all **done** (see above). Residual polish
 
 - Syntax highlighting: more languages, multi-line raw strings (Go backticks),
   better YAML scalar typing.
-- Images: aspect-ratio sized (`image_size.c`), decoded per frame (the decode
-  cache was removed — reusing an ncvisual corrupted notcurses' pixel sprites;
-  a persistent-plane cache is the right future fix). Still hidden until the top
-  row scrolls in; remote (`http`) images aren't fetched; cell-aspect approximated.
+- Images: the reader plane is sized to the picture's aspect ratio (cells ≈ 2:1
+  tall:wide, from `image_size.c`) and the image is STRETCHed to fill it, so there
+  is no letterbox margin. With a tight plane the crisp `NCBLIT_PIXEL` blitter is
+  used on terminals that support it (detected via `notcurses_check_pixel_support`),
+  falling back to the cell blitter elsewhere. Decoded per frame (no decode cache —
+  reusing an ncvisual corrupted notcurses' pixel sprites; a persistent-plane cache
+  that *moves* planes on scroll is the right future optimisation). Remote (`http`)
+  images aren't fetched; cell-aspect ratio is approximated as a constant.
 - Cursor sync: soft-wrapped multi-line paragraphs map to the block, not the exact
   wrapped sub-line (bounded by md4c having no source offsets).
 - Wide tables overflow rather than wrap/truncate.
