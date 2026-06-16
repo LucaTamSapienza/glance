@@ -136,6 +136,32 @@ int main(void) {
     expect(srcline_of(d, "func main") == 11,"code line maps to its source line");
     doc_free(d);
 
+    /* Heading chip: H1/H2 lines wrap their text in a one-cell coloured pad on
+     * each side (every run carries a bg), but get NO full-width fill; H3+ plain. */
+    const char *hmd = "# One\n\n## Two\n\n### Three\n";
+    Doc *hd = render_doc(hmd, strlen(hmd), 60, 1);
+    int h1 = -1, h2 = -1, h3 = -1;
+    for (size_t i = 0; i < hd->nline; i++) {
+        if (hd->lines[i].heading == 1) h1 = (int)i;
+        if (hd->lines[i].heading == 2) h2 = (int)i;
+        if (hd->lines[i].heading == 3) h3 = (int)i;
+    }
+    /* every run on a chip heading line has a background (pads + text + seps). */
+    int h1_chip = h1 >= 0 && hd->lines[h1].nrun >= 3 && hd->lines[h1].fill == 0;
+    for (size_t r = 0; h1 >= 0 && r < hd->lines[h1].nrun; r++)
+        if (!hd->lines[h1].runs[r].st.has_bg) h1_chip = 0;
+    expect(h1_chip, "H1 line is a coloured chip (every run has a bg, no full-width fill)");
+    expect(h1 >= 0 && hd->lines[h1].runs[0].len == 1 &&
+           hd->lines[h1].runs[0].text[0] == ' ', "H1 chip starts with a pad space");
+    int h2_bg = h2 >= 0 && hd->lines[h2].nrun > 0 && hd->lines[h2].runs[0].st.has_bg
+                && hd->lines[h2].fill == 0;
+    expect(h2_bg, "H2 line is a coloured chip");
+    int h3_plain = h3 >= 0 && hd->lines[h3].fill == 0;
+    for (size_t r = 0; h3 >= 0 && r < hd->lines[h3].nrun; r++)
+        if (hd->lines[h3].runs[r].st.has_bg) h3_plain = 0;
+    expect(h3_plain, "H3 line has no background chip");
+    doc_free(hd);
+
     /* Exactness the old content-matching couldn't guarantee: a first word that
      * repeats far apart must map to its OWN source line (offset-based), and a
      * soft-wrapped paragraph's lines share the first source line. */

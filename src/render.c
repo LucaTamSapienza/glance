@@ -38,6 +38,12 @@ static RGB heading_fg(int dark, int level) {
         default: return rgb(96, 96, 96);
     }
 }
+/* Background bar behind a top-level heading (level 1/2), tinted toward the
+ * heading's own hue but muted so the bright foreground still reads on top. */
+static RGB heading_bg(int dark, int level) {
+    if (dark) return level == 1 ? rgb(64, 36, 64) : rgb(28, 50, 66);
+    return level == 1 ? rgb(246, 226, 246) : rgb(222, 238, 248);
+}
 static RGB code_bg(int dark)  { return dark ? rgb(48, 48, 48)   : rgb(228, 228, 228); }
 static RGB code_fg(int dark)  { return dark ? rgb(208, 208, 208): rgb(135, 0, 0); }
 static RGB link_fg(int dark)  { return dark ? rgb(95, 175, 255) : rgb(0, 95, 215); }
@@ -194,6 +200,27 @@ static void line_commit(R *r) {
     r->line_src = 0;                /* next line re-derives its own source line */
 }
 
+/* Wrap a heading line's runs in a one-cell coloured pad on each side, so the
+ * background reads as a chip — [ text ] — rather than a full-width bar. The
+ * heading's own runs (and their separator spaces) already carry the bg. */
+static void heading_pad(Line *L, RGB bg) {
+    if (L->cols <= 0) return;                 /* skip an empty heading line */
+    Run *nr = realloc(L->runs, (L->nrun + 2) * sizeof *L->runs);
+    if (!nr) return;
+    L->runs = nr;
+    memmove(&L->runs[1], &L->runs[0], L->nrun * sizeof *L->runs);
+    Style ps; memset(&ps, 0, sizeof ps); ps.has_bg = 1; ps.bg = bg;
+    char *lead = malloc(2), *trail = malloc(2);
+    if (lead)  { lead[0] = ' '; lead[1] = '\0'; }
+    if (trail) { trail[0] = ' '; trail[1] = '\0'; }
+    L->runs[0].text = lead;  L->runs[0].len = lead ? 1 : 0;
+    L->runs[0].st = ps;      L->runs[0].link = NULL;
+    L->runs[L->nrun + 1].text = trail; L->runs[L->nrun + 1].len = trail ? 1 : 0;
+    L->runs[L->nrun + 1].st = ps;      L->runs[L->nrun + 1].link = NULL;
+    L->nrun += 2;
+    L->cols += 2;
+}
+
 /* ensure the current line has its block indentation + quote bar prepended */
 static void line_start_indent(R *r) {
     Style plain; memset(&plain, 0, sizeof plain);
@@ -223,8 +250,9 @@ static void flush_word(R *r) {
     if (!r->line_has) {
         line_start_indent(r);
     } else {
-        Style plain; memset(&plain, 0, sizeof plain);
-        runs_push(&r->line, &r->line_n, &r->line_cap, " ", 1, plain);
+        Style sep; memset(&sep, 0, sizeof sep);
+        if (r->cur.has_bg) { sep.has_bg = 1; sep.bg = r->cur.bg; }  /* keep a bar continuous */
+        runs_push(&r->line, &r->line_n, &r->line_cap, " ", 1, sep);
         r->line_cols += 1;
     }
     if (r->line_src == 0) r->line_src = r->cur_src;   /* first word -> source line */
@@ -547,6 +575,10 @@ static int cb_enter_block(MD_BLOCKTYPE type, void *detail, void *ud) {
             style_push(r);
             r->cur.bold = 1; r->cur.has_fg = 1;
             r->cur.fg = heading_fg(r->dark, r->heading);
+            if (r->heading <= 2) {                  /* title/subtitle: coloured bar */
+                r->cur.has_bg = 1;
+                r->cur.bg = heading_bg(r->dark, r->heading);
+            }
             break;
         }
         case MD_BLOCK_P: break;
@@ -630,9 +662,17 @@ static int cb_leave_block(MD_BLOCKTYPE type, void *detail, void *ud) {
             flush_word(r);
             style_pop(r);
             if (r->line_has) line_commit(r);
-            /* tag the heading's first line so the TOC can find it */
-            if (r->heading_start < (int)r->doc->nline)
+            /* tag the heading's first line so the TOC can find it; for a title/
+             * subtitle, wrap each heading line's text in a one-cell coloured pad
+             * so the background reads as a chip — [ text ] — not a full-width bar. */
+            if (r->heading_start < (int)r->doc->nline) {
                 r->doc->lines[r->heading_start].heading = r->heading;
+                if (r->heading <= 2) {
+                    RGB hbg = heading_bg(r->dark, r->heading);
+                    for (int li = r->heading_start; li < (int)r->doc->nline; li++)
+                        heading_pad(&r->doc->lines[li], hbg);
+                }
+            }
             line_commit(r);            /* blank line after heading */
             r->heading = 0;
             break;
