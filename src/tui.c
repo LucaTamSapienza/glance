@@ -78,8 +78,6 @@ typedef struct {
     int    graph_sel;            /* selected neighbour (backlinks then outbound) */
     struct ncplane *imgpl[16];   /* planes the reader blits decoded images onto */
     int    nimgpl;
-    struct { char *path; struct ncvisual *v; } imgcache[8];  /* decoded images, by path */
-    int    nimgcache;
 } App;
 
 #define TOC_W 30                 /* table-of-contents panel width */
@@ -441,35 +439,11 @@ static void clear_images(App *a) {
     a->nimgpl = 0;
 }
 
-/* Decode an image once and keep it, so scrolling doesn't re-decode the file on
- * every frame. Returns a cached ncvisual (owned by the cache), or NULL. */
-static struct ncvisual *cached_visual(App *a, const char *path) {
-    for (int i = 0; i < a->nimgcache; i++)
-        if (strcmp(a->imgcache[i].path, path) == 0) return a->imgcache[i].v;
-    struct ncvisual *v = ncvisual_from_file(path);
-    if (!v) return NULL;
-    int cap = (int)(sizeof a->imgcache / sizeof a->imgcache[0]);
-    if (a->nimgcache == cap) {                       /* evict the oldest */
-        free(a->imgcache[0].path);
-        ncvisual_destroy(a->imgcache[0].v);
-        memmove(a->imgcache, a->imgcache + 1, (cap - 1) * sizeof a->imgcache[0]);
-        a->nimgcache--;
-    }
-    a->imgcache[a->nimgcache].path = strdup(path);
-    a->imgcache[a->nimgcache].v = v;
-    a->nimgcache++;
-    return v;
-}
-
-/* Free every decoded image (at teardown). */
-static void clear_image_cache(App *a) {
-    for (int i = 0; i < a->nimgcache; i++) { free(a->imgcache[i].path); ncvisual_destroy(a->imgcache[i].v); }
-    a->nimgcache = 0;
-}
-
-/* Blit an image onto a child plane covering the reserved rows. Anything that
- * can't be drawn (a URL, a missing file, a terminal without image support)
- * silently leaves the ▦ placeholder text the renderer already drew. */
+/* Blit an image onto a child plane covering the reserved rows. The visual is
+ * decoded fresh each frame: reusing one ncvisual across frames confuses
+ * notcurses' pixel-sprite bookkeeping and leaks escape sequences to the screen.
+ * Anything that can't be drawn (a URL, a missing file, a terminal without image
+ * support) silently leaves the ▦ placeholder text the renderer already drew. */
 static void blit_image(App *a, const char *src, int row, int rows) {
     if (a->nimgpl >= (int)(sizeof a->imgpl / sizeof a->imgpl[0])) return;
     int body = content_rows(a);
@@ -479,7 +453,7 @@ static void blit_image(App *a, const char *src, int row, int rows) {
     char dirbuf[4096];
     char *path = path_resolve(doc_dir(a, dirbuf, sizeof dirbuf), src);
     if (!path) return;
-    struct ncvisual *v = cached_visual(a, path);
+    struct ncvisual *v = ncvisual_from_file(path);
     free(path);
     if (!v) return;
     /* Wipe the placeholder text from the reserved rows so it can't show through
@@ -493,11 +467,12 @@ static void blit_image(App *a, const char *src, int row, int rows) {
     struct ncplane_options no; memset(&no, 0, sizeof no);
     no.y = row; no.x = 0; no.rows = (unsigned)h; no.cols = (unsigned)w;
     struct ncplane *ip = ncplane_create(a->plane, &no);
-    if (!ip) return;             /* v stays in the cache */
+    if (!ip) { ncvisual_destroy(v); return; }
     struct ncvisual_options vo; memset(&vo, 0, sizeof vo);
     vo.n = ip; vo.scaling = NCSCALE_SCALE; vo.blitter = NCBLIT_DEFAULT;
     if (ncvisual_blit(a->nc, v, &vo) == NULL) ncplane_destroy(ip);
     else a->imgpl[a->nimgpl++] = ip;
+    ncvisual_destroy(v);
 }
 
 static void draw_reader(App *a) {
@@ -1473,7 +1448,6 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
     hits_free(&a.hits);
     toc_free(&a.toc);
     doc_free(a.doc);
-    clear_image_cache(&a);     /* notcurses_stop frees the planes, not the visuals */
     shutdown_tui();
     for (int i = 0; i < a.nbl; i++) free(a.bl[i]);
     for (int i = 0; i < a.nback; i++) free(a.back[i]);

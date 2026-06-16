@@ -118,8 +118,10 @@ real terminal and is verified interactively.
 - Syntax highlighting is line-by-line and best-effort (no full grammar): it
   covers common languages and may mis-tokenise exotic constructs; unknown
   languages fall back to a plain styled background.
-- Inline images are sized to the picture's aspect ratio (via `image_size.c`) and
-  decoded once (cached), but only blit when the image's top row is on screen, and
-  remote (`http`) images aren't fetched — they keep the placeholder and open with
-  Enter. The cell-aspect factor is an approximation, not read from the terminal.
+- Inline images are sized to the picture's aspect ratio (via `image_size.c`) but
+  decoded once per frame (a decode cache reused one `ncvisual` across frames,
+  which corrupted notcurses' pixel-sprite state and leaked escapes — so it was
+  removed; a persistent-plane cache is the correct future optimisation). They only
+  blit when the image's top row is on screen, and remote (`http`) images aren't
+  fetched. The cell-aspect factor is an approximation, not read from the terminal.
 - Very wide tables overflow the width rather than wrapping/truncating.
