@@ -2,6 +2,7 @@
 #include "toc.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 /* Append an item (taking ownership of title), growing as needed. */
 static void toc_push(TOC *t, int level, int line, char *title) {
@@ -20,7 +21,13 @@ void toc_build(const Doc *d, TOC *out) {
     for (size_t i = 0; i < d->nline; i++) {
         if (d->lines[i].heading <= 0) continue;
         char *title = line_text(&d->lines[i]);
-        if (title) toc_push(out, d->lines[i].heading, (int)i, title);
+        if (!title) continue;
+        size_t s = 0, e = strlen(title);     /* drop the heading chip's pad spaces */
+        while (title[s] == ' ') s++;
+        while (e > s && title[e-1] == ' ') e--;
+        if (s) memmove(title, title + s, e - s);
+        title[e - s] = '\0';
+        toc_push(out, d->lines[i].heading, (int)i, title);
     }
 }
 
