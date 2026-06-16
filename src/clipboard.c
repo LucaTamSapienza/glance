@@ -49,21 +49,25 @@ static long file_size(const char *path) {
 
 /* AppleScript writes the clipboard's image to `path` (cast to `imgclass`, e.g.
  * «class PNGf»). On a non-image clipboard the cast fails after the file is
- * opened, leaving a 0-byte file — so a positive size means real image data. */
+ * opened, leaving a 0-byte file — so a positive size means real image data.
+ *
+ * The path is passed as an `on run argv` parameter, never interpolated into the
+ * script text: a document directory named with a `"` (or newline) would
+ * otherwise close the string literal and inject arbitrary AppleScript. `path`
+ * being argv data, it is inert. `write_line` is always a constant from below. */
 static void osascript_write(const char *path, const char *write_line) {
-    char openf[5000], writef[256];
-    snprintf(openf, sizeof openf,
-             "set f to open for access (POSIX file \"%s\") with write permission", path);
-    snprintf(writef, sizeof writef, "%s", write_line);
     char *argv[] = { "osascript",
+        "-e", "on run argv",
+        "-e", "set f to open for access (POSIX file (item 1 of argv)) with write permission",
         "-e", "try",
-        "-e", openf,
         "-e", "set eof f to 0",
-        "-e", writef,
+        "-e", (char *)write_line,
         "-e", "close access f",
         "-e", "on error",
         "-e", "try", "-e", "close access f", "-e", "end try",
-        "-e", "end try", NULL };
+        "-e", "end try",
+        "-e", "end run",
+        (char *)path, NULL };
     run_quiet(argv);
 }
 
