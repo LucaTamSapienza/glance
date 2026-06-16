@@ -136,6 +136,26 @@ int main(void) {
     expect(srcline_of(d, "func main") == 11,"code line maps to its source line");
     doc_free(d);
 
+    /* Inline image: a placeholder line carries the src, reserves rows, and is
+     * linked so the reader can open it. */
+    Doc *im = render_doc("![a cat](cat.png)\n", 18, 60, 1);
+    int img = -1;
+    for (size_t i = 0; i < im->nline; i++) if (im->lines[i].image) { img = (int)i; break; }
+    expect(img >= 0, "an image line is emitted");
+    if (img >= 0) {
+        expect(strcmp(im->lines[img].image, "cat.png") == 0, "image src is captured");
+        expect(im->lines[img].img_rows > 1, "image reserves rows for the picture");
+        int linked = 0, alt = 0;
+        for (size_t r = 0; r < im->lines[img].nrun; r++) {
+            Run *rn = &im->lines[img].runs[r];
+            if (rn->link && strcmp(rn->link, "cat.png") == 0) linked = 1;
+            if (strstr(rn->text, "cat")) alt = 1;
+        }
+        expect(linked, "placeholder is linked to the image (Enter opens it)");
+        expect(alt, "placeholder shows the alt text");
+    }
+    doc_free(im);
+
     if (fails) { printf("%d render test(s) FAILED\n", fails); return 1; }
     printf("all render tests passed\n");
     return 0;

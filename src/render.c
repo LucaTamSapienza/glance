@@ -95,6 +95,11 @@ typedef struct {
     int     code_lang;     /* hl_lang() id for the current fence, or -1 */
     HLState hl;            /* multi-line highlighter state within the fence */
 
+    /* image span being collected: src + the alt text accumulated from it */
+    int    in_image;
+    char  *img_src;
+    char  *img_alt; size_t img_alt_len, img_alt_cap;
+
     /* table buffering: rows collected here, emitted aligned on leave TABLE */
     int      in_table, in_cell, tbl_header;
     int      tbl_ncol, tbl_col, tbl_nrow, tbl_rowcap;
@@ -151,6 +156,7 @@ static void line_commit(R *r) {
     L->source_line = 0;
     L->heading = 0;
     L->fill = 0; L->fill_bg = rgb(0, 0, 0);
+    L->image = NULL; L->img_rows = 0;
     /* hand ownership of the run array to the line; start a fresh one */
     r->line = NULL; r->line_n = 0; r->line_cap = 0;
     r->line_cols = 0; r->line_has = 0;
@@ -411,6 +417,50 @@ static void table_free(R *r) {
     r->in_table = r->in_cell = r->tbl_header = 0;
 }
 
+/* ---- images --------------------------------------------------------------- */
+/* An image renders as its own block: a placeholder line plus reserved rows the
+ * TUI blits the decoded picture over (the CLI just shows the placeholder). */
+#define IMG_ROWS 8
+
+/* Accumulate an image's alt text (it arrives as text events inside the span). */
+static void img_alt_append(R *r, const char *s, size_t n) {
+    if (r->img_alt_len + n + 1 > r->img_alt_cap) {
+        size_t nc = r->img_alt_cap ? r->img_alt_cap : 64;
+        while (r->img_alt_len + n + 1 > nc) nc *= 2;
+        char *p = realloc(r->img_alt, nc);
+        if (!p) return;
+        r->img_alt = p; r->img_alt_cap = nc;
+    }
+    memcpy(r->img_alt + r->img_alt_len, s, n);
+    r->img_alt_len += n;
+}
+
+/* Emit the placeholder line (▦ alt, linked to the source so Enter opens it)
+ * and the reserved blank rows that give the picture somewhere to be drawn. */
+static void emit_image(R *r) {
+    flush_word(r);
+    if (r->line_has) line_commit(r);
+    line_start_indent(r);
+    Style is; memset(&is, 0, sizeof is);
+    is.has_fg = 1; is.fg = link_fg(r->dark); is.underline = 1;
+    runs_push(&r->line, &r->line_n, &r->line_cap, "\xe2\x96\xa6 ", 4, is);   /* ▦ */
+    const char *label = r->img_alt_len ? r->img_alt : (r->img_src ? r->img_src : "image");
+    size_t ll = r->img_alt_len ? r->img_alt_len : strlen(label);
+    runs_push(&r->line, &r->line_n, &r->line_cap, label, ll, is);
+    if (r->img_src) {
+        r->line[r->line_n - 1].link = strdup(r->img_src);   /* Enter opens it */
+        r->line[r->line_n - 2].link = strdup(r->img_src);
+    }
+    r->line_cols += 2 + u8_width(label, ll);
+    r->line_has = 1;
+    line_commit(r);
+    Line *L = &r->doc->lines[r->doc->nline - 1];
+    L->image = r->img_src ? strdup(r->img_src) : NULL;
+    L->img_rows = IMG_ROWS;
+    for (int i = 1; i < IMG_ROWS; i++) line_commit(r);       /* reserved rows */
+    r->img_alt_len = 0;
+}
+
 /* ---- md4c callbacks ------------------------------------------------------- */
 /* md4c invokes enter/leave_block, enter/leave_span, and text in document order;
  * each one mutates the renderer state R and emits runs/lines. */
@@ -616,6 +666,14 @@ static int cb_enter_span(MD_SPANTYPE type, void *detail, void *ud) {
             r->cur.underline = 1; r->cur.has_fg = 1; r->cur.fg = link_fg(r->dark);
             break;
         }
+        case MD_SPAN_IMG: {
+            MD_SPAN_IMG_DETAIL *d = detail;
+            free(r->img_src);
+            r->img_src = d->src.size ? strndup(d->src.text, d->src.size) : NULL;
+            r->img_alt_len = 0;
+            r->in_image = 1;        /* alt text now flows into img_alt, not the line */
+            break;
+        }
         default: break;
     }
     return 0;
@@ -626,6 +684,11 @@ static int cb_leave_span(MD_SPANTYPE type, void *detail, void *ud) {
     R *r = ud;
     (void)detail;
     if (type == MD_SPAN_A || type == MD_SPAN_WIKILINK) { free(r->cur_link); r->cur_link = NULL; }
+    if (type == MD_SPAN_IMG) {
+        emit_image(r);
+        free(r->img_src); r->img_src = NULL;
+        r->in_image = 0;
+    }
     style_pop(r);
     return 0;
 }
@@ -633,6 +696,11 @@ static int cb_leave_span(MD_SPANTYPE type, void *detail, void *ud) {
 /* Handle a run of text: buffer code, wrap normal text, or break lines. */
 static int cb_text(MD_TEXTTYPE type, const MD_CHAR *text, MD_SIZE size, void *ud) {
     R *r = ud;
+    if (r->in_image) {   /* an image's alt text: collect it, don't lay it out */
+        if (type == MD_TEXT_NORMAL || type == MD_TEXT_ENTITY || type == MD_TEXT_CODE)
+            img_alt_append(r, text, size);
+        return 0;
+    }
     switch (type) {
         case MD_TEXT_CODE:
             if (r->in_code)      code_buf_append(r, text, size);
@@ -763,6 +831,8 @@ Doc *render_doc(const char *src, size_t len, int width, int dark) {
     free(r.line);
     free(r.code_buf);
     free(r.cur_link);
+    free(r.img_src);
+    free(r.img_alt);
     table_free(&r);            /* no-op unless a table was left unfinished */
 
     if (rc != 0) { doc_free(doc); return NULL; }
@@ -777,6 +847,7 @@ void doc_free(Doc *d) {
         Line *L = &d->lines[i];
         for (size_t j = 0; j < L->nrun; j++) { free(L->runs[j].text); free(L->runs[j].link); }
         free(L->runs);
+        free(L->image);
     }
     free(d->lines);
     free(d);

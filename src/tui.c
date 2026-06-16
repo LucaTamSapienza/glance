@@ -76,6 +76,8 @@ typedef struct {
     char   graph_root[4096];     /* vault root the graph was built from */
     int    graph_focus;          /* node at the centre */
     int    graph_sel;            /* selected neighbour (backlinks then outbound) */
+    struct ncplane *imgpl[16];   /* planes the reader blits decoded images onto */
+    int    nimgpl;
 } App;
 
 #define TOC_W 30                 /* table-of-contents panel width */
@@ -430,6 +432,51 @@ static void draw_graph(App *a) {
 }
 
 /* Render the visible Doc lines, overlay the block cursor, and the status. */
+/* Destroy the image planes from the previous frame. */
+static void clear_images(App *a) {
+    for (int i = 0; i < a->nimgpl; i++) ncplane_destroy(a->imgpl[i]);
+    a->nimgpl = 0;
+}
+
+/* Resolve an image src to a local filesystem path (relative to the document's
+ * directory), or NULL for a URL we can't blit. Caller frees. */
+static char *resolve_image_path(App *a, const char *src) {
+    if (!src) return NULL;
+    if (strncmp(src, "http://", 7) == 0 || strncmp(src, "https://", 8) == 0) return NULL;
+    if (src[0] == '/' || !a->path) return strdup(src);
+    char tmp[4096]; snprintf(tmp, sizeof tmp, "%s", a->path);
+    char *dir = dirname(tmp);
+    size_t need = strlen(dir) + 1 + strlen(src) + 1;
+    char *out = malloc(need);
+    if (out) snprintf(out, need, "%s/%s", dir, src);
+    return out;
+}
+
+/* Decode an image and blit it onto a child plane covering the reserved rows.
+ * Anything that can't be drawn (a URL, a missing file, a terminal without image
+ * support) silently leaves the ▦ placeholder text the renderer already drew. */
+static void blit_image(App *a, const char *src, int row, int rows) {
+    if (a->nimgpl >= (int)(sizeof a->imgpl / sizeof a->imgpl[0])) return;
+    int body = content_rows(a);
+    int h = rows; if (row + h > body) h = body - row;
+    int w = a->cols - 2;
+    if (h < 1 || w < 2) return;
+    char *path = resolve_image_path(a, src);
+    if (!path) return;
+    struct ncvisual *v = ncvisual_from_file(path);
+    free(path);
+    if (!v) return;
+    struct ncplane_options no; memset(&no, 0, sizeof no);
+    no.y = row; no.x = 1; no.rows = (unsigned)h; no.cols = (unsigned)w;
+    struct ncplane *ip = ncplane_create(a->plane, &no);
+    if (!ip) { ncvisual_destroy(v); return; }
+    struct ncvisual_options vo; memset(&vo, 0, sizeof vo);
+    vo.n = ip; vo.scaling = NCSCALE_SCALE; vo.blitter = NCBLIT_DEFAULT;
+    if (ncvisual_blit(a->nc, v, &vo) == NULL) ncplane_destroy(ip);
+    else a->imgpl[a->nimgpl++] = ip;
+    ncvisual_destroy(v);
+}
+
 static void draw_reader(App *a) {
     notcurses_cursor_disable(a->nc);
     reader_scroll(a);
@@ -451,6 +498,17 @@ static void draw_reader(App *a) {
         RGB black = {0, 0, 0}, white = {255, 255, 255};
         if (cy >= 0 && cy < body && a->rcur_col < a->cols)
             overlay_cell(a->plane, cy, a->rcur_col, black, white);
+    }
+
+    /* Blit any visible images over their reserved rows (not while a panel or
+     * prompt is open, which would draw over the picture). */
+    if (!a->tocmode && !a->blmode && !a->helpmode && !a->cmdmode && !a->searchmode) {
+        for (int row = 0; row < body; row++) {
+            int li = a->top + row;
+            if (li >= (int)a->doc->nline) break;
+            Line *L = &a->doc->lines[li];
+            if (L->image && L->img_rows > 0) blit_image(a, L->image, row, L->img_rows);
+        }
     }
 
     if (a->tocmode) draw_toc(a);
@@ -715,6 +773,7 @@ static void draw_help(App *a) {
 
 /* Draw whichever mode is active, plus the help overlay when open. */
 static void redraw(App *a) {
+    clear_images(a);                /* drop last frame's image planes */
     if (a->graphmode)               draw_graph(a);
     else if (a->mode == MODE_READER)     draw_reader(a);
     else if (a->mode == MODE_SPLIT) draw_split(a);

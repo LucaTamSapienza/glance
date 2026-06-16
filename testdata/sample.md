@@ -60,6 +60,13 @@ echo "$HOME" && ls -la | grep .md
 | Outline   | `t`   | jump to a heading        |
 | Edit      | `i`   | Esc returns to the reader|
 
+## Image
+
+![a colour gradient](glance.png)
+
+In a graphics-capable terminal the picture is drawn inline; elsewhere the `▦`
+placeholder above stays, and Enter opens the file.
+
 ## Links
 
 An [external link](https://example.com) opens in your browser with Enter.

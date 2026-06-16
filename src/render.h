@@ -41,6 +41,8 @@ typedef struct {
     int    heading;      /* heading level 1..6 on a heading's first line, else 0 */
     int    fill;         /* 1 = pad rest of width with fill_bg (code blocks) */
     RGB    fill_bg;
+    char  *image;        /* image src if this line opens an image block, else NULL (owned) */
+    int    img_rows;     /* reserved height of the image block (only on the image line) */
 } Line;
 
 typedef struct {
