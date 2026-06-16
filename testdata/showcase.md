@@ -3,7 +3,7 @@
 Open with **`./glance testdata/showcase.md`**. Each section exercises one
 feature and tells you what to look for. Move with `j`/`k`/arrows, `?` for help,
 `:q` to quit.
-
+![](showcase_media/image-1.png)
 ---
 
 ## 1. Syntax highlighting

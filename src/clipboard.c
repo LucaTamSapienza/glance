@@ -67,25 +67,31 @@ static void osascript_write(const char *path, const char *write_line) {
 }
 
 int clip_image_save(const char *path) {
-    /* Most image sources put PNG on the pasteboard; try that first. The «» (the
-     * AppleScript class quotes) are split out of the hex escapes so a following
-     * hex digit isn't swallowed into the escape. */
-    osascript_write(path, "write (the clipboard as \xc2\xab" "class PNGf\xc2\xbb) to f");
-    if (file_size(path) > 0) return 1;
-    unlink(path);
-
-    /* Otherwise grab a TIFF (common for "copy image" in apps) and convert it. */
     char tiff[4200];
     snprintf(tiff, sizeof tiff, "%s.tiff.tmp", path);
-    osascript_write(tiff, "write (the clipboard as \xc2\xab" "class TIFF\xc2\xbb) to f");
-    if (file_size(tiff) > 0) {
-        char *argv[] = { "sips", "-s", "format", "png", tiff, "--out", (char *)path, NULL };
-        run_quiet(argv);
-        unlink(tiff);
+    /* Two rounds: a lazily-promised pasteboard (an app produces the image only
+     * when first asked) can return nothing on the first read but have it ready a
+     * moment later — the retry makes a single Ctrl-V suffice. */
+    for (int attempt = 0; attempt < 2; attempt++) {
+        /* Most image sources put PNG on the pasteboard; try that first. The «»
+         * (AppleScript class quotes) are split out of the hex escapes so a
+         * following hex digit isn't swallowed into the escape. */
+        osascript_write(path, "write (the clipboard as \xc2\xab" "class PNGf\xc2\xbb) to f");
         if (file_size(path) > 0) return 1;
         unlink(path);
-    } else {
-        unlink(tiff);
+
+        /* Otherwise grab a TIFF (common for "copy image" in apps) and convert. */
+        osascript_write(tiff, "write (the clipboard as \xc2\xab" "class TIFF\xc2\xbb) to f");
+        if (file_size(tiff) > 0) {
+            char *argv[] = { "sips", "-s", "format", "png", tiff, "--out", (char *)path, NULL };
+            run_quiet(argv);
+            unlink(tiff);
+            if (file_size(path) > 0) return 1;
+            unlink(path);
+        } else {
+            unlink(tiff);
+        }
+        usleep(200000);   /* 200ms: give a promised pasteboard time to materialise */
     }
     return 0;
 }

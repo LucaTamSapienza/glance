@@ -79,6 +79,7 @@ typedef struct {
     int    graph_sel;            /* selected neighbour (backlinks then outbound) */
     struct ncplane *imgpl[16];   /* planes the reader blits decoded images onto */
     int    nimgpl;
+    int    pixel;                /* terminal supports pixel graphics (sixel/kitty/iterm) */
 } App;
 
 #define TOC_W 30                 /* table-of-contents panel width */
@@ -478,8 +479,12 @@ static void blit_image(App *a, const char *src, int row, int rows) {
     no.y = row; no.x = 0; no.rows = (unsigned)h; no.cols = (unsigned)w;
     struct ncplane *ip = ncplane_create(a->plane, &no);
     if (!ip) { ncvisual_destroy(v); return; }
+    /* Use real pixel graphics when the terminal supports them (NCBLIT_DEFAULT
+     * never picks NCBLIT_PIXEL, so it must be requested); otherwise fall back to
+     * the best cell blitter. */
     struct ncvisual_options vo; memset(&vo, 0, sizeof vo);
-    vo.n = ip; vo.scaling = NCSCALE_SCALE; vo.blitter = NCBLIT_DEFAULT;
+    vo.n = ip; vo.scaling = NCSCALE_SCALE;
+    vo.blitter = a->pixel ? NCBLIT_PIXEL : NCBLIT_DEFAULT;
     if (ncvisual_blit(a->nc, v, &vo) == NULL) ncplane_destroy(ip);
     else a->imgpl[a->nimgpl++] = ip;
     ncvisual_destroy(v);
@@ -1451,6 +1456,7 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
     if (!a.nc) { free(a.src); return 1; }
     a.plane = notcurses_stdplane(a.nc);
     a.dark = detect_dark(a.nc);   /* theme follows the terminal background */
+    a.pixel = notcurses_check_pixel_support(a.nc) != NCPIXEL_NONE;   /* crisp images? */
 
     g_nc = a.nc;
     term_kbd_reset();              /* run in legacy keyboard mode (see above) */
