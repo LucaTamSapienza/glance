@@ -479,12 +479,12 @@ static void blit_image(App *a, const char *src, int row, int rows) {
     no.y = row; no.x = 0; no.rows = (unsigned)h; no.cols = (unsigned)w;
     struct ncplane *ip = ncplane_create(a->plane, &no);
     if (!ip) { ncvisual_destroy(v); return; }
-    /* Use real pixel graphics when the terminal supports them (NCBLIT_DEFAULT
-     * never picks NCBLIT_PIXEL, so it must be requested); otherwise fall back to
-     * the best cell blitter. */
+    /* Cell-based blitter (quadrants/sextants/braille as the terminal allows).
+     * NCBLIT_PIXEL would be crisper but, recreated per frame over a full-width
+     * plane, it annihilated the surrounding text on some terminals — that needs
+     * the persistent-plane rework before it can be turned on. */
     struct ncvisual_options vo; memset(&vo, 0, sizeof vo);
-    vo.n = ip; vo.scaling = NCSCALE_SCALE;
-    vo.blitter = a->pixel ? NCBLIT_PIXEL : NCBLIT_DEFAULT;
+    vo.n = ip; vo.scaling = NCSCALE_SCALE; vo.blitter = NCBLIT_DEFAULT;
     if (ncvisual_blit(a->nc, v, &vo) == NULL) ncplane_destroy(ip);
     else a->imgpl[a->nimgpl++] = ip;
     ncvisual_destroy(v);
