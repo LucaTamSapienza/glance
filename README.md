@@ -7,10 +7,11 @@ The terminal Markdown reader/editor for macOS — read, search, edit, and
 $ glance README.md
 ```
 
-glance opens any Markdown file in a beautifully rendered reader. Press `i` to
-edit, `e` for a split editor with **live preview**, `/` to search, `t` for a
-table of contents, `Enter` to follow a `[[wikilink]]`, and `Ctrl-G` to walk the
-link graph of the whole vault — all in the terminal.
+glance opens any Markdown file in a beautifully rendered reader, with
+**syntax-highlighted** code blocks. Press `i` to edit, `e` for a split editor
+with **live preview**, `/` to search, `t` for a table of contents, `Enter` to
+follow a `[[wikilink]]`, and `Ctrl-G` to walk the link graph of the whole vault
+— all in the terminal.
 
 It is also a **lens for agents**: `glance --outline`, `--links`, and `--graph`
 print a document's structure as JSON, so a tool or an LLM can understand how a

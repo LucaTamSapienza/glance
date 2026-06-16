@@ -8,6 +8,7 @@
  */
 #include "render.h"
 #include "preprocess.h"
+#include "highlight.h"
 #include "util.h"   /* u8_width for display-column counting */
 
 #include <md4c.h>
@@ -43,6 +44,23 @@ static RGB accent_fg(int dark){ return dark ? rgb(95, 215, 255) : rgb(0, 135, 17
 static RGB quote_fg(int dark) { return dark ? rgb(120, 120, 120): rgb(140, 140, 140); }
 static RGB rule_fg(int dark)  { return dark ? rgb(88, 88, 88)   : rgb(170, 170, 170); }
 
+/* Foreground for a syntax-highlight token kind, dark vs light. HL_TEXT falls
+ * back to the plain code colour so un-tokenised code keeps the box's look. */
+static RGB hl_fg(HLKind k, int dark) {
+    switch (k) {
+        case HL_KEYWORD:  return dark ? rgb(197, 134, 192) : rgb(175, 0, 175);
+        case HL_TYPE:     return dark ? rgb(78, 201, 176)  : rgb(0, 135, 135);
+        case HL_STRING:   return dark ? rgb(152, 195, 121) : rgb(0, 128, 0);
+        case HL_NUMBER:   return dark ? rgb(209, 154, 102) : rgb(170, 85, 0);
+        case HL_COMMENT:  return dark ? rgb(128, 128, 128) : rgb(128, 128, 128);
+        case HL_FUNCTION: return dark ? rgb(220, 220, 170) : rgb(120, 90, 0);
+        case HL_VARIABLE: return dark ? rgb(224, 108, 117) : rgb(170, 0, 0);
+        case HL_PROPERTY: return dark ? rgb(95, 175, 255)  : rgb(0, 95, 215);
+        case HL_OPERATOR: return dark ? rgb(180, 180, 180) : rgb(90, 90, 90);
+        default:          return code_fg(dark);
+    }
+}
+
 /* ---- renderer state ------------------------------------------------------- */
 
 #define MAX_LIST  16
@@ -66,8 +84,10 @@ typedef struct {
     char *cur_link;        /* href of the enclosing link span, or NULL */
 
     /* block context */
-    int    in_code;
-    char  *code_buf; size_t code_len, code_cap;
+    int     in_code;
+    char   *code_buf; size_t code_len, code_cap;
+    int     code_lang;     /* hl_lang() id for the current fence, or -1 */
+    HLState hl;            /* multi-line highlighter state within the fence */
 
     int    quote_depth;
     int    list_depth;
@@ -204,7 +224,19 @@ static void code_buf_append(R *r, const char *s, size_t n) {
     r->code_len += n;
 }
 
-/* emit one code-block line: indent + styled text + bg fill to width */
+/* Push one highlighted span of a code line: token colour over the code bg. */
+static void hl_emit_run(void *ud, HLKind kind, const char *s, size_t len) {
+    R *r = ud;
+    if (len == 0) return;
+    Style cs; memset(&cs, 0, sizeof cs);
+    cs.has_fg = 1; cs.fg = hl_fg(kind, r->dark);
+    cs.has_bg = 1; cs.bg = code_bg(r->dark);
+    if (kind == HL_COMMENT) cs.dim = 1;
+    runs_push(&r->line, &r->line_n, &r->line_cap, s, len, cs);
+    r->line_cols += u8_width(s, len);
+}
+
+/* emit one code-block line: indent + (highlighted) text + bg fill to width */
 static void code_line(R *r, const char *s, size_t n) {
     line_start_indent(r);
     Style cs; memset(&cs, 0, sizeof cs);
@@ -212,8 +244,13 @@ static void code_line(R *r, const char *s, size_t n) {
     cs.has_bg = 1; cs.bg = code_bg(r->dark);
     /* leading space inside the box */
     runs_push(&r->line, &r->line_n, &r->line_cap, " ", 1, cs);
-    runs_push(&r->line, &r->line_n, &r->line_cap, s, n, cs);
-    r->line_cols += 1 + u8_width(s, n);
+    r->line_cols += 1;
+    if (r->code_lang >= 0) {
+        hl_line(r->code_lang, &r->hl, s, n, hl_emit_run, r);
+    } else {
+        runs_push(&r->line, &r->line_n, &r->line_cap, s, n, cs);
+        r->line_cols += u8_width(s, n);
+    }
     /* mark the line for bg fill to the right edge */
     r->line_has = 1;
     line_commit(r);
@@ -288,9 +325,13 @@ static int cb_enter_block(MD_BLOCKTYPE type, void *detail, void *ud) {
             line_commit(r);
             break;
         }
-        case MD_BLOCK_CODE:
+        case MD_BLOCK_CODE: {
+            MD_BLOCK_CODE_DETAIL *d = detail;
             r->in_code = 1; r->code_len = 0;
+            memset(&r->hl, 0, sizeof r->hl);
+            r->code_lang = (d && d->lang.text) ? hl_lang(d->lang.text, d->lang.size) : -1;
             break;
+        }
         case MD_BLOCK_TH:
         case MD_BLOCK_TD:
             style_push(r); r->cur.bold = 1;

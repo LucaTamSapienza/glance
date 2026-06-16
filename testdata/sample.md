@@ -29,12 +29,27 @@ your terminal happens to be right now, reflowing live as you resize the window.
 
 ## Code
 
-Inline `like_this`, and a fenced block:
+Inline `like_this`, and fenced blocks with per-language syntax highlighting:
 
 ```go
 func main() {
-    fmt.Println("hello, glance")
+    fmt.Println("hello, glance") // greet
 }
+```
+
+```python
+def greet(name):       # say hello
+    return f"hi {name}" + str(42)
+```
+
+```yaml
+name: glance
+version: 1.0
+enabled: true   # a comment
+```
+
+```sh
+echo "$HOME" && ls -la | grep .md
 ```
 
 ## Table

@@ -24,7 +24,7 @@ heading lines. Nothing about the output is opaque to us.
 | Editor         | our line-array buffer (`editor.c`)           | bubbles/textarea             |
 | File watch     | kqueue on parent dir (`fswatch.c`)           | fsnotify                     |
 | Clipboard/open | pbcopy / open (`clipboard.c`)                | atotto/clipboard             |
-| Syntax hl      | deferred (styled bg now)                     | chroma                       |
+| Syntax hl      | spec-driven highlighter (`highlight.c`)      | chroma                       |
 
 ## Module map (`src/`)
 
@@ -36,6 +36,7 @@ search.c       case-insensitive full-text search over a Doc
 toc.c          table of contents from tagged heading lines
 editor.c       line-array text buffer with a rune-aware cursor
 completion.c   bracket auto-pairing (no backtick/fence)
+highlight.c    spec-driven per-language code highlighter (token classes)
 fs_save.c      atomic write (temp + rename, preserve mode)
 fswatch.c      kqueue watch of the parent directory
 clipboard.c    pbcopy + open (system clipboard / link opening)
@@ -70,6 +71,9 @@ Full parity with the original Go app, plus the vault/agent features:
 - **Vault navigation:** `[[wikilinks]]` resolve and follow across subfolders;
   back-stack (`-` / `Ctrl-O`); backlinks panel (`b`); graph explorer (`Ctrl-G`).
 - **Agent exports:** `glance --outline|--links|--graph` print JSON to stdout.
+- **Syntax highlighting** in fenced code blocks, per language (`highlight.c`):
+  C/C++, Go, Python, JS/TS, Rust, bash, YAML, JSON — keywords, strings, numbers,
+  comments, function calls, shell `$vars`, and YAML/JSON keys.
 
 ## Keys
 
@@ -89,10 +93,10 @@ make test             # all module unit tests, ASan/UBSan
 
 ## Tests
 
-Pure modules are unit-tested under ASan/UBSan (`make test`) — nine suites:
-editor, preprocess, search, toc, fs_save, completion, vault, agent, graph. The
-renderer is additionally exercised through the search/toc/agent tests and the
-`glance-render` CLI. The notcurses front-end needs a real terminal and is
+Pure modules are unit-tested under ASan/UBSan (`make test`) — ten suites:
+editor, preprocess, search, toc, fs_save, completion, highlight, vault, agent,
+graph. The renderer is additionally exercised through the search/toc/agent tests
+and the `glance-render` CLI. The notcurses front-end needs a real terminal and is
 verified interactively.
 
 ## Known limitations / future
@@ -101,6 +105,8 @@ verified interactively.
   md4c 0.5.2 exposes no source byte-offsets, so the Go app's proportional
   approach is used. Exact mapping needs a source-tracking pass.
 - Display width counts one column per codepoint (wide/zero-width chars TBD).
-- No syntax highlighting inside code blocks (styled background only).
+- Syntax highlighting is line-by-line and best-effort (no full grammar): it
+  covers common languages and may mis-tokenise exotic constructs; unknown
+  languages fall back to a plain styled background.
 - Tables aren't column-aligned; inline images not rendered (notcurses can —
   a candidate feature).

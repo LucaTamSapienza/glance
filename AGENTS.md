@@ -69,6 +69,7 @@ search.c     case-insensitive full-text search over a Doc
 toc.c        table of contents from the tagged heading lines
 editor.c     rune-aware line-array text buffer
 completion.c bracket auto-pairing
+highlight.c  spec-driven per-language code highlighter (token classes)
 fs_save.c    atomic write (temp file + rename, preserving mode)
 fswatch.c    kqueue watch of the parent directory (survives atomic rename)
 clipboard.c  pbcopy + open (system clipboard / opening links)
@@ -96,6 +97,6 @@ Key invariants worth preserving:
 ## Good first tasks
 
 Open items are tracked in [`STATUS.md`](STATUS.md) and [`context.md`](context.md).
-The current known gaps: per-language syntax highlighting in code blocks (today
-only a styled background), inline images (notcurses supports sixel/kitty/iterm),
-table column alignment, and an exact 1:1 reader↔editor cursor map.
+The current known gaps: inline images (notcurses supports sixel/kitty/iterm),
+table column alignment, and an exact 1:1 reader↔editor cursor map. (Per-language
+syntax highlighting in code blocks is done — see `highlight.c`.)

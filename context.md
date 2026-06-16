@@ -1,7 +1,7 @@
 # glance — Project Context
 
 > Orientation for anyone (including Claude) picking up the work.
-> Last updated: 2026-06-16 (Go→C migration: C promoted to the repo root).
+> Last updated: 2026-06-16 (migration to C root + per-language syntax highlighting).
 
 ## What it is
 
@@ -51,8 +51,15 @@ was tagged **`go-final`** and moved, deprecated and unmaintained, to
 **`legacy-go/`** — it stays only as a reference and will be removed in a later
 phase, after the C version has been tested in daily use. All docs (README,
 CLAUDE.md, STATUS.md, AGENT_FEATURES.md, and the new AGENTS.md) were rewritten to
-describe the C app and the new layout. Build is clean and **all nine unit-test
+describe the C app and the new layout. Build is clean and **all ten unit-test
 suites pass** under ASan/UBSan.
+
+**Syntax highlighting (gap 1) done.** Fenced code blocks now get per-language
+token coloring via a new spec-driven highlighter (`src/highlight.c`,
+`highlight_test.c`): C/C++, Go, Python, JS/TS, Rust, bash, YAML, JSON. md4c
+reports the fence language; `render.c` resolves it and pushes one styled run per
+token (keyword/string/number/comment/function/variable/property/operator) over
+the code background. Unknown languages fall back to the plain styled box.
 
 Branch `master`, pushed to `git@github.com:LucaTamSapienza/glance.git` (the
 default branch is `master`; there is no `main`). Backup branches retained:
@@ -69,12 +76,12 @@ cross-file navigation with a back-stack, backlinks panel (`b`), graph explorer
 
 ## Known gaps / open items (next up)
 
-The four gaps the user wants closed, in the C app:
+The gaps the user wants closed, in the C app:
 
-1. **Per-language syntax highlighting** in code blocks. Today the renderer only
-   paints a styled background; there is no token coloring. Wants yaml/python/bash
-   etc. — via hand lexers, tree-sitter, or shelling out to bat/chroma.
-2. **Inline images** (notcurses supports sixel/kitty/iterm protocols).
+1. ~~Per-language syntax highlighting in code blocks.~~ **Done** (`highlight.c`).
+   Future polish: more languages, multi-line raw strings (Go backticks), better
+   YAML scalar typing.
+2. **Inline images** (notcurses supports sixel/kitty/iterm protocols). — next
 3. **Table column alignment.**
 4. **Exact 1:1 reader↔editor cursor sync.** md4c exposes no source byte-offsets,
    so the mapping is proportional by design; an exact map needs a source-tracking

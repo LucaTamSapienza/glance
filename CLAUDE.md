@@ -45,6 +45,7 @@ src/
   toc.c          table of contents from the tagged heading lines
   editor.c       rune-aware line-array text buffer
   completion.c   bracket auto-pairing (no backtick/fence pairing)
+  highlight.c    spec-driven per-language code highlighter (token classes)
   fs_save.c      atomic write (temp file + rename, preserve mode)
   fswatch.c      kqueue watch of the parent directory
   clipboard.c    pbcopy + open (system clipboard / opening links)
