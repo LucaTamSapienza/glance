@@ -83,6 +83,7 @@ typedef struct {
 static int content_rows(App *a) { return a->rows - 1; }   /* last row = status */
 
 static int map_line(int from, int nfrom, int nto);        /* defined below */
+static void open_graph(App *a);                           /* defined below */
 
 /* ---- terminal teardown (kitty keyboard protocol, see slice-2 fix) --------- */
 
@@ -412,6 +413,12 @@ static void draw_graph(App *a) {
     snprintf(box, sizeof box, " %s ", node_base(a->graph.node[a->graph_focus]));
     ncplane_putstr_yx(p, midy, centerx, box);
 
+    if (nb == 0 && no == 0) {
+        ncplane_set_styles(p, NCSTYLE_NONE);
+        ncplane_set_fg_rgb8(p, 150, 150, 150); ncplane_set_bg_default(p);
+        ncplane_putstr_yx(p, midy + 2, centerx, "(this note has no links)");
+    }
+
     char title[256];
     snprintf(title, sizeof title,
              " GRAPH  %d in / %d out   —  j/k select   Enter open   Space recenter   Esc close",
@@ -740,6 +747,8 @@ static int run_command(App *a) {
         save_file(a);
     } else if (!strcmp(c, "wq") || !strcmp(c, "x")) {
         if (save_file(a) == 0) ret = 0;
+    } else if (!strcmp(c, "graph")) {
+        open_graph(a);
     } else if (c[0]) {
         snprintf(a->msg, sizeof a->msg, "not a command: :%s", c);
     }
@@ -1057,8 +1066,8 @@ static int handle_graph(App *a, uint32_t id, const ncinput *ni) {
     } else if (total && id == ' ') {                 /* re-centre on the selection */
         a->graph_focus = a->graph_sel < nb ? back[a->graph_sel] : out[a->graph_sel - nb];
         a->graph_sel = 0;
-    } else if (id == NCKEY_ESC || id == 'q' || (id == 'g' && ncinput_ctrl_p(ni)) ||
-               (id == 'c' && ncinput_ctrl_p(ni))) {
+    } else if (id == NCKEY_ESC || id == 'q' || id == 0x07 ||
+               (id == 'g' && ncinput_ctrl_p(ni)) || (id == 'c' && ncinput_ctrl_p(ni))) {
         a->graphmode = 0;
     }
     return 1;
@@ -1087,7 +1096,7 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     else if (id == '/')                          { a->searchmode = 1; a->searchbuf[0] = '\0'; a->searchlen = 0; }
     else if (id == 't')                          open_toc(a);
     else if (id == 'b')                          open_backlinks(a);
-    else if (id == 'g' && ncinput_ctrl_p(ni))    open_graph(a);   /* graph explorer */
+    else if ((id == 'g' && ncinput_ctrl_p(ni)) || id == 0x07) open_graph(a);  /* graph (Ctrl-G or :graph) */
     else if (id == '?')                          a->helpmode = 1;
     else if (id == 's' && ncinput_ctrl_p(ni))    save_file(a);
     else if (id == 'n' && a->hits.n)             focus_hit(a, a->cur_hit + 1);
