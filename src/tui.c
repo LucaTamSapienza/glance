@@ -67,6 +67,7 @@ typedef struct {
     int    dirty;                /* unsaved changes since the last write */
     char   msg[160];             /* transient status message (one keypress) */
     Doc   *preview;              /* Split mode: live render of the editor text */
+    int    preview_top;          /* Split mode: preview's first visible line (scroll) */
     int    helpmode;             /* help overlay open */
     int    visualmode;           /* vi visual selection active */
     int    visual_char;          /* 1 = charwise (v), 0 = linewise (V) */
@@ -682,16 +683,20 @@ static void draw_split(App *a) {
     ncplane_set_bg_default(p);
     for (int row = 0; row < body; row++) ncplane_putstr_yx(p, row, leftw, "\xe2\x94\x82");
 
-    /* Preview aligned to the editor's scroll: put the line that matches the
-     * editor cursor on the same screen row as the cursor, so the two panes scroll
-     * in lockstep (the preview moves only when the editor pane does, not on every
-     * keystroke) instead of re-centring constantly. */
+    /* Preview as its own viewport: keep the line that matches the editor cursor
+     * visible, scrolling only when it would fall off the top or bottom edge — the
+     * same edge-triggered model the editor pane uses. Because the preview holds
+     * its own scroll position (a->preview_top) it stays put while the focus line
+     * is on screen, so it neither re-centres on every keystroke nor jitters when
+     * editor and preview lines don't line up one-to-one. */
     if (a->preview) {
         int focus = src_doc_line(a->preview, e->cy);
         if (focus < 0) focus = map_line(e->cy, (int)e->n, (int)a->preview->nline);
-        int ptop = focus - (e->cy - e->top);
-        if (ptop > (int)a->preview->nline - body) ptop = (int)a->preview->nline - body;
-        if (ptop < 0) ptop = 0;
+        if (focus < a->preview_top)            a->preview_top = focus;
+        if (focus >= a->preview_top + body)    a->preview_top = focus - body + 1;
+        if (a->preview_top > (int)a->preview->nline - body) a->preview_top = (int)a->preview->nline - body;
+        if (a->preview_top < 0) a->preview_top = 0;
+        int ptop = a->preview_top;
         for (int row = 0; row < body; row++) {
             int pli = ptop + row;
             if (pli >= (int)a->preview->nline) break;
@@ -789,7 +794,7 @@ static void seed_editor(App *a) {
 static void enter_insert(App *a) { seed_editor(a); a->mode = MODE_INSERT; }
 
 /* Enter Split mode (editor + live preview). */
-static void enter_split(App *a) { seed_editor(a); a->mode = MODE_SPLIT; render_preview(a); }
+static void enter_split(App *a) { seed_editor(a); a->mode = MODE_SPLIT; a->preview_top = 0; render_preview(a); }
 
 /* Copy the editor's buffer back into the app source (editor stays alive). */
 static void sync_source(App *a) {
