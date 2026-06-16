@@ -18,4 +18,12 @@
  */
 char *preprocess(const char *src, size_t len, size_t *out_len);
 
+/* Like preprocess, but also returns a map from preprocessed line index to the
+ * original (0-based) source line it came from — preprocess only ever *inserts*
+ * blank lines (never merges/deletes), so the map lets the renderer recover the
+ * true source line from a parsed byte offset. *out_map is malloc'd with *out_n
+ * entries (caller frees); pass NULL for either to skip it. */
+char *preprocess_map(const char *src, size_t len, size_t *out_len,
+                     int **out_map, int *out_n);
+
 #endif /* GLANCE_PREPROCESS_H */

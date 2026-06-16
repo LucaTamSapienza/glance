@@ -69,9 +69,10 @@ pass** under ASan/UBSan.
    document and a `![](…)` ref is inserted at the cursor.
 3. **Table alignment** — tables are buffered whole, then emitted bordered and
    column-aligned (left/center/right from md4c's `MD_BLOCK_TD_DETAIL`).
-4. **Cursor sync** — `render.c::tag_source_lines` attributes each visual line to
-   a source line by content (forward, monotonic); `tui.c` uses `Line.source_line`
-   for an exact reader↔editor map, with the proportional map as fallback.
+4. **Cursor sync** — offset-based: md4c text pointers index the preprocessed
+   source, so `render.c` records each visual line's source line during the parse
+   (`src_line_at` → `Line.source_line`), with `preprocess_map` recovering the
+   original line across inserted blanks; `tui.c` uses it for an exact map.
 
 All covered by `render_test.c` (+ `highlight_test.c`); 12 test suites total.
 
@@ -128,8 +129,11 @@ The four gaps the user prioritised are all **done** (see above). Residual polish
   reusing an ncvisual corrupted notcurses' pixel sprites; a persistent-plane cache
   that *moves* planes on scroll is the right future optimisation). Remote (`http`)
   images aren't fetched; cell-aspect ratio is approximated as a constant.
-- Cursor sync: soft-wrapped multi-line paragraphs map to the block, not the exact
-  wrapped sub-line (bounded by md4c having no source offsets).
+- Cursor sync is exact per source line; consecutive source lines md4c folds into
+  one paragraph (soft break) share the first line's number — inherent to a
+  rendered preview, not a mapping defect.
+- The editor pane scrolls long lines horizontally rather than soft-wrapping them
+  (a known gap; the preview wraps).
 - Wide tables overflow rather than wrap/truncate.
 - Display width counts one column per codepoint (wide/zero-width chars TBD).
 

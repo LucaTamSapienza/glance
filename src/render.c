@@ -115,6 +115,18 @@ typedef struct {
     int    li_pending;
     int    heading;        /* current heading level (inside MD_BLOCK_H) */
     int    heading_start;  /* doc line index where the heading's text begins */
+
+    /* exact source-line mapping: md4c hands text pointers that index into the
+     * (preprocessed) source, so an offset gives the source line directly. */
+    const char   *pp;        /* preprocessed source base */
+    size_t        pp_len;
+    const size_t *ls;        /* pp line-start byte offsets */
+    int           nls;
+    const int    *map;       /* pp-line -> source-line (0-based), or NULL */
+    int           nmap;
+    int    cur_src;          /* 1-based source line of the latest text, or 0 */
+    int    line_src;         /* source line tagged onto the pending Doc line, or 0 */
+    int    code_line_src;    /* source line of the next code-block line to emit */
 } R;
 
 /* ---- run / line builders -------------------------------------------------- */
@@ -139,6 +151,23 @@ static int runs_push(Run **arr, size_t *n, size_t *cap,
     return 0;
 }
 
+/* 1-based source line of the text at pointer `t` — md4c hands out pointers that
+ * index into the preprocessed source, so the byte offset maps straight to a line
+ * (via the pp-line starts and the pp->src line map). 0 if `t` isn't source-backed
+ * (entities, soft breaks, and other synthesised text use private buffers). */
+static int src_line_at(R *r, const char *t) {
+    if (!r->pp || t < r->pp) return 0;
+    size_t off = (size_t)(t - r->pp);
+    if (off >= r->pp_len) return 0;
+    int lo = 0, hi = r->nls - 1, ppl = 0;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        if (r->ls[mid] <= off) { ppl = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    int src = (ppl < r->nmap) ? r->map[ppl] : ppl;
+    return src + 1;
+}
+
 /* Save / restore the current inline style around a nested span or block. */
 static void style_push(R *r) { if (r->sp < MAX_STYLE) r->stack[r->sp++] = r->cur; }
 static void style_pop(R *r)  { if (r->sp > 0) r->cur = r->stack[--r->sp]; }
@@ -155,13 +184,14 @@ static void line_commit(R *r) {
     Line *L = &d->lines[d->nline++];
     L->runs = r->line; L->nrun = r->line_n; L->cap = r->line_cap;
     L->cols = r->line_cols;
-    L->source_line = 0;
+    L->source_line = r->line_src;   /* exact source line of this line's text, or 0 */
     L->heading = 0;
     L->fill = 0; L->fill_bg = rgb(0, 0, 0);
     L->image = NULL; L->img_rows = 0;
     /* hand ownership of the run array to the line; start a fresh one */
     r->line = NULL; r->line_n = 0; r->line_cap = 0;
     r->line_cols = 0; r->line_has = 0;
+    r->line_src = 0;                /* next line re-derives its own source line */
 }
 
 /* ensure the current line has its block indentation + quote bar prepended */
@@ -197,6 +227,7 @@ static void flush_word(R *r) {
         runs_push(&r->line, &r->line_n, &r->line_cap, " ", 1, plain);
         r->line_cols += 1;
     }
+    if (r->line_src == 0) r->line_src = r->cur_src;   /* first word -> source line */
     for (size_t i = 0; i < r->word_n; i++) {
         Run *w = &r->word[i];
         if (runs_push(&r->line, &r->line_n, &r->line_cap, w->text, w->len, w->st) == 0)
@@ -275,6 +306,7 @@ static void code_line(R *r, const char *s, size_t n) {
     }
     /* mark the line for bg fill to the right edge */
     r->line_has = 1;
+    if (r->code_line_src > 0) r->line_src = r->code_line_src++;  /* code is 1:1 with source */
     line_commit(r);
     Line *L = &r->doc->lines[r->doc->nline - 1];
     L->fill = 1; L->fill_bg = code_bg(r->dark);
@@ -551,6 +583,7 @@ static int cb_enter_block(MD_BLOCKTYPE type, void *detail, void *ud) {
         case MD_BLOCK_CODE: {
             MD_BLOCK_CODE_DETAIL *d = detail;
             r->in_code = 1; r->code_len = 0;
+            r->code_line_src = 0;       /* set from the first code line's offset */
             memset(&r->hl, 0, sizeof r->hl);
             r->code_lang = (d && d->lang.text) ? hl_lang(d->lang.text, d->lang.size) : -1;
             break;
@@ -716,6 +749,13 @@ static int cb_leave_span(MD_SPANTYPE type, void *detail, void *ud) {
 /* Handle a run of text: buffer code, wrap normal text, or break lines. */
 static int cb_text(MD_TEXTTYPE type, const MD_CHAR *text, MD_SIZE size, void *ud) {
     R *r = ud;
+    if (type == MD_TEXT_NORMAL || type == MD_TEXT_CODE) {   /* source-backed text */
+        int sl = src_line_at(r, text);
+        if (sl) {
+            r->cur_src = sl;
+            if (r->in_code && r->code_line_src == 0) r->code_line_src = sl;
+        }
+    }
     if (r->in_image) {   /* an image's alt text: collect it, don't lay it out */
         if (type == MD_TEXT_NORMAL || type == MD_TEXT_ENTITY || type == MD_TEXT_CODE)
             img_alt_append(r, text, size);
@@ -746,72 +786,12 @@ static int cb_text(MD_TEXTTYPE type, const MD_CHAR *text, MD_SIZE size, void *ud
 }
 
 /* ---- source-line attribution ---------------------------------------------- */
-/* md4c reports no source byte-offsets, so to map the cursor between the reader
- * and the editor we attribute each visual line back to a source line by content.
- * For each Doc line we take the first short word and scan forward (never back)
- * through the original source for the line that contains it. It is exact for
- * structural lines (headings, code, list items, table rows, single-line
- * paragraphs) and monotonic everywhere, which beats a purely proportional map. */
-
-/* First word of a Doc line, lowercased, up to cap-1 bytes: a token starts on an
- * ASCII letter/digit (so decoration glyphs like • │ never start one) and may
- * continue into UTF-8 bytes (so accented words still match). 0 = no word. */
-static int doc_line_key(const Line *L, char *key, int cap) {
-    int kn = 0, started = 0;
-    for (size_t r = 0; r < L->nrun; r++) {
-        const unsigned char *t = (const unsigned char *)L->runs[r].text;
-        for (size_t i = 0; i < L->runs[r].len; i++) {
-            unsigned char c = t[i];
-            int start_ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
-            if (!started) { if (!start_ok) continue; started = 1; }
-            else if (!(start_ok || c >= 0x80)) { goto done; }
-            key[kn++] = (char)((c >= 'A' && c <= 'Z') ? c + 32 : c);
-            if (kn >= cap - 1) goto done;
-        }
-    }
-done:
-    key[kn] = '\0';
-    return kn;
-}
-
-/* Case-insensitive substring test (key is already lowercase). */
-static int ci_contains(const char *hay, size_t hn, const char *key, size_t kn) {
-    if (kn == 0 || kn > hn) return 0;
-    for (size_t i = 0; i + kn <= hn; i++) {
-        size_t j = 0;
-        for (; j < kn; j++) {
-            char a = hay[i + j];
-            if (a >= 'A' && a <= 'Z') a += 32;
-            if (a != key[j]) break;
-        }
-        if (j == kn) return 1;
-    }
-    return 0;
-}
-
-/* Fill each Line.source_line (1-based) by matching against the original src. */
-static void tag_source_lines(Doc *d, const char *src, size_t len) {
-    if (!d || !src) return;
-    size_t nsrc = 1;
-    for (size_t i = 0; i < len; i++) if (src[i] == '\n') nsrc++;
-    struct { const char *p; size_t n; } *sl = malloc(nsrc * sizeof *sl);
-    if (!sl) return;
-    size_t k = 0, st = 0;
-    for (size_t i = 0; i <= len; i++)
-        if (i == len || src[i] == '\n') { sl[k].p = src + st; sl[k].n = i - st; k++; st = i + 1; }
-
-    size_t si = 0; int last = 0;
-    for (size_t li = 0; li < d->nline; li++) {
-        char key[5];
-        int kn = doc_line_key(&d->lines[li], key, (int)sizeof key);
-        if (kn == 0) { d->lines[li].source_line = 0; continue; }   /* blank/rule line */
-        size_t j = si;
-        for (; j < k; j++) if (ci_contains(sl[j].p, sl[j].n, key, (size_t)kn)) break;
-        if (j < k) { d->lines[li].source_line = (int)j + 1; si = j + 1; last = (int)j + 1; }
-        else        d->lines[li].source_line = last ? last : (si < k ? (int)si + 1 : (int)k);
-    }
-    free(sl);
-}
+/* Each Line.source_line is filled exactly during the parse: md4c's text pointers
+ * index into the preprocessed source, so cb_text turns the byte offset of the
+ * first text on a line into its source line (see src_line_at, line_commit, and
+ * code_line). This is exact wherever a source line maps to its own visual line;
+ * lines md4c merges (consecutive lines of one paragraph, joined by a soft break)
+ * share the first line's number — the inherent limit of a rendered preview. */
 
 /* ---- entry / teardown ----------------------------------------------------- */
 
@@ -843,11 +823,24 @@ Doc *render_doc_at(const char *src, size_t len, int width, int dark, const char 
     parser.leave_span  = cb_leave_span;
     parser.text        = cb_text;
 
-    /* apply tolerant-Markdown fix-ups, then parse the result */
+    /* Apply tolerant-Markdown fix-ups, then parse the result. The pp->src line
+     * map plus a table of pp line starts let cb_text turn each text pointer into
+     * an exact source line (filled into Line.source_line for the cursor sync). */
     size_t plen = len;
-    char *pre = preprocess(src, len, &plen);
-    int rc = md_parse(pre ? pre : src, (MD_SIZE)(pre ? plen : len), &parser, &r);
-    free(pre);
+    int *map = NULL, nmap = 0;
+    char *pre = preprocess_map(src, len, &plen, &map, &nmap);
+    const char *pp = pre ? pre : src;
+    size_t pp_len = pre ? plen : len;
+    int nls = 1;
+    for (size_t i = 0; i < pp_len; i++) if (pp[i] == '\n') nls++;
+    size_t *ls = malloc((size_t)nls * sizeof(size_t));
+    if (ls) {
+        int k = 0; ls[k++] = 0;
+        for (size_t i = 0; i < pp_len && k < nls; i++) if (pp[i] == '\n') ls[k++] = i + 1;
+        r.pp = pp; r.pp_len = pp_len; r.ls = ls; r.nls = nls; r.map = map; r.nmap = nmap;
+    }
+    int rc = md_parse(pp, (MD_SIZE)pp_len, &parser, &r);
+    free(pre); free(map); free(ls);
     flush_word(&r);
     if (r.line_has || r.line_n > 0) line_commit(&r);
 
@@ -862,8 +855,7 @@ Doc *render_doc_at(const char *src, size_t len, int width, int dark, const char 
     table_free(&r);            /* no-op unless a table was left unfinished */
 
     if (rc != 0) { doc_free(doc); return NULL; }
-    tag_source_lines(doc, src, len);   /* map visual lines back to source lines */
-    return doc;
+    return doc;   /* Line.source_line was filled exactly during the parse */
 }
 
 /* Concatenate a line's run text into a newly malloc'd, NUL-terminated string. */

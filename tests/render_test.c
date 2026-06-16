@@ -136,6 +136,23 @@ int main(void) {
     expect(srcline_of(d, "func main") == 11,"code line maps to its source line");
     doc_free(d);
 
+    /* Exactness the old content-matching couldn't guarantee: a first word that
+     * repeats far apart must map to its OWN source line (offset-based), and a
+     * soft-wrapped paragraph's lines share the first source line. */
+    const char *md2 =
+        "alpha first\n"      /* 1 */
+        "\n"                 /* 2 */
+        "wrapped line one\n" /* 3 */
+        "wrapped line two\n" /* 4  (soft break: same paragraph as line 3) */
+        "\n"                 /* 5 */
+        "alpha second\n";    /* 6 */
+    Doc *d2 = render_doc(md2, strlen(md2), 80, 1);
+    expect(srcline_of(d2, "alpha first")  == 1, "first 'alpha' maps to line 1");
+    expect(srcline_of(d2, "alpha second") == 6, "repeated 'alpha' maps to line 6, not line 1");
+    /* lines 3 and 4 render as one line (soft break), tagged with the first: 3 */
+    expect(srcline_of(d2, "wrapped line one") == 3, "soft-wrapped paragraph keeps the first source line");
+    doc_free(d2);
+
     /* Inline image: a placeholder line carries the src, reserves rows, and is
      * linked so the reader can open it. */
     Doc *im = render_doc("![a cat](cat.png)\n", 18, 60, 1);
