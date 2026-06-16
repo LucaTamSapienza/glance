@@ -1,104 +1,129 @@
 # glance
 
-The terminal Markdown reader/editor for macOS — read, search, and edit Markdown with live preview, without leaving your shell.
+The terminal Markdown reader/editor for macOS — read, search, edit, and
+*navigate* a folder of `.md` files without leaving your shell.
 
 ```
 $ glance README.md
 ```
 
-Glance opens any `.md` file in a beautifully rendered reader. Hit `e` to drop into a split editor with **live preview** while you type, `:w` to save, `q` to quit.
+glance opens any Markdown file in a beautifully rendered reader. Press `i` to
+edit, `e` for a split editor with **live preview**, `/` to search, `t` for a
+table of contents, `Enter` to follow a `[[wikilink]]`, and `Ctrl-G` to walk the
+link graph of the whole vault — all in the terminal.
 
-## Why
+It is also a **lens for agents**: `glance --outline`, `--links`, and `--graph`
+print a document's structure as JSON, so a tool or an LLM can understand how a
+set of notes connects with no server, no embeddings, and no index step.
 
-| Tool | Renders | Navigates | **Edits** |
-|---|---|---|---|
-| Glow | ✓ | partial | ✗ |
-| Frogmouth | ✓ | ✓ | ✗ |
-| mdcat | ✓ | ✗ | ✗ |
-| **glance** | **✓** | **✓** | **✓** |
+## Why C, why own the renderer
 
-Markdown is the lingua franca of agent context files (`CLAUDE.md`, `AGENTS.md`), READMEs, specs, and notes. Switching to a GUI editor just to read one is friction worth eliminating.
+glance began as a Go program built on the Charmbracelet stack (bubbletea +
+glamour). Most of that code existed to *fight* glamour's opacity: inserting
+marker paragraphs to survive rendering, stripping ANSI to search and re-injecting
+it to highlight. So glance was rewritten in C, owning the whole pipeline:
+
+```
+Markdown ──▶ md4c (CommonMark/GFM parser) ──▶ our Doc ──▶ ┌─ ANSI string  (CLI, tests)
+             our renderer builds a            (styled     └─ notcurses cells (TUI)
+             structured document model         runs)
+```
+
+Because *we* build the document model, search reads run text directly, the cursor
+is a real cell, the TOC is just the tagged heading lines, and link-following is a
+lookup — nothing about the output is a black box. The result is smaller, faster,
+and fully under our control.
+
+> The original Go implementation is preserved, unmaintained, under
+> [`legacy-go/`](legacy-go/) for reference. It will be removed once the C version
+> has been tested in daily use.
 
 ## Install
 
-**With Go** (requires Go 1.22+):
+Requires a C11 compiler and two libraries — [md4c](https://github.com/mity/md4c)
+(Markdown parser) and [notcurses](https://github.com/dankamongmen/notcurses)
+(TUI runtime):
 
 ```sh
-go install github.com/LucaTamSapienza/glance/cmd/glance@latest
-```
-
-This drops the `glance` binary in `$(go env GOPATH)/bin` — make sure that's on your `PATH`.
-
-**Pre-built binaries** — grab the archive for your OS/arch from the
-[latest release](https://github.com/LucaTamSapienza/glance/releases/latest)
-(macOS & Linux, amd64 & arm64), then:
-
-```sh
-tar -xzf glance_*_darwin_arm64.tar.gz
-sudo mv glance /usr/local/bin/
-```
-
-**From source:**
-
-```sh
+brew install md4c notcurses
 git clone https://github.com/LucaTamSapienza/glance
 cd glance
-go build -o glance ./cmd/glance
+make                 # builds ./glance (TUI) and ./glance-render (CLI)
+make test            # runs the unit tests under AddressSanitizer/UBSan
 ```
-
-> Homebrew tap is planned for a future release.
 
 ## Usage
 
-```
-glance <file.md>      open a file in the reader
-glance -edit file.md  open straight in split editor + preview
-cat note.md | glance  read from stdin
+```sh
+glance file.md                 # open in the reader TUI
+glance-render -w 80 file.md    # render to ANSI on stdout (-l for a light theme)
+cat note.md | glance           # read from stdin
+glance --keys                  # diagnostic: print raw key events
 ```
 
 ### Keys
 
-**Reader:**
+**Reader**
 
-| Key | Action |
-|---|---|
-| `j` `k` / arrows | scroll line |
-| `gg` / `G` | top / bottom |
-| `space` / `pgdn` | page down |
-| `/` | incremental search |
-| `n` / `N` | next / prev match |
-| `t` | toggle Table of Contents |
-| `e` | enter split editor + live preview |
-| `R` | reload after external file change |
-| `?` | help |
-| `q` | quit |
+| Key | Action | Key | Action |
+|-----|--------|-----|--------|
+| `h j k l` / arrows | move cursor | `i` | insert mode (full-screen editor) |
+| `g` / `G` | top / bottom | `e` | split: editor + live preview |
+| `Ctrl-D` / `Ctrl-U` | half page | `v` / `V` | visual-line select |
+| `/` | search | `y` | yank selection → system clipboard |
+| `n` / `N` | next / prev match | `t` | table of contents |
+| `Enter` | follow link / `[[wikilink]]` | `b` | backlinks panel |
+| `-` / `Ctrl-O` | back to previous file | `Ctrl-G` | graph explorer |
+| `?` | help | `Ctrl-S` | save |
+| `:w` `:wq` `:x` `:q` `:q!` | write / quit (vi-style) | | |
 
-**Editor (in split mode):**
+**Insert / Split** — type to edit, `Esc` returns to the reader, `Ctrl-S` saves.
+Brackets `[` `(` `{` auto-close (backticks do not — you type fences by hand).
 
-| Key | Action |
-|---|---|
-| `esc` | leave editor, back to reader |
-| `:w` | save (atomic write) |
-| `:q` | quit (refuses if dirty) |
-| `:q!` | force quit |
-| `:wq` / `:x` | save + quit |
+In the **graph explorer** (`Ctrl-G`) the current note sits in the centre, notes
+that link *to* it on the left and notes it links *to* on the right. `j`/`k` or
+↑/↓ select a neighbour, `h`/`l` or ←/→ switch column, `Enter` opens it, `Space`
+re-centres the graph on it to walk the vault, `Esc` closes.
 
-Mouse is supported in the reader and right preview pane: wheel to scroll, click links.
+## The vault — no init needed
 
-## How it works
+There is no `glance --init` and no index file: **the folder is the vault**, just
+like Obsidian. When you open a file, glance finds the vault root by walking up to
+the nearest `.git` or `.obsidian` marker (falling back to the file's own
+directory), then scans it **recursively** — so `[[wikilinks]]` resolve to notes
+anywhere in the tree, including subfolders.
 
-- Rendering: [Glamour](https://github.com/charmbracelet/glamour) — the same renderer Charm's Glow uses
-- TUI: [Bubbletea](https://github.com/charmbracelet/bubbletea) + [Bubbles](https://github.com/charmbracelet/bubbles) + [Lipgloss](https://github.com/charmbracelet/lipgloss)
-- Live preview: debounced 150 ms after each keystroke
-- Save: tmp-file + atomic `rename`, preserving original file mode
-- External-change detection: `fsnotify`, prompts `R` to reload
+## Agent-facing exports
 
-## Roadmap
+glance serves two readers at once: the human at the terminal and the agent
+reading the same files. The non-interactive subcommands print JSON to stdout:
 
-- v1.1: inline images via Kitty / iTerm2 graphics protocols (terminal detection already shipped)
-- v1.2: folder/library view; remote URLs (`glance https://…`)
-- v2: Mermaid + math rendering, plugin system
+```sh
+glance --outline file.md   # heading tree:    [{level, title, line}, ...]
+glance --links   file.md   # outbound links:  [{target, wiki}, ...]
+glance --graph   ./notes   # whole-vault link graph: {nodes, edges}
+```
+
+An agent can call `glance --graph .` to learn how a document set connects, then
+`glance --outline x.md` to navigate one file. See [AGENT_FEATURES.md](AGENT_FEATURES.md)
+for the design rationale, and [AGENTS.md](AGENTS.md) if you are running this repo
+with a coding agent.
+
+## Repository layout
+
+```
+src/            the C application (renderer + TUI + agent exports)
+tests/          unit tests, one per pure module (make test)
+testdata/       sample.md showcase + a small example vault/
+Makefile        build (glance + glance-render) and test targets
+STATUS.md       module map, feature list, and design notes
+AGENT_FEATURES.md   why the vault/graph/JSON features exist
+AGENTS.md       guide for using this repo with a coding agent
+legacy-go/      the original Go implementation, deprecated, kept for reference
+```
+
+See [STATUS.md](STATUS.md) for the full module-by-module map.
 
 ## License
 
-MIT
+MIT — part of the glance project by Luca Tamburrano.

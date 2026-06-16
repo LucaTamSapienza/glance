@@ -9,21 +9,17 @@ permissions:
   contents: write
 
 jobs:
-  goreleaser:
+  build:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: brew install md4c notcurses
+      - name: Build
+        run: make
+      - name: Package
+        run: tar -czf glance_${{ github.ref_name }}_darwin_arm64.tar.gz glance glance-render README.md LICENSE
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
         with:
-          fetch-depth: 0
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
-
-      - uses: goreleaser/goreleaser-action@v6
-        with:
-          version: latest
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          files: glance_*.tar.gz

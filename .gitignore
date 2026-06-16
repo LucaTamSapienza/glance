@@ -1,5 +1,11 @@
+# Build artifacts
 /glance
+/glance-render
+/build/
+/build-t-*
 /dist/
+*.o
 *.test
 *.out
+*.dSYM/
 .DS_Store

@@ -1,5 +1,5 @@
-# glance-c — C rewrite of glance.
-#   glance         the TUI: Reader + Insert modes (Split lands in a later slice)
+# glance — a terminal Markdown reader/editor in C.
+#   glance         the TUI: Reader + Insert + Split modes, vault navigation
 #   glance-render  render-only CLI: Markdown -> ANSI on stdout (file or stdin)
 #   make test      unit tests for the pure modules, under ASan/UBSan
 CC      ?= cc

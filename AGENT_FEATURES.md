@@ -1,7 +1,7 @@
 # glance, in the age of agents
 
-This branch (`c-agent-features`) builds new functionality on top of the Go-parity
-reader. The thesis: a Markdown reader today should serve **two readers at once —
+These features build on top of the core reader. The thesis: a Markdown reader
+today should serve **two readers at once —
 the human at the terminal and the agent reading the same files.** Markdown is
 already the lingua franca agents use for memory, docs, and context; glance turns
 a folder of `.md` into something both can navigate.
@@ -45,7 +45,7 @@ notes anywhere in the tree (including subfolders). `glance --graph DIR` takes th
 root explicitly. Markdown links that contain a path resolve relative to the
 current file; bare `[[names]]` resolve by name across the whole vault.
 
-## Status — all implemented on this branch
+## Status — all implemented
 
 - `[[wikilinks]]` render and are followable; Enter opens internal `.md` targets
   inside glance with a back-stack (`-` / `Ctrl-O`); external URLs open in the

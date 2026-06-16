@@ -1,8 +1,10 @@
-# glance-c — C rewrite of glance
+# glance — status & module map
 
-A from-scratch C port of glance (the Go terminal Markdown reader/editor), so we
-own the rendering instead of treating glamour/glow as a black box. Built as
-small, tested, well-documented modules.
+glance is a terminal Markdown reader/editor written in C. It began as a Go
+program built on glamour/glow; this is the from-scratch C rewrite that owns the
+rendering instead of treating glamour as a black box. The Go original is kept,
+deprecated, under [`legacy-go/`](legacy-go/). Built as small, tested,
+well-documented modules.
 
 ## Why C / why own the renderer
 
@@ -37,6 +39,9 @@ completion.c   bracket auto-pairing (no backtick/fence)
 fs_save.c      atomic write (temp + rename, preserve mode)
 fswatch.c      kqueue watch of the parent directory
 clipboard.c    pbcopy + open (system clipboard / link opening)
+vault.c        vault scan + wikilink resolution (the folder is the vault)
+graph.c        the vault link graph (shared by --graph and the Ctrl-G explorer)
+agent.c        --outline / --links / --graph JSON exports
 util.c         shared UTF-8 + whole-file helpers
 tui.c          notcurses front-end: modes, input, drawing, event loop
 main.c         glance entry (TUI)         main_render.c  glance-render entry (CLI)
@@ -45,7 +50,9 @@ main.c         glance entry (TUI)         main_render.c  glance-render entry (CL
 The renderer emits a **structured Doc**; two sinks consume it — `doc_ansi.c`
 (ANSI string, for the CLI/tests) and `tui.c` (notcurses cells).
 
-## Go feature parity — DONE
+## Feature list — DONE
+
+Full parity with the original Go app, plus the vault/agent features:
 
 - **Three modes:** Reader (rendered, block cursor), Insert (full-screen editor),
   Split (editor + live preview).
@@ -54,12 +61,15 @@ The renderer emits a **structured Doc**; two sinks consume it — `doc_ansi.c`
 - **Save** atomic: `:w` `:wq` `:x`, `Ctrl-S`; `:q` refuses on unsaved, `:q!`
   discards; dirty flag.
 - **Live reload** on external change (kqueue), only when clean.
-- **Clipboard:** `V` visual-line select, `y` yank to system clipboard.
+- **Clipboard:** `v`/`V` visual-line select, `y` yank to system clipboard.
 - **Open links** under the cursor with Enter.
 - **Tolerant Markdown** preprocessing.
 - **Help** overlay `?`.
 - **Auto dark/light** from the terminal background.
 - **Bracket auto-pairing** in the editor.
+- **Vault navigation:** `[[wikilinks]]` resolve and follow across subfolders;
+  back-stack (`-` / `Ctrl-O`); backlinks panel (`b`); graph explorer (`Ctrl-G`).
+- **Agent exports:** `glance --outline|--links|--graph` print JSON to stdout.
 
 ## Keys
 
@@ -71,7 +81,6 @@ toc · `?` help · Enter open link · `:w`/`:q`/`:wq`/`:q!` · `Ctrl-S` save ·
 ## Build & run
 
 ```sh
-cd glance-c
 make                  # glance (TUI) + glance-render (CLI)
 make test             # all module unit tests, ASan/UBSan
 ./glance file.md
@@ -80,10 +89,11 @@ make test             # all module unit tests, ASan/UBSan
 
 ## Tests
 
-Pure modules are unit-tested under ASan/UBSan (`make test`): editor, preprocess,
-search, toc, fs_save, completion. The renderer is additionally exercised through
-the search/toc tests and the `glance-render` CLI. The notcurses front-end needs
-a real terminal and is verified interactively.
+Pure modules are unit-tested under ASan/UBSan (`make test`) — nine suites:
+editor, preprocess, search, toc, fs_save, completion, vault, agent, graph. The
+renderer is additionally exercised through the search/toc/agent tests and the
+`glance-render` CLI. The notcurses front-end needs a real terminal and is
+verified interactively.
 
 ## Known limitations / future
 
