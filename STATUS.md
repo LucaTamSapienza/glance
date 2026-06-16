@@ -58,7 +58,8 @@ The renderer emits a **structured Doc**; two sinks consume it — `doc_ansi.c`
 Full parity with the original Go app, plus the vault/agent features:
 
 - **Three modes:** Reader (rendered, block cursor), Insert (full-screen editor),
-  Split (editor + live preview).
+  Split (editor + live preview). The editor soft-wraps long lines to the pane
+  width; the cursor and scrolling count wrapped visual rows.
 - **Search** `/` with highlight, `n`/`N` next/prev.
 - **TOC** panel `t`, jump on Enter.
 - **Save** atomic: `:w` `:wq` `:x`, `Ctrl-S`; `:q` refuses on unsaved, `:q!`

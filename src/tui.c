@@ -611,39 +611,65 @@ static void draw_reader(App *a) {
 
 /* ---- Insert / Split editing ---------------------------------------------- */
 
-/* Keep the editor cursor visible within a pane `width` columns wide. */
+/* Visual rows a logical line occupies when soft-wrapped to `width` columns
+ * (always at least one, so an empty line still takes a row). */
+static int eline_rows(const ELine *L, int width) {
+    if (width < 1) width = 1;
+    return ed_byte_to_col(L->b ? L->b : "", L->len) / width + 1;
+}
+
+/* The cursor's visual position relative to the first visible line `top` in a
+ * pane `width` columns wide: how many wrapped rows down, and the column within. */
+static void editor_vcursor(Editor *e, int top, int width, int *vrow, int *vcol) {
+    if (width < 1) width = 1;
+    int r = 0;
+    for (int li = top; li < e->cy; li++) r += eline_rows(&e->lines[li], width);
+    int ccol = editor_cursor_col(e);
+    *vrow = r + ccol / width;
+    *vcol = ccol % width;
+}
+
+/* Keep the editor cursor visible in a pane `width` columns wide. Lines soft-wrap
+ * (no horizontal scroll), so scrolling counts wrapped visual rows: advance the
+ * top line until the cursor's visual row fits within the body. */
 static void editor_scroll(App *a, int width) {
     int body = content_rows(a);
     Editor *e = &a->ed;
+    e->xoff = 0;                       /* wrapping replaces horizontal scroll */
     if (e->cy < e->top) e->top = e->cy;
-    if (e->cy >= e->top + body) e->top = e->cy - body + 1;
     if (e->top < 0) e->top = 0;
-    int ccol = editor_cursor_col(e);
-    if (ccol < e->xoff) e->xoff = ccol;
-    if (ccol >= e->xoff + width) e->xoff = ccol - width + 1;
-    if (e->xoff < 0) e->xoff = 0;
+    for (;;) {
+        int vrow, vcol;
+        editor_vcursor(e, e->top, width, &vrow, &vcol);
+        if (vrow < body || e->top >= e->cy) break;
+        e->top++;
+    }
 }
 
-/* Draw the editor's visible lines into a pane at x0, clipped to `width`. */
+/* Draw the editor's visible lines into a pane at x0, soft-wrapped to `width`:
+ * each logical line is laid out across as many rows as it needs, so long lines
+ * stay within the pane instead of scrolling off the edge. */
 static void draw_editor_pane(App *a, int x0, int width) {
     struct ncplane *p = a->plane;
     Editor *e = &a->ed;
     int body = content_rows(a);
+    if (width < 1) width = 1;
     ncplane_set_styles(p, NCSTYLE_NONE);
     ncplane_set_fg_default(p);
     ncplane_set_bg_default(p);
-    for (int row = 0; row < body; row++) {
-        size_t li = (size_t)e->top + row;
-        if (li >= e->n) break;
+    int row = 0;
+    for (size_t li = (size_t)e->top; li < e->n && row < body; li++) {
         ELine *L = &e->lines[li];
-        if (!L->b || L->len == 0) continue;
-        size_t s = ed_col_to_byte(L->b, L->len, e->xoff);
-        size_t en = ed_col_to_byte(L->b, L->len, e->xoff + width);
-        if (en <= s) continue;
-        char save = L->b[en];           /* clip the visible window in place */
-        L->b[en] = '\0';
-        ncplane_putstr_yx(p, row, x0, L->b + s);
-        L->b[en] = save;
+        int nrows = eline_rows(L, width);
+        for (int sub = 0; sub < nrows && row < body; sub++, row++) {
+            if (!L->b || L->len == 0) continue;                 /* empty: blank row */
+            size_t s  = ed_col_to_byte(L->b, L->len, sub * width);
+            size_t en = ed_col_to_byte(L->b, L->len, (sub + 1) * width);
+            if (en <= s) continue;
+            char save = L->b[en]; L->b[en] = '\0';              /* clip one row in place */
+            ncplane_putstr_yx(p, row, x0, L->b + s);
+            L->b[en] = save;
+        }
     }
 }
 
@@ -662,7 +688,8 @@ static void draw_editor(App *a) {
                   e->cy + 1, editor_cursor_col(e) + 1);
     status_bar(a, status);
 
-    notcurses_cursor_enable(a->nc, e->cy - e->top, editor_cursor_col(e) - e->xoff);
+    int vrow, vcol; editor_vcursor(e, e->top, a->cols, &vrow, &vcol);
+    notcurses_cursor_enable(a->nc, vrow, vcol);
     notcurses_render(a->nc);
 }
 
@@ -730,7 +757,8 @@ static void draw_split(App *a) {
                   a->title, e->dirty ? " *" : "");
     status_bar(a, status);
 
-    notcurses_cursor_enable(a->nc, e->cy - e->top, editor_cursor_col(e) - e->xoff);
+    int vrow, vcol; editor_vcursor(e, e->top, leftw, &vrow, &vcol);
+    notcurses_cursor_enable(a->nc, vrow, vcol);
     notcurses_render(a->nc);
 }
 

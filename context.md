@@ -132,8 +132,9 @@ The four gaps the user prioritised are all **done** (see above). Residual polish
 - Cursor sync is exact per source line; consecutive source lines md4c folds into
   one paragraph (soft break) share the first line's number — inherent to a
   rendered preview, not a mapping defect.
-- The editor pane scrolls long lines horizontally rather than soft-wrapping them
-  (a known gap; the preview wraps).
+- The editor pane soft-wraps long lines within its width (no horizontal scroll);
+  the cursor and scrolling count wrapped visual rows (`editor_vcursor`,
+  `eline_rows`).
 - Wide tables overflow rather than wrap/truncate.
 - Display width counts one column per codepoint (wide/zero-width chars TBD).
 
