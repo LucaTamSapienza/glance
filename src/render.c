@@ -864,6 +864,21 @@ Doc *render_doc_at(const char *src, size_t len, int width, int dark, const char 
     return doc;
 }
 
+/* Concatenate a line's run text into a newly malloc'd, NUL-terminated string. */
+char *line_text(const Line *L) {
+    size_t len = 0;
+    for (size_t j = 0; j < L->nrun; j++) len += L->runs[j].len;
+    char *s = malloc(len + 1);
+    if (!s) return NULL;
+    size_t p = 0;
+    for (size_t j = 0; j < L->nrun; j++) {
+        memcpy(s + p, L->runs[j].text, L->runs[j].len);
+        p += L->runs[j].len;
+    }
+    s[p] = '\0';
+    return s;
+}
+
 /* Free a Doc and all the runs it owns. */
 void doc_free(Doc *d) {
     if (!d) return;

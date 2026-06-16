@@ -156,6 +156,16 @@ int main(void) {
     }
     doc_free(im);
 
+    /* line_text concatenates a line's run text (used by search and the TOC). */
+    Doc *lt = render_doc("hello **bold** world\n", 21, 60, 1);
+    expect(lt->nline > 0, "line_text fixture renders a line");
+    if (lt->nline > 0) {
+        char *t = line_text(&lt->lines[0]);
+        expect(t && strcmp(t, "hello bold world") == 0, "line_text joins runs into plain text");
+        free(t);
+    }
+    doc_free(lt);
+
     if (fails) { printf("%d render test(s) FAILED\n", fails); return 1; }
     printf("all render tests passed\n");
     return 0;

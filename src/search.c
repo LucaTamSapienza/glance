@@ -36,25 +36,17 @@ void search_doc(const Doc *d, const char *query, Hits *out) {
     size_t qlen = query ? strlen(query) : 0;
     if (qlen == 0) return;
 
-    /* scratch buffer holding one line's concatenated run text */
-    char *buf = NULL; size_t cap = 0;
     for (size_t li = 0; li < d->nline; li++) {
-        const Line *L = &d->lines[li];
-        size_t len = 0;
-        for (size_t j = 0; j < L->nrun; j++) len += L->runs[j].len;
-        if (len + 1 > cap) { cap = len + 1; buf = realloc(buf, cap); if (!buf) return; }
-        size_t p = 0;
-        for (size_t j = 0; j < L->nrun; j++) {
-            memcpy(buf + p, L->runs[j].text, L->runs[j].len);
-            p += L->runs[j].len;
-        }
+        char *buf = line_text(&d->lines[li]);   /* this line's plain text */
+        if (!buf) return;
+        size_t len = strlen(buf);
         for (long at = 0; (at = find_ci(buf, len, query, qlen, at)) >= 0; at += (long)qlen) {
             int col = u8_width(buf, (size_t)at);
             int width = u8_width(buf + at, qlen);
             hits_push(out, (int)li, col, width);
         }
+        free(buf);
     }
-    free(buf);
 }
 
 void hits_free(Hits *out) { free(out->v); out->v = NULL; out->n = out->cap = 0; }
