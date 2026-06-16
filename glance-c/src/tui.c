@@ -791,7 +791,7 @@ static int handle_visual(App *a, uint32_t id, const ncinput *ni) {
     else if (id == NCKEY_PGDOWN)              a->rcur_line += body;
     else if (id == NCKEY_PGUP)                a->rcur_line -= body;
     else if (id == 'y')                       yank_selection(a);
-    else if (id == 'V' || id == NCKEY_ESC ||
+    else if (id == 'v' || id == 'V' || id == NCKEY_ESC ||
              (id == 'c' && ncinput_ctrl_p(ni))) a->visualmode = 0;
     reader_clamp_cursor(a);
     return 1;
@@ -968,7 +968,7 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     else if (id == NCKEY_ESC)                    clear_search(a);
     else if (id == 'i')                          enter_insert(a);  /* vi-style */
     else if (id == 'e')                          enter_split(a);   /* editor + preview */
-    else if (id == 'V')                          { a->visualmode = 1; a->visual_anchor = a->rcur_line; }
+    else if (id == 'v' || id == 'V')             { a->visualmode = 1; a->visual_anchor = a->rcur_line; }
     else if (id == NCKEY_ENTER || id == '\r' || id == '\n') {
         const char *u = link_at_cursor(a);
         if (u) open_link_target(a, u);
