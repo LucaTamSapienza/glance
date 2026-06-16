@@ -47,6 +47,22 @@ static void pad_of(const char *s, size_t n, int *lead, int *trail) {
 
 #define VBAR "\xe2\x94\x82"   /* │ */
 
+/* Source line (1-based) of the first Doc line whose text contains `needle`,
+ * or -2 if not found. */
+static int srcline_of(Doc *d, const char *needle) {
+    for (size_t i = 0; i < d->nline; i++) {
+        char buf[512]; size_t o = 0;
+        for (size_t r = 0; r < d->lines[i].nrun && o < sizeof buf - 1; r++) {
+            size_t l = d->lines[i].runs[r].len;
+            if (o + l >= sizeof buf) l = sizeof buf - 1 - o;
+            memcpy(buf + o, d->lines[i].runs[r].text, l); o += l;
+        }
+        buf[o] = '\0';
+        if (strstr(buf, needle)) return d->lines[i].source_line;
+    }
+    return -2;
+}
+
 int main(void) {
     char *p = plain("| Left | Mid | Right |\n|:-----|:---:|------:|\n| a | b | c |\n");
 
@@ -95,6 +111,30 @@ int main(void) {
         expect(field >= 3, "row had three cells");
     }
     free(p);
+
+    /* Source-line attribution: each visual line maps back to its source line.
+     * Lines are numbered 1-based; blanks separate the blocks below. */
+    const char *md =
+        "# Title\n"          /* 1 */
+        "\n"                 /* 2 */
+        "First para.\n"      /* 3 */
+        "\n"                 /* 4 */
+        "## Section\n"       /* 5 */
+        "\n"                 /* 6 */
+        "- item one\n"       /* 7 */
+        "- item two\n"       /* 8 */
+        "\n"                 /* 9 */
+        "```go\n"            /* 10 */
+        "func main() {}\n"   /* 11 */
+        "```\n";             /* 12 */
+    Doc *d = render_doc(md, strlen(md), 60, 1);
+    expect(srcline_of(d, "Title") == 1,     "heading maps to its source line");
+    expect(srcline_of(d, "First") == 3,     "paragraph maps to its source line");
+    expect(srcline_of(d, "Section") == 5,   "second heading maps to its source line");
+    expect(srcline_of(d, "item one") == 7,  "first list item maps to its source line");
+    expect(srcline_of(d, "item two") == 8,  "second list item maps to its source line");
+    expect(srcline_of(d, "func main") == 11,"code line maps to its source line");
+    doc_free(d);
 
     if (fails) { printf("%d render test(s) FAILED\n", fails); return 1; }
     printf("all render tests passed\n");

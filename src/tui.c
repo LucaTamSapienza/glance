@@ -83,6 +83,8 @@ typedef struct {
 static int content_rows(App *a) { return a->rows - 1; }   /* last row = status */
 
 static int map_line(int from, int nfrom, int nto);        /* defined below */
+static int doc_src_line(const Doc *d, int line);          /* defined below */
+static int src_doc_line(const Doc *d, int srcline);       /* defined below */
 static void open_graph(App *a);                           /* defined below */
 
 /* ---- terminal teardown (kitty keyboard protocol, see slice-2 fix) --------- */
@@ -542,7 +544,8 @@ static void draw_split(App *a) {
 
     /* preview, centred on the line that matches the editor cursor */
     if (a->preview) {
-        int focus = map_line(e->cy, (int)e->n, (int)a->preview->nline);
+        int focus = src_doc_line(a->preview, e->cy);
+        if (focus < 0) focus = map_line(e->cy, (int)e->n, (int)a->preview->nline);
         int ptop = focus - body / 2;
         if (ptop > (int)a->preview->nline - body) ptop = (int)a->preview->nline - body;
         if (ptop < 0) ptop = 0;
@@ -600,10 +603,34 @@ static int map_line(int from, int nfrom, int nto) {
     return r;
 }
 
+/* 0-based source line a rendered Doc line came from (nearest tagged line at or
+ * above it), or -1 if the Doc carries no source tags. render.c fills the tags
+ * by content matching; this turns them into an exact reader->editor map. */
+static int doc_src_line(const Doc *d, int line) {
+    for (int i = line; i >= 0; i--) if (d->lines[i].source_line > 0) return d->lines[i].source_line - 1;
+    for (int i = line + 1; i < (int)d->nline; i++) if (d->lines[i].source_line > 0) return d->lines[i].source_line - 1;
+    return -1;
+}
+
+/* Rendered Doc line for a 0-based source line: the last line tagged at or before
+ * it (tags are monotonic). -1 if the Doc carries no tags. The exact inverse map
+ * for editor->reader. */
+static int src_doc_line(const Doc *d, int srcline) {
+    int best = -1, tagged = 0;
+    for (int i = 0; i < (int)d->nline; i++) {
+        int s = d->lines[i].source_line;
+        if (s > 0) { tagged = 1; if (s - 1 <= srcline) best = i; else break; }
+    }
+    return tagged ? (best < 0 ? 0 : best) : -1;
+}
+
 /* Seed the editor from the current source, mapping the Reader cursor onto it. */
 static void seed_editor(App *a) {
     editor_init(&a->ed, a->src, a->srclen);
-    int sl = map_line(a->rcur_line, (int)a->doc->nline, (int)a->ed.n);
+    int sl = doc_src_line(a->doc, a->rcur_line);
+    if (sl < 0) sl = map_line(a->rcur_line, (int)a->doc->nline, (int)a->ed.n);
+    if (sl >= (int)a->ed.n) sl = (int)a->ed.n - 1;
+    if (sl < 0) sl = 0;
     a->ed.cy = sl;
     ELine *L = &a->ed.lines[sl];
     a->ed.cx = (int)ed_col_to_byte(L->b ? L->b : "", L->len, a->rcur_col);
@@ -633,7 +660,8 @@ static void leave_editor(App *a) {
     if (a->preview) { doc_free(a->preview); a->preview = NULL; }
     a->mode = MODE_READER;
     rerender(a);
-    a->rcur_line = map_line(src_cy, src_n, (int)a->doc->nline);
+    int rl = src_doc_line(a->doc, src_cy);
+    a->rcur_line = (rl >= 0) ? rl : map_line(src_cy, src_n, (int)a->doc->nline);
     a->rcur_col = rcol;
     a->rcur_goal = rcol;
     reader_clamp_cursor(a);

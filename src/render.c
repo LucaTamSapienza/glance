@@ -657,6 +657,74 @@ static int cb_text(MD_TEXTTYPE type, const MD_CHAR *text, MD_SIZE size, void *ud
     return 0;
 }
 
+/* ---- source-line attribution ---------------------------------------------- */
+/* md4c reports no source byte-offsets, so to map the cursor between the reader
+ * and the editor we attribute each visual line back to a source line by content.
+ * For each Doc line we take the first short word and scan forward (never back)
+ * through the original source for the line that contains it. It is exact for
+ * structural lines (headings, code, list items, table rows, single-line
+ * paragraphs) and monotonic everywhere, which beats a purely proportional map. */
+
+/* First word of a Doc line, lowercased, up to cap-1 bytes: a token starts on an
+ * ASCII letter/digit (so decoration glyphs like • │ never start one) and may
+ * continue into UTF-8 bytes (so accented words still match). 0 = no word. */
+static int doc_line_key(const Line *L, char *key, int cap) {
+    int kn = 0, started = 0;
+    for (size_t r = 0; r < L->nrun; r++) {
+        const unsigned char *t = (const unsigned char *)L->runs[r].text;
+        for (size_t i = 0; i < L->runs[r].len; i++) {
+            unsigned char c = t[i];
+            int start_ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+            if (!started) { if (!start_ok) continue; started = 1; }
+            else if (!(start_ok || c >= 0x80)) { goto done; }
+            key[kn++] = (char)((c >= 'A' && c <= 'Z') ? c + 32 : c);
+            if (kn >= cap - 1) goto done;
+        }
+    }
+done:
+    key[kn] = '\0';
+    return kn;
+}
+
+/* Case-insensitive substring test (key is already lowercase). */
+static int ci_contains(const char *hay, size_t hn, const char *key, size_t kn) {
+    if (kn == 0 || kn > hn) return 0;
+    for (size_t i = 0; i + kn <= hn; i++) {
+        size_t j = 0;
+        for (; j < kn; j++) {
+            char a = hay[i + j];
+            if (a >= 'A' && a <= 'Z') a += 32;
+            if (a != key[j]) break;
+        }
+        if (j == kn) return 1;
+    }
+    return 0;
+}
+
+/* Fill each Line.source_line (1-based) by matching against the original src. */
+static void tag_source_lines(Doc *d, const char *src, size_t len) {
+    if (!d || !src) return;
+    size_t nsrc = 1;
+    for (size_t i = 0; i < len; i++) if (src[i] == '\n') nsrc++;
+    struct { const char *p; size_t n; } *sl = malloc(nsrc * sizeof *sl);
+    if (!sl) return;
+    size_t k = 0, st = 0;
+    for (size_t i = 0; i <= len; i++)
+        if (i == len || src[i] == '\n') { sl[k].p = src + st; sl[k].n = i - st; k++; st = i + 1; }
+
+    size_t si = 0; int last = 0;
+    for (size_t li = 0; li < d->nline; li++) {
+        char key[5];
+        int kn = doc_line_key(&d->lines[li], key, (int)sizeof key);
+        if (kn == 0) { d->lines[li].source_line = 0; continue; }   /* blank/rule line */
+        size_t j = si;
+        for (; j < k; j++) if (ci_contains(sl[j].p, sl[j].n, key, (size_t)kn)) break;
+        if (j < k) { d->lines[li].source_line = (int)j + 1; si = j + 1; last = (int)j + 1; }
+        else        d->lines[li].source_line = last ? last : (si < k ? (int)si + 1 : (int)k);
+    }
+    free(sl);
+}
+
 /* ---- entry / teardown ----------------------------------------------------- */
 
 /* Parse src with md4c (GFM dialect) and build the Doc; see render.h. */
@@ -698,6 +766,7 @@ Doc *render_doc(const char *src, size_t len, int width, int dark) {
     table_free(&r);            /* no-op unless a table was left unfinished */
 
     if (rc != 0) { doc_free(doc); return NULL; }
+    tag_source_lines(doc, src, len);   /* map visual lines back to source lines */
     return doc;
 }
 
