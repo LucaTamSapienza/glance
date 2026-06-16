@@ -2,6 +2,7 @@
 #include "clipboard.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -66,13 +67,31 @@ static void osascript_write(const char *path, const char *write_line) {
     run_quiet(argv);
 }
 
+/* Does the clipboard advertise image data? `clipboard info` lists the types it
+ * holds (e.g. «class PNGf», «class TIFF») even when the bytes are still
+ * "promised" and not yet produced. Checking first lets clip_image_save retry
+ * only when an image really is coming, instead of stalling on a text clipboard. */
+static int clip_has_image(void) {
+    FILE *p = popen("osascript -e 'clipboard info' 2>/dev/null", "r");
+    if (!p) return 0;
+    char buf[8192];
+    size_t n = fread(buf, 1, sizeof buf - 1, p);
+    buf[n] = '\0';
+    pclose(p);
+    return strstr(buf, "PNGf") || strstr(buf, "TIFF") ||
+           strstr(buf, "GIFf") || strstr(buf, "class PNG") != NULL;
+}
+
 int clip_image_save(const char *path) {
+    if (!clip_has_image()) return 0;   /* no image on the clipboard — fail fast */
     char tiff[4200];
     snprintf(tiff, sizeof tiff, "%s.tiff.tmp", path);
-    /* Two rounds: a lazily-promised pasteboard (an app produces the image only
-     * when first asked) can return nothing on the first read but have it ready a
-     * moment later — the retry makes a single Ctrl-V suffice. */
-    for (int attempt = 0; attempt < 2; attempt++) {
+    /* A lazily-promised pasteboard (an app produces the image only when first
+     * asked) can return nothing on the first read but have it ready a moment
+     * later. We already know an image is coming, so retry until it materialises
+     * (up to ~1.5s) — this makes a single Ctrl-V suffice for screenshots and
+     * "copy image" sources, not just files already sitting on the clipboard. */
+    for (int attempt = 0; attempt < 10; attempt++) {
         /* Most image sources put PNG on the pasteboard; try that first. The «»
          * (AppleScript class quotes) are split out of the hex escapes so a
          * following hex digit isn't swallowed into the escape. */
@@ -91,7 +110,7 @@ int clip_image_save(const char *path) {
         } else {
             unlink(tiff);
         }
-        usleep(200000);   /* 200ms: give a promised pasteboard time to materialise */
+        usleep(150000);   /* 150ms between tries (~1.5s total) for a promised image */
     }
     return 0;
 }
