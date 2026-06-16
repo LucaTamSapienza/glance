@@ -35,6 +35,16 @@ a folder of `.md` into something both can navigate.
 
 Everything stays strictly in the terminal / stdout. Same renderer, same Doc.
 
+### How the "vault" is defined (no init needed)
+
+There is no `glance --init` and no index file — **the folder is the vault**, the
+same as Obsidian. When you open a file, glance finds the vault root by walking up
+to the nearest `.git` or `.obsidian` marker, falling back to the file's own
+directory. From that root it scans **recursively**, so `[[wikilinks]]` resolve to
+notes anywhere in the tree (including subfolders). `glance --graph DIR` takes the
+root explicitly. Markdown links that contain a path resolve relative to the
+current file; bare `[[names]]` resolve by name across the whole vault.
+
 ## Status — all implemented on this branch
 
 - `[[wikilinks]]` render and are followable; Enter opens internal `.md` targets
