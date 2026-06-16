@@ -45,6 +45,8 @@ static int on_enter_span(MD_SPANTYPE type, void *detail, void *ud) {
     return 0;
 }
 
+/* No-op md4c callbacks: scanning for wikilinks only cares about span-enter
+ * events, so block, span-leave, and text events are intentionally discarded. */
 static int ignore_block(MD_BLOCKTYPE t, void *d, void *u) { (void)t; (void)d; (void)u; return 0; }
 static int ignore_span(MD_SPANTYPE t, void *d, void *u)   { (void)t; (void)d; (void)u; return 0; }
 static int ignore_text(MD_TEXTTYPE t, const MD_CHAR *x, MD_SIZE s, void *u) {
