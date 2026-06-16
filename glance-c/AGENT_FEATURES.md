@@ -53,11 +53,15 @@ current file; bare `[[names]]` resolve by name across the whole vault.
 - `b` opens a backlinks panel (files in the folder that link to the current one).
 - `glance --outline` / `--links` / `--graph` print JSON (see README). Unit-tested
   via `vault_test` and `agent_test`; the render path is ASan-clean with links.
+- **Graph explorer (`Ctrl-G`)** — the human counterpart to `--graph`: a local
+  graph view, the current note centred with its inbound links on the left and
+  outbound on the right. Walk the vault by re-centring (`Space`). Built on the
+  same `graph_build` (graph.c) the JSON export uses.
 
 ### Candidate next steps (not yet built)
 - Inline image rendering (notcurses supports sixel/kitty/iterm protocols).
 - An MCP server mode (`glance --mcp`) exposing search/outline/graph to agents.
-- A terminal graph view of the vault neighborhood.
+- Quick-open (`Ctrl-P` fuzzy), tags (`#tag`), and YAML frontmatter.
 
 ## Sources
 

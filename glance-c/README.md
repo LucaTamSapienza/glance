@@ -50,7 +50,13 @@ server, no embeddings, just structure:
 | `n` / `N` | next / prev match | `t` | table of contents |
 | `Enter` | follow link / `[[wikilink]]` | `?` | help |
 | `-` / `Ctrl-O` | back to previous file | `b` | backlinks panel |
+| `Ctrl-G` | graph explorer | `v` | select lines (`y` yank) |
 | `:w` `:wq` `:q` `:q!` | write / quit | `Ctrl-S` | save |
+
+In the **graph explorer** (`Ctrl-G`): the current note sits in the centre with
+notes that link to it on the left and notes it links to on the right. `j`/`k`
+select a neighbour, `Enter` opens it, `Space` re-centres the graph on it to walk
+the vault, `Esc` closes.
 
 **Insert / Split:** type to edit, `Esc` returns to Reader, `Ctrl-S` saves.
 Brackets `[` `(` `{` auto-close.
