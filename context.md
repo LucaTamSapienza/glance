@@ -100,8 +100,9 @@ builders. Graph edges now grow geometrically. See STATUS.md "Robustness &
 security" for the residual notes.
 
 Default branch `main`, pushed to `git@github.com:LucaTamSapienza/glance.git`
-(renamed from `master`). Backup branches retained: `c-rewrite` (Go-parity
-snapshot), `c-agent-features`, `feat-graph-view`.
+(renamed from `master`). The old C-development snapshot branches (`c-rewrite`,
+`c-agent-features`, `feat-graph-view`) were deleted once fully incorporated into
+`main`; the Go original remains recoverable at the `go-final` tag.
 
 ### Feature parity — done
 
