@@ -421,7 +421,7 @@ static void draw_graph(App *a) {
 
     char title[256];
     snprintf(title, sizeof title,
-             " GRAPH  %d in / %d out   —  j/k select   Enter open   Space recenter   Esc close",
+             " GRAPH  %d in / %d out   —  arrows/hjkl move   Enter open   Space recenter   Esc close",
              nb, no);
     status_bar(a, title);
     notcurses_render(a->nc);
@@ -1056,6 +1056,12 @@ static int handle_graph(App *a, uint32_t id, const ncinput *ni) {
 
     if (id == 'j' || id == NCKEY_DOWN)      { if (a->graph_sel + 1 < total) a->graph_sel++; }
     else if (id == 'k' || id == NCKEY_UP)   { if (a->graph_sel > 0) a->graph_sel--; }
+    else if (id == 'h' || id == NCKEY_LEFT) {       /* outbound column -> backlinks */
+        if (a->graph_sel >= nb && nb > 0) { int row = a->graph_sel - nb; a->graph_sel = row < nb ? row : nb - 1; }
+    }
+    else if (id == 'l' || id == NCKEY_RIGHT) {      /* backlinks column -> outbound */
+        if (a->graph_sel < nb && no > 0) { a->graph_sel = nb + (a->graph_sel < no ? a->graph_sel : no - 1); }
+    }
     else if (total && (id == NCKEY_ENTER || id == '\r' || id == '\n')) {
         int node = a->graph_sel < nb ? back[a->graph_sel] : out[a->graph_sel - nb];
         char full[8192];
