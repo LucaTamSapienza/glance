@@ -26,10 +26,18 @@ static int term_width(void) {
 /* Parse flags, render the input Markdown, and print the ANSI to stdout. */
 int main(int argc, char **argv) {
     int width = 0, dark = 1, opt;
-    while ((opt = getopt(argc, argv, "w:l")) != -1) {
+    while ((opt = getopt(argc, argv, "w:lh")) != -1) {
         switch (opt) {
             case 'w': width = atoi(optarg); break;
             case 'l': dark = 0; break;
+            case 'h':
+                printf("usage: %s [-w width] [-l] [file.md]\n"
+                       "  -w WIDTH  wrap width (default: terminal width, or 80)\n"
+                       "  -l        light theme (default: dark)\n"
+                       "  reads stdin when no file is given; writes ANSI to stdout.\n"
+                       "  for the interactive TUI and full key list, run: glance --help\n",
+                       argv[0]);
+                return 0;
             default:
                 fprintf(stderr, "usage: %s [-w width] [-l] [file.md]\n", argv[0]);
                 return 2;
