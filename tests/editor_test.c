@@ -110,6 +110,25 @@ static void test_vertical_goal_col(void) {
     editor_free(&e);
 }
 
+static void test_word_motion(void) {
+    Editor e;
+    editor_init(&e, "the quick  brown", 16);
+    e.cy = 0; e.cx = 0;
+    editor_word_right(&e); assert(e.cx == 4);   /* start of "quick" */
+    editor_word_right(&e); assert(e.cx == 11);  /* skips the double space to "brown" */
+    editor_word_right(&e); assert(e.cx == 16);  /* end of line */
+    editor_word_left(&e);  assert(e.cx == 11);  /* back to start of "brown" */
+    editor_word_left(&e);  assert(e.cx == 4);   /* start of "quick" */
+    editor_word_left(&e);  assert(e.cx == 0);   /* start of "the" */
+    editor_free(&e);
+
+    editor_init(&e, "ab\ncd", 5);               /* word motion wraps across lines */
+    e.cy = 1; e.cx = 0;
+    editor_word_left(&e);  assert(e.cy == 0 && e.cx == 2);
+    editor_word_right(&e); assert(e.cy == 1 && e.cx == 0);
+    editor_free(&e);
+}
+
 int main(void) {
     test_init_split();
     test_insert_and_newline();
@@ -117,6 +136,7 @@ int main(void) {
     test_delete_forward();
     test_utf8_movement();
     test_vertical_goal_col();
+    test_word_motion();
     if (fails) { printf("%d test(s) FAILED\n", fails); return 1; }
     printf("all editor tests passed\n");
     return 0;
