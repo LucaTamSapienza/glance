@@ -40,7 +40,7 @@ static void print_help(void) {
 "  Ctrl-D / Ctrl-U      half page down / up      PgDn / PgUp  page down / up\n"
 "  i                    insert mode (edit)       e            split: edit + preview\n"
 "  t                    table of contents        / n N        search, next, prev\n"
-"  v / V                start line selection      y            yank selection to clipboard\n"
+"  v / V                select chars / lines      y            yank selection to clipboard\n"
 "  Enter                open link / follow [[wikilink]] under the cursor\n"
 "  - / Ctrl-O           back to the previous file (after following a link)\n"
 "  b                    backlinks panel          Ctrl-G       graph explorer\n"

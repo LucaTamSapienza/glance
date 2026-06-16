@@ -77,7 +77,7 @@ glance --keys                  # diagnostic: print raw key events
 |-----|--------|-----|--------|
 | `h j k l` / arrows | move cursor | `i` | insert mode (full-screen editor) |
 | `g` / `G` | top / bottom | `e` | split: editor + live preview |
-| `Ctrl-D` / `Ctrl-U` | half page | `v` / `V` | visual-line select |
+| `Ctrl-D` / `Ctrl-U` | half page | `v` / `V` | select chars / lines |
 | `/` | search | `y` | yank selection → system clipboard |
 | `n` / `N` | next / prev match | `t` | table of contents |
 | `Enter` | follow link / `[[wikilink]]` | `b` | backlinks panel |

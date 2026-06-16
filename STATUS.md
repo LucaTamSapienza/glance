@@ -64,7 +64,8 @@ Full parity with the original Go app, plus the vault/agent features:
 - **Save** atomic: `:w` `:wq` `:x`, `Ctrl-S`; `:q` refuses on unsaved, `:q!`
   discards; dirty flag.
 - **Live reload** on external change (kqueue), only when clean.
-- **Clipboard:** `v`/`V` visual-line select, `y` yank to system clipboard.
+- **Clipboard:** visual select — `v` charwise (h/j/k/l), `V` linewise — `y` yanks
+  to the system clipboard.
 - **Open links** under the cursor with Enter.
 - **Tolerant Markdown** preprocessing.
 - **Help** overlay `?`.
@@ -91,7 +92,7 @@ Full parity with the original Go app, plus the vault/agent features:
 ## Keys
 
 Reader: `hjkl`/arrows move · `g`/`G` top/bottom · `Ctrl-D/U` half page · `i`
-insert · `e` split · `V` visual select (`y` yank) · `/` search (`n`/`N`) · `t`
+insert · `e` split · `v`/`V` char/line select (`y` yank) · `/` search (`n`/`N`) · `t`
 toc · `?` help · Enter open link · `:w`/`:q`/`:wq`/`:q!` · `Ctrl-S` save ·
 `Ctrl-C` quit. Insert/Split: type to edit, `Esc` back, `Ctrl-S` save, `Ctrl-V`
 paste a clipboard image, `Alt`/`Ctrl`+`←`/`→` jump a word, `Ctrl-A`/`Ctrl-E` (and
