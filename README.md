@@ -35,9 +35,9 @@ is a real cell, the TOC is just the tagged heading lines, and link-following is 
 lookup — nothing about the output is a black box. The result is smaller, faster,
 and fully under our control.
 
-> The original Go implementation is preserved, unmaintained, under
-> [`legacy-go/`](legacy-go/) for reference. It will be removed once the C version
-> has been tested in daily use.
+> glance was originally a Go program built on glamour; that implementation now
+> lives only in git history, at the **`go-final`** tag
+> (`git checkout go-final`).
 
 ## Install
 
@@ -120,7 +120,6 @@ Makefile        build (glance + glance-render) and test targets
 STATUS.md       module map, feature list, and design notes
 AGENT_FEATURES.md   why the vault/graph/JSON features exist
 AGENTS.md       guide for using this repo with a coding agent
-legacy-go/      the original Go implementation, deprecated, kept for reference
 ```
 
 See [STATUS.md](STATUS.md) for the full module-by-module map.

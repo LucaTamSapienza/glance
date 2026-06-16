@@ -14,9 +14,9 @@ The renderer is owned end-to-end: md4c parses Markdown into a structured `Doc`
 (lines of styled runs), which two sinks consume — an ANSI serializer and a
 notcurses cell blitter. No glamour, no black box.
 
-> The repository was originally a Go program; that implementation is preserved,
-> **deprecated and unmaintained**, under `legacy-go/`. Do not modify it — it
-> exists for reference until it is removed. All work happens in `src/`.
+> The repository was originally a Go program; that implementation now lives only
+> in git history, at the `go-final` tag (`git checkout go-final`). All work
+> happens in `src/`.
 
 ## Commands
 
@@ -58,7 +58,6 @@ src/
   main.c         glance entry (TUI)    ·   main_render.c   glance-render entry (CLI)
 tests/           one unit test per pure module (make test)
 testdata/        sample.md showcase + an example vault/
-legacy-go/       the original Go app, deprecated, kept for reference only
 ```
 
 ## Design notes & invariants

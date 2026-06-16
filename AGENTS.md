@@ -19,10 +19,9 @@ CLI and the tests) and to [notcurses](https://github.com/dankamongmen/notcurses)
 cells (the `glance` TUI). It has three modes — Reader, Insert, and Split — plus a
 vault model with wikilinks, backlinks, and a graph explorer.
 
-The source of truth is the C app in [`src/`](src/). The original Go
-implementation lives in [`legacy-go/`](legacy-go/), is **deprecated and
-unmaintained**, and must not be modified — it exists only as a historical
-reference until it is removed.
+The source of truth is the C app in [`src/`](src/). The repository began as a Go
+program; that implementation now lives only in git history, at the `go-final`
+tag (`git checkout go-final`) — there is no Go code in the working tree.
 
 ## Build, test, run
 

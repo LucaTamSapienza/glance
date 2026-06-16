@@ -2,8 +2,8 @@
 
 glance is a terminal Markdown reader/editor written in C. It began as a Go
 program built on glamour/glow; this is the from-scratch C rewrite that owns the
-rendering instead of treating glamour as a black box. The Go original is kept,
-deprecated, under [`legacy-go/`](legacy-go/). Built as small, tested,
+rendering instead of treating glamour as a black box. The Go original lives only
+in git history now, at the `go-final` tag. Built as small, tested,
 well-documented modules.
 
 ## Why C / why own the renderer

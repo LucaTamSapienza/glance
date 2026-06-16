@@ -45,14 +45,13 @@ lines, each a sequence of styled runs — and two sinks consume it: `doc_ansi.c`
 
 ## Current status (2026-06-16)
 
-**Go→C migration complete (staged).** The C app is now the repository's primary
-source, at the **root** (`src/`, `tests/`, `Makefile`). The original Go program
-was tagged **`go-final`** and moved, deprecated and unmaintained, to
-**`legacy-go/`** — it stays only as a reference and will be removed in a later
-phase, after the C version has been tested in daily use. All docs (README,
-CLAUDE.md, STATUS.md, AGENT_FEATURES.md, and the new AGENTS.md) were rewritten to
-describe the C app and the new layout. Build is clean and **all ten unit-test
-suites pass** under ASan/UBSan.
+**Go→C migration complete.** The C app is the repository's only source, at the
+**root** (`src/`, `tests/`, `Makefile`). The original Go program was tagged
+**`go-final`** (recoverable with `git checkout go-final`) and then removed from
+the working tree once the C version had been tested in daily use — there is no Go
+code left in the repo. All docs (README, CLAUDE.md, STATUS.md, AGENT_FEATURES.md,
+AGENTS.md) describe the C app. Build is clean and **all twelve unit-test suites
+pass** under ASan/UBSan.
 
 **All four renderer gaps closed.**
 
@@ -107,4 +106,4 @@ The four gaps the user prioritised are all **done** (see above). Residual polish
 - `AGENT_FEATURES.md` — why the vault/graph/JSON features exist (research notes).
 - `AGENTS.md` — guide for running this repo with a coding agent.
 - `CLAUDE.md` — build commands, invariants, conventions.
-- `legacy-go/` — the deprecated Go implementation (do not modify).
+- The old Go implementation is recoverable at the `go-final` git tag.
