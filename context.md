@@ -1,8 +1,8 @@
 # glance — Project Context
 
 > Orientation for anyone (including Claude) picking up the work.
-> Last updated: 2026-06-16 (aspect-tight pixel images; open a non-existent path
-> as a new empty file).
+> Last updated: 2026-06-17 (heading chip for #/##; editor soft-wrap — both
+> merged to main).
 
 ## What it is
 
@@ -44,7 +44,7 @@ lines, each a sequence of styled runs — and two sinks consume it: `doc_ansi.c`
 (ANSI string, for the CLI and tests) and `tui.c` (notcurses cells). See
 `STATUS.md` for the full module map and `CLAUDE.md` for the invariants.
 
-## Current status (2026-06-16)
+## Current status (2026-06-17)
 
 **Go→C migration complete.** The C app is the repository's only source, at the
 **root** (`src/`, `tests/`, `Makefile`). The original Go program was tagged
@@ -88,6 +88,27 @@ captures a promised pasteboard (screenshots / "copy image"), not just files.
 binding, kept in sync with the in-app `?` overlay; `make install` (honours
 `PREFIX`/`DESTDIR`) puts both binaries on `PATH`. A small renderer cleanup
 exported `line_text()` so search and the TOC share one run-concatenation helper.
+
+**Latest (merged to `main`, PRs #5 & #6).** Two presentation features landed
+after the pre-merge audit:
+
+- **Heading chip** — level-1/2 headings (`#`/`##`) render as a coloured chip
+  hugging the text (`[ text ]`: a one-cell padded background), not a full-width
+  bar. `flush_word` keeps a heading's inter-word separator spaces on the same
+  background so the chip stays continuous; `heading_pad` (`render.c`) wraps each
+  heading line's runs in a leading/trailing pad cell. `toc.c` trims those pad
+  spaces so TOC titles stay clean. `###`+ remain plain.
+- **Editor soft-wrap** (Bug 4b) — the Insert/Split editor pane wraps long
+  logical lines to the pane width instead of scrolling past the border; the
+  cursor and scrolling count wrapped visual rows (`eline_rows`,
+  `editor_vcursor`, rewritten `editor_scroll`/`draw_editor_pane` in `tui.c`).
+  Note: the apparent "padding" a user may see on first opening Split is the
+  *file's own* hard line breaks (e.g. README is wrapped at ~72 cols) faithfully
+  shown by the raw editor, not padding glance adds — by design.
+
+Both feature branches were deleted post-merge; only `main` remains on the remote.
+Release binaries are installed to `~/.local/bin` (on `PATH`, no sudo) via
+`make install PREFIX=$HOME/.local`.
 
 **Security & stability audit (pre-merge).** Static review plus ASan/UBSan fuzzing
 of the headless paths (`glance-render`, `--graph`/`--outline`/`--links`) against
