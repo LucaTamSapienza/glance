@@ -1257,10 +1257,46 @@ static void apply_edit_key(Editor *e, uint32_t id, const ncinput *ni) {
     else insert_with_pairing(e, id, ni);
 }
 
-/* Insert-mode keys: Esc leaves, Ctrl-S saves, everything else edits. */
+/* Paste an image from the system clipboard: save it next to the document as a
+ * PNG and insert a Markdown reference at the cursor. Bound to Ctrl-V because the
+ * terminal consumes Cmd-V and only ever delivers clipboard text, never image
+ * bytes. Needs a saved file, so the image has a folder to live in. */
+static void paste_image(App *a) {
+    if (!a->path) { snprintf(a->msg, sizeof a->msg, "save the file first to paste an image"); return; }
+
+    char dirbuf[4096];
+    const char *d = doc_dir(a, dirbuf, sizeof dirbuf);
+    char dir[4096]; snprintf(dir, sizeof dir, "%s", d ? d : ".");
+
+    char basebuf[4096]; snprintf(basebuf, sizeof basebuf, "%s", a->path);
+    char stem[256]; snprintf(stem, sizeof stem, "%s", basename(basebuf));
+    char *dot = strrchr(stem, '.'); if (dot && dot != stem) *dot = '\0';
+    for (char *p = stem; *p; p++) if (*p == ' ') *p = '-';   /* keep the link space-free */
+
+    char fname[300], full[4500];
+    for (int n = 1; ; n++) {                       /* first free <stem>-N.png */
+        snprintf(fname, sizeof fname, "%s-%d.png", stem, n);
+        snprintf(full, sizeof full, "%s/%s", dir, fname);
+        if (access(full, F_OK) != 0) break;
+        if (n >= 9999) { snprintf(a->msg, sizeof a->msg, "too many pasted images"); return; }
+    }
+
+    if (clip_image_save(full)) {
+        char ref[400];
+        int rn = snprintf(ref, sizeof ref, "![](%s)", fname);
+        editor_insert(&a->ed, ref, (size_t)rn);
+        a->ed.dirty = a->dirty = 1;
+        snprintf(a->msg, sizeof a->msg, "pasted image -> %s", fname);
+    } else {
+        snprintf(a->msg, sizeof a->msg, "no image in clipboard");
+    }
+}
+
+/* Insert-mode keys: Esc leaves, Ctrl-S saves, Ctrl-V pastes an image, else edits. */
 static int handle_insert(App *a, uint32_t id, const ncinput *ni) {
     if (id == NCKEY_ESC) leave_editor(a);
     else if (id == 's' && ncinput_ctrl_p(ni)) { sync_source(a); save_file(a); }
+    else if (id == 'v' && ncinput_ctrl_p(ni)) paste_image(a);
     else apply_edit_key(&a->ed, id, ni);
     return 1;
 }
@@ -1269,6 +1305,7 @@ static int handle_insert(App *a, uint32_t id, const ncinput *ni) {
 static int handle_split(App *a, uint32_t id, const ncinput *ni) {
     if (id == NCKEY_ESC) leave_editor(a);
     else if (id == 's' && ncinput_ctrl_p(ni)) { sync_source(a); save_file(a); }
+    else if (id == 'v' && ncinput_ctrl_p(ni)) { paste_image(a); render_preview(a); }
     else { apply_edit_key(&a->ed, id, ni); render_preview(a); }
     return 1;
 }

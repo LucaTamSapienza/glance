@@ -12,4 +12,9 @@ int clip_copy(const char *text, size_t len);
  * interpreted by a shell. */
 int open_url(const char *url);
 
+/* If the system clipboard holds an image, save it as a PNG at `path` and return
+ * 1; return 0 when the clipboard holds no image. Uses macOS built-ins
+ * (osascript, plus sips to convert a TIFF-only clipboard). */
+int clip_image_save(const char *path);
+
 #endif /* GLANCE_CLIPBOARD_H */

@@ -66,6 +66,10 @@ file. Check: a colour gradient appears below, or the placeholder + Enter opens i
 
 ![a colour gradient](glance.png)
 
+To **paste an image**, copy one to the clipboard (e.g. a screenshot), press `i`
+to edit, then `Ctrl-V`: glance saves it as a PNG next to this file and inserts a
+`![](…)` reference at the cursor.
+
 ---
 
 ## 4. Cursor sync (reader ↔ editor)

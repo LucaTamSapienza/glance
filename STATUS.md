@@ -80,6 +80,8 @@ Full parity with the original Go app, plus the vault/agent features:
   (left/center/right); the table is buffered, then emitted once widths are known.
 - **Inline images:** drawn in the reader via notcurses (pixel graphics or
   Unicode half-blocks), with a `▦ alt` placeholder + Enter-to-open fallback.
+  `Ctrl-V` in the editor pastes a clipboard image: it saves the bytes as a PNG
+  beside the document (osascript / sips) and inserts a `![](…)` reference.
 - **Cursor sync** maps reader↔editor by content-attributed source lines
   (`Line.source_line`), exact at structural lines, with a proportional fallback.
 
@@ -88,7 +90,8 @@ Full parity with the original Go app, plus the vault/agent features:
 Reader: `hjkl`/arrows move · `g`/`G` top/bottom · `Ctrl-D/U` half page · `i`
 insert · `e` split · `V` visual select (`y` yank) · `/` search (`n`/`N`) · `t`
 toc · `?` help · Enter open link · `:w`/`:q`/`:wq`/`:q!` · `Ctrl-S` save ·
-`Ctrl-C` quit. Insert/Split: type to edit, `Esc` back, `Ctrl-S` save.
+`Ctrl-C` quit. Insert/Split: type to edit, `Esc` back, `Ctrl-S` save, `Ctrl-V`
+paste a clipboard image.
 
 ## Build & run
 

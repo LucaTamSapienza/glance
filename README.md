@@ -78,8 +78,10 @@ glance --keys                  # diagnostic: print raw key events
 | `?` | help | `Ctrl-S` | save |
 | `:w` `:wq` `:x` `:q` `:q!` | write / quit (vi-style) | | |
 
-**Insert / Split** — type to edit, `Esc` returns to the reader, `Ctrl-S` saves.
-Brackets `[` `(` `{` auto-close (backticks do not — you type fences by hand).
+**Insert / Split** — type to edit, `Esc` returns to the reader, `Ctrl-S` saves,
+`Ctrl-V` pastes an image from the clipboard (saves it next to the document and
+inserts a Markdown reference). Brackets `[` `(` `{` auto-close (backticks do not
+— you type fences by hand).
 
 In the **graph explorer** (`Ctrl-G`) the current note sits in the centre, notes
 that link *to* it on the left and notes it links *to* on the right. `j`/`k` or
