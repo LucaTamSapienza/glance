@@ -166,6 +166,30 @@ int main(void) {
     }
     doc_free(lt);
 
+    /* doc_range_text: the charwise visual yank's text extraction. Two paragraphs
+     * render to lines [0]="alpha world", [1]="", [2]="beta". */
+    Doc *rt = render_doc("alpha world\n\nbeta\n", 18, 60, 1);
+    if (rt->nline >= 3) {
+        char *a = doc_range_text(rt, 0, 0, 0, 4);          /* "alpha" (cols 0..4 inclusive) */
+        expect(a && strcmp(a, "alpha") == 0, "range: single-line inclusive slice");
+        free(a);
+        char *b = doc_range_text(rt, 0, 6, 0, 10);         /* "world" */
+        expect(b && strcmp(b, "world") == 0, "range: mid-line slice");
+        free(b);
+        char *c = doc_range_text(rt, 0, 4, 0, 0);          /* reversed endpoints -> same as forward */
+        expect(c && strcmp(c, "alpha") == 0, "range: endpoints order-independent");
+        free(c);
+        char *m = doc_range_text(rt, 0, 6, 2, 3);          /* "world" .. "beta" across lines */
+        expect(m && strcmp(m, "world\n\nbeta") == 0, "range: multi-line spans joined by newline");
+        free(m);
+        char *e = doc_range_text(rt, 2, 0, 2, 999);        /* col past end clamps to line end */
+        expect(e && strcmp(e, "beta") == 0, "range: high col clamps to line end");
+        free(e);
+    } else {
+        expect(0, "doc_range_text fixture has >= 3 lines");
+    }
+    doc_free(rt);
+
     if (fails) { printf("%d render test(s) FAILED\n", fails); return 1; }
     printf("all render tests passed\n");
     return 0;

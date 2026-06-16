@@ -68,8 +68,10 @@ typedef struct {
     char   msg[160];             /* transient status message (one keypress) */
     Doc   *preview;              /* Split mode: live render of the editor text */
     int    helpmode;             /* help overlay open */
-    int    visualmode;           /* vi visual-line selection active */
+    int    visualmode;           /* vi visual selection active */
+    int    visual_char;          /* 1 = charwise (v), 0 = linewise (V) */
     int    visual_anchor;        /* line where the selection started */
+    int    visual_anchor_col;    /* column where a charwise selection started */
     int    blmode;               /* backlinks panel open */
     char  *bl[256];              /* file names that link here (owned) */
     int    nbl, bl_sel;
@@ -206,17 +208,38 @@ static void overlay_cell(struct ncplane *p, int y, int x, RGB fg, RGB bg) {
     free(egc);
 }
 
-/* Tint the visual-line selection (from the anchor to the cursor line). */
+/* Tint the visual selection: whole lines for linewise (V), or the inclusive
+ * character range between the anchor and the cursor for charwise (v). */
 static void draw_selection(App *a) {
     if (!a->visualmode) return;
-    int lo = a->visual_anchor, hi = a->rcur_line;
-    if (lo > hi) { int t = lo; lo = hi; hi = t; }
     RGB selfg = {235, 235, 235}, selbg = a->dark ? (RGB){50, 60, 90} : (RGB){190, 205, 235};
     int body = content_rows(a);
-    for (int li = lo; li <= hi; li++) {
+
+    if (!a->visual_char) {                         /* linewise: tint full lines */
+        int lo = a->visual_anchor, hi = a->rcur_line;
+        if (lo > hi) { int t = lo; lo = hi; hi = t; }
+        for (int li = lo; li <= hi; li++) {
+            int y = li - a->top;
+            if (y < 0 || y >= body) continue;
+            for (int x = 0; x < a->cols; x++) overlay_cell(a->plane, y, x, selfg, selbg);
+        }
+        return;
+    }
+
+    /* charwise: order the two (line, col) endpoints, then tint the span */
+    int lol, loc, hil, hic;
+    if (a->visual_anchor < a->rcur_line ||
+        (a->visual_anchor == a->rcur_line && a->visual_anchor_col <= a->rcur_col)) {
+        lol = a->visual_anchor; loc = a->visual_anchor_col; hil = a->rcur_line; hic = a->rcur_col;
+    } else {
+        lol = a->rcur_line; loc = a->rcur_col; hil = a->visual_anchor; hic = a->visual_anchor_col;
+    }
+    for (int li = lol; li <= hil; li++) {
         int y = li - a->top;
         if (y < 0 || y >= body) continue;
-        for (int x = 0; x < a->cols; x++) overlay_cell(a->plane, y, x, selfg, selbg);
+        int xs = (li == lol) ? loc : 0;
+        int xe = (li == hil) ? hic : a->cols - 1;   /* inclusive of the cursor cell */
+        for (int x = xs; x <= xe && x < a->cols; x++) overlay_cell(a->plane, y, x, selfg, selbg);
     }
 }
 
@@ -253,10 +276,14 @@ static void reader_bottom(App *a) {
     if (a->searchmode) { prompt_line(a, '/', a->searchbuf); return; }
     if (a->msg[0])     { status_bar(a, a->msg); return; }
     if (a->visualmode) {
-        int n = abs(a->rcur_line - a->visual_anchor) + 1;
         char vs[160];
-        snprintf(vs, sizeof vs, " VISUAL  %d line%s  —  j/k extend   y yank   Esc cancel",
-                 n, n == 1 ? "" : "s");
+        if (a->visual_char) {
+            snprintf(vs, sizeof vs, " VISUAL  chars  —  h/j/k/l extend   y yank   Esc cancel");
+        } else {
+            int n = abs(a->rcur_line - a->visual_anchor) + 1;
+            snprintf(vs, sizeof vs, " VISUAL  %d line%s  —  j/k extend   y yank   Esc cancel",
+                     n, n == 1 ? "" : "s");
+        }
         status_bar(a, vs);
         return;
     }
@@ -785,7 +812,7 @@ static void draw_help(App *a) {
         "    e                   split: editor + live preview",
         "    t                   table of contents",
         "    /                   search    (n / N next / prev)",
-        "    v / V               select lines   (y yanks to clipboard)",
+        "    v / V               select chars / lines   (y yanks)",
         "    Ctrl-S              save",
         "    :w :wq :q :q!       write / quit",
         "    ?                   toggle this help",
@@ -986,41 +1013,58 @@ static int handle_toc(App *a, uint32_t id, const ncinput *ni) {
     return 1;
 }
 
-/* Yank the selected visual lines (their plain text) to the system clipboard. */
-static void yank_selection(App *a) {
-    if (a->doc->nline == 0) { a->visualmode = 0; return; }   /* nothing to yank (empty doc) */
-    int lo = a->visual_anchor, hi = a->rcur_line;
-    if (lo > hi) { int t = lo; lo = hi; hi = t; }
-    /* gather the run text of each selected Doc line, joined by newlines */
+/* Yank the linewise selection (whole lines, joined by newlines) to the clipboard. */
+static void yank_lines(App *a, int lo, int hi) {
     size_t cap = 0;
     for (int li = lo; li <= hi; li++) {
         for (size_t j = 0; j < a->doc->lines[li].nrun; j++) cap += a->doc->lines[li].runs[j].len;
         cap += 1;
     }
     char *buf = malloc(cap + 1);
-    if (buf) {
-        size_t p = 0;
-        for (int li = lo; li <= hi; li++) {
-            Line *L = &a->doc->lines[li];
-            for (size_t j = 0; j < L->nrun; j++) {
-                memcpy(buf + p, L->runs[j].text, L->runs[j].len);
-                p += L->runs[j].len;
-            }
-            buf[p++] = '\n';
-        }
-        int ok = clip_copy(buf, p) == 0;
-        snprintf(a->msg, sizeof a->msg, ok ? "%d line%s yanked to clipboard" : "clipboard unavailable",
-                 hi - lo + 1, hi - lo ? "s" : "");
-        free(buf);
+    if (!buf) return;
+    size_t p = 0;
+    for (int li = lo; li <= hi; li++) {
+        Line *L = &a->doc->lines[li];
+        for (size_t j = 0; j < L->nrun; j++) { memcpy(buf + p, L->runs[j].text, L->runs[j].len); p += L->runs[j].len; }
+        buf[p++] = '\n';
+    }
+    int ok = clip_copy(buf, p) == 0;
+    snprintf(a->msg, sizeof a->msg, ok ? "%d line%s yanked to clipboard" : "clipboard unavailable",
+             hi - lo + 1, hi - lo ? "s" : "");
+    free(buf);
+}
+
+/* Yank the inclusive charwise selection (anchor..cursor) to the clipboard. */
+static void yank_chars(App *a) {
+    char *t = doc_range_text(a->doc, a->visual_anchor, a->visual_anchor_col,
+                             a->rcur_line, a->rcur_col);
+    if (!t) return;
+    int ok = clip_copy(t, strlen(t)) == 0;
+    snprintf(a->msg, sizeof a->msg, ok ? "selection yanked to clipboard" : "clipboard unavailable");
+    free(t);
+}
+
+/* Yank the active visual selection (charwise or linewise) to the system clipboard. */
+static void yank_selection(App *a) {
+    if (a->doc->nline == 0) { a->visualmode = 0; return; }   /* nothing to yank (empty doc) */
+    if (a->visual_char) {
+        yank_chars(a);
+    } else {
+        int lo = a->visual_anchor, hi = a->rcur_line;
+        if (lo > hi) { int t = lo; lo = hi; hi = t; }
+        yank_lines(a, lo, hi);
     }
     a->visualmode = 0;
 }
 
-/* Visual-line keys: extend the selection, y yanks, Esc/V cancel. */
+/* Visual-mode keys: extend the selection (h/j/k/l for charwise, j/k for
+ * linewise), y yanks, v/V/Esc cancel. */
 static int handle_visual(App *a, uint32_t id, const ncinput *ni) {
     int body = content_rows(a);
-    if (id == 'j' || id == NCKEY_DOWN)        a->rcur_line++;
-    else if (id == 'k' || id == NCKEY_UP)     a->rcur_line--;
+    if (id == 'j' || id == NCKEY_DOWN)        { a->rcur_line++; a->rcur_col = a->rcur_goal; }
+    else if (id == 'k' || id == NCKEY_UP)     { a->rcur_line--; a->rcur_col = a->rcur_goal; }
+    else if (id == 'h' || id == NCKEY_LEFT)   { a->rcur_col--; a->rcur_goal = a->rcur_col; }
+    else if (id == 'l' || id == NCKEY_RIGHT)  { a->rcur_col++; a->rcur_goal = a->rcur_col; }
     else if (id == 'g' || id == NCKEY_HOME)   a->rcur_line = 0;
     else if (id == 'G' || id == NCKEY_END)    a->rcur_line = (int)a->doc->nline - 1;
     else if (id == NCKEY_PGDOWN)              a->rcur_line += body;
@@ -1248,7 +1292,10 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     else if (id == NCKEY_ESC)                    clear_search(a);
     else if (id == 'i')                          enter_insert(a);  /* vi-style */
     else if (id == 'e')                          enter_split(a);   /* editor + preview */
-    else if (id == 'v' || id == 'V')             { a->visualmode = 1; a->visual_anchor = a->rcur_line; }
+    else if (id == 'v') { a->visualmode = 1; a->visual_char = 1;   /* charwise from the cursor */
+                          a->visual_anchor = a->rcur_line; a->visual_anchor_col = a->rcur_col; }
+    else if (id == 'V') { a->visualmode = 1; a->visual_char = 0;   /* linewise */
+                          a->visual_anchor = a->rcur_line; }
     else if (id == NCKEY_ENTER || id == '\r' || id == '\n') {
         const char *u = link_at_cursor(a);
         if (u) open_link_target(a, u);

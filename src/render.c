@@ -881,6 +881,56 @@ char *line_text(const Line *L) {
     return s;
 }
 
+/* Byte offset in UTF-8 string s (len bytes) at display column col, or len when
+ * col is past the end; a negative col clamps to 0. One column per codepoint. */
+static size_t byte_at_col(const char *s, size_t len, int col) {
+    size_t i = 0; int c = 0;
+    while (i < len && c < col) {
+        int rl = u8_runelen((unsigned char)s[i]);
+        if (i + (size_t)rl > len) rl = (int)(len - i);
+        c += u8_width(s + i, (size_t)rl);
+        i += (size_t)rl;
+    }
+    return i;
+}
+
+/* Plain text of the inclusive charwise range between two (line, col) endpoints. */
+char *doc_range_text(const Doc *d, int line0, int col0, int line1, int col1) {
+    if (d->nline == 0) return NULL;
+    int lol, loc, hil, hic;                          /* order the endpoints */
+    if (line0 < line1 || (line0 == line1 && col0 <= col1)) {
+        lol = line0; loc = col0; hil = line1; hic = col1;
+    } else {
+        lol = line1; loc = col1; hil = line0; hic = col0;
+    }
+    if (lol < 0) lol = 0;
+    if (hil >= (int)d->nline) hil = (int)d->nline - 1;
+
+    char *buf = NULL; size_t cap = 0, p = 0;
+    for (int li = lol; li <= hil; li++) {
+        char *t = line_text(&d->lines[li]);
+        if (!t) continue;
+        size_t tl = strlen(t);
+        size_t sb = (li == lol) ? byte_at_col(t, tl, loc) : 0;
+        size_t eb = (li == hil) ? byte_at_col(t, tl, hic + 1) : tl;  /* +1: include cursor char */
+        if (eb > tl) eb = tl;
+        if (sb > eb) sb = eb;
+        size_t need = (eb - sb) + 2;                                  /* slice + '\n' + NUL */
+        if (p + need > cap) {
+            cap = (p + need) * 2;
+            char *np = realloc(buf, cap);
+            if (!np) { free(t); free(buf); return NULL; }
+            buf = np;
+        }
+        memcpy(buf + p, t + sb, eb - sb); p += eb - sb;
+        if (li < hil) buf[p++] = '\n';
+        free(t);
+    }
+    if (!buf) { buf = malloc(1); if (!buf) return NULL; }
+    buf[p] = '\0';
+    return buf;
+}
+
 /* Free a Doc and all the runs it owns. */
 void doc_free(Doc *d) {
     if (!d) return;

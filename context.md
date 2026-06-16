@@ -108,7 +108,8 @@ Default branch `main`, pushed to `git@github.com:LucaTamSapienza/glance.git`
 
 All original Go features are ported: three modes, search (`/` `n` `N`), TOC
 (`t`), atomic save (`:w`/`Ctrl-S`), kqueue live-reload, clipboard yank
-(`v`/`V`/`y`), open-link (Enter), tolerant-Markdown preprocessing, help (`?`),
+(`v` charwise / `V` linewise select, `y` yank), open-link (Enter),
+tolerant-Markdown preprocessing, help (`?`),
 auto dark/light, bracket auto-pairing. Plus the agent-era features: wikilinks +
 cross-file navigation with a back-stack, backlinks panel (`b`), graph explorer
 (`Ctrl-G`), and the `--outline`/`--links`/`--graph` JSON exports.
