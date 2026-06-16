@@ -988,6 +988,7 @@ static int handle_toc(App *a, uint32_t id, const ncinput *ni) {
 
 /* Yank the selected visual lines (their plain text) to the system clipboard. */
 static void yank_selection(App *a) {
+    if (a->doc->nline == 0) { a->visualmode = 0; return; }   /* nothing to yank (empty doc) */
     int lo = a->visual_anchor, hi = a->rcur_line;
     if (lo > hi) { int t = lo; lo = hi; hi = t; }
     /* gather the run text of each selected Doc line, joined by newlines */

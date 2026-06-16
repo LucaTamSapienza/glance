@@ -149,7 +149,7 @@ void editor_insert(Editor *e, const char *s, size_t n) {
 void editor_newline(Editor *e) {
     ELine *L = cur(e);
     size_t tail_len = L->len - e->cx;
-    char *tail = L->b + e->cx;
+    char *tail = L->b ? L->b + e->cx : "";        /* avoid memcpy(NULL,0) UB on an empty line */
     ELine *nl = lines_insert(e, e->cy + 1);
     el_set(nl, tail, tail_len);
     /* truncate current line at the cursor (note lines_insert may realloc) */

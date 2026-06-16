@@ -12,7 +12,7 @@ typedef struct {
     char  **node;   /* node names (relative paths), owned */
     int     nn;
     GEdge  *edge;
-    int     ne;
+    int     ne, ecap;
 } Graph;
 
 /* Build the graph by scanning `root` recursively. `g` is zero-initialised by
