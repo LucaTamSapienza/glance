@@ -88,6 +88,17 @@ binding, kept in sync with the in-app `?` overlay; `make install` (honours
 `PREFIX`/`DESTDIR`) puts both binaries on `PATH`. A small renderer cleanup
 exported `line_text()` so search and the TOC share one run-concatenation helper.
 
+**Security & stability audit (pre-merge).** Static review plus ASan/UBSan fuzzing
+of the headless paths (`glance-render`, `--graph`/`--outline`/`--links`) against
+hostile input. Fixed: an **AppleScript injection / RCE** in the clipboard paste
+(the path is now an `osascript` argv parameter, not interpolated — verified the
+old form executed a payload and the new one does not); a **symlink-cycle / deep-
+recursion crash** in the vault scan (`lstat` + skip symlinks + depth cap, with an
+ASan regression test); an empty-document **yank** NULL-deref and an empty-line
+`editor_newline` UB; and OOM-only out-of-bounds writes in the renderer's run
+builders. Graph edges now grow geometrically. See STATUS.md "Robustness &
+security" for the residual notes.
+
 Branch `master`, pushed to `git@github.com:LucaTamSapienza/glance.git` (the
 default branch is `master`; there is no `main`). Backup branches retained:
 `c-rewrite` (Go-parity snapshot), `c-agent-features`, `feat-graph-view`.

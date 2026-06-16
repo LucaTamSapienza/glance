@@ -143,3 +143,25 @@ real terminal and is verified interactively.
   image's top row is on screen, and remote (`http`) images aren't fetched. The
   cell-aspect factor is an approximation, not read from the terminal.
 - Very wide tables overflow the width rather than wrapping/truncating.
+
+## Robustness & security
+
+Audited (static review + AddressSanitizer/UBSan fuzzing of the headless paths)
+for crashes and injection. Hardened:
+
+- **Clipboard paste** passes the file path to `osascript` as an `on run argv`
+  parameter, never interpolated into the script text — a document folder named
+  with a `"` or newline can no longer inject AppleScript (was a real RCE vector).
+- **Vault scan** (`--graph`, `--outline`, backlinks, Ctrl-G) uses `lstat` and
+  skips symlinks, plus a recursion depth cap, so a symlink cycle (`loop -> ..`)
+  or a very deep tree can't drive infinite recursion / stack overflow. Regression-
+  tested under ASan in `vault_test`.
+- **Empty/degenerate documents**: yank, the empty-line newline split, and the
+  reader↔editor cursor map all guard the zero-line / empty-buffer cases.
+- **JSON exports** escape quotes/backslashes/control chars, so odd filenames
+  can't break the output. Renderer run-builders no longer write `arr[n-1]` after
+  a failed (OOM) push. Graph edges grow geometrically.
+
+Residual notes: relative `../` image/link targets are not confined to the vault
+(they can reference any file the user can already read); display width is one
+column per codepoint.
