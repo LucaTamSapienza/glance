@@ -1,62 +1,55 @@
-# Glance
+# glance — feature showcase
 
-A terminal-native Markdown reader and editor for macOS.
+A single file that exercises most of what glance renders. Open it with
+`glance testdata/sample.md` and move the block cursor with `h j k l`.
 
-## Why
+## Text styles
 
-Markdown is the lingua franca of agent context, READMEs, and quick notes.
-Opening a full editor just to *read* one of these is friction.
+This paragraph mixes **bold**, *italic*, ~~strikethrough~~, and `inline code`.
+It is deliberately long so you can watch glance word-wrap it to whatever width
+your terminal happens to be right now, reflowing live as you resize the window.
 
-> Glance is the GUI you don't need.
+> A blockquote, for asides and pull-quotes.
+> It can span several lines and is rendered with a left bar.
 
-## Features
+## Lists
 
-- Reader mode with mouse, search, and table of contents
-- One keystroke (`e`) into a split editor with **live preview**
-- Inline images on iTerm2, Kitty, WezTerm
-- Vim keybindings: `j`/`k`/`gg`/`G`/`/`/`:w`/`:q`
+- first item
+- second item with a nested list
+  - nested one
+  - nested two
+- third item
 
-## Example code
+1. ordered one
+2. ordered two
+3. ordered three
+
+- [x] task lists render too
+- [ ] this one is unchecked
+
+## Code
+
+Inline `like_this`, and a fenced block:
 
 ```go
-package main
-
-import "fmt"
-
 func main() {
-    fmt.Println("hello, terminal markdown")
+    fmt.Println("hello, glance")
 }
 ```
 
-```python
-def greet(name: str) -> str:
-    return f"Hi {name}, welcome to glance."
-```
-### A table
+## Table
 
-| Tool      | Renders | Edits |
-|-----------|---------|-------|
-| Glow      | ✓       | ✗     |
-| Frogmouth | ✓       | ✗     |
-| **glance**| **✓**   | **✓** |
+| Feature   | Key   | Notes                    |
+|-----------|-------|--------------------------|
+| Search    | `/`   | then `n` / `N`           |
+| Outline   | `t`   | jump to a heading        |
+| Edit      | `i`   | Esc returns to the reader|
 
-### Task list
+## Links
 
-- [x] Reader
-- [x] Editor
-- [ ] Plugins (v2)
+An [external link](https://example.com) opens in your browser with Enter.
+For links *between* notes, see the little vault under `testdata/vault/`.
 
-# Links
+---
 
-See the repo at https://example.com/glance for issues and discussions.
-
-```yaml
-hobbies = 
-    ["gym", "IoT"]
-```
-
-```python
-def main():
-    print("Hello World")
-```
-
+That horizontal rule marks the end. Press `?` any time for the key bindings.
