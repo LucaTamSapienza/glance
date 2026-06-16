@@ -64,8 +64,8 @@ pass** under ASan/UBSan.
    it with notcurses ncvisual and draws it over the rows (pixel or half-blocks),
    degrading to the placeholder for URLs / missing files / plain terminals.
    `Ctrl-V` in the editor pastes a clipboard image: `clip_image_save`
-   (osascript / sips) writes a PNG beside the document and a `![](…)` ref is
-   inserted at the cursor.
+   (osascript / sips) writes a PNG into a `<stem>_media/` folder beside the
+   document and a `![](…)` ref is inserted at the cursor.
 3. **Table alignment** — tables are buffered whole, then emitted bordered and
    column-aligned (left/center/right from md4c's `MD_BLOCK_TD_DETAIL`).
 4. **Cursor sync** — `render.c::tag_source_lines` attributes each visual line to

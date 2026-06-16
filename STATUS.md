@@ -81,7 +81,8 @@ Full parity with the original Go app, plus the vault/agent features:
 - **Inline images:** drawn in the reader via notcurses (pixel graphics or
   Unicode half-blocks), with a `▦ alt` placeholder + Enter-to-open fallback.
   `Ctrl-V` in the editor pastes a clipboard image: it saves the bytes as a PNG
-  beside the document (osascript / sips) and inserts a `![](…)` reference.
+  in a `<name>_media/` folder beside the document (osascript / sips) and inserts
+  a `![](…)` reference.
 - **Cursor sync** maps reader↔editor by content-attributed source lines
   (`Line.source_line`), exact at structural lines, with a proportional fallback.
 

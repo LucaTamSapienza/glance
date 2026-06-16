@@ -30,6 +30,7 @@
 #include <libgen.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 enum { MODE_READER, MODE_INSERT, MODE_SPLIT };
 
@@ -1266,10 +1267,11 @@ static void apply_edit_key(Editor *e, uint32_t id, const ncinput *ni) {
     else insert_with_pairing(e, id, ni);
 }
 
-/* Paste an image from the system clipboard: save it next to the document as a
- * PNG and insert a Markdown reference at the cursor. Bound to Ctrl-V because the
- * terminal consumes Cmd-V and only ever delivers clipboard text, never image
- * bytes. Needs a saved file, so the image has a folder to live in. */
+/* Paste an image from the system clipboard: save it into a per-document folder
+ * (<stem>_media/ beside the file, so the document's directory stays clean) and
+ * insert a Markdown reference at the cursor. Bound to Ctrl-V because the terminal
+ * consumes Cmd-V and only ever delivers clipboard text, never image bytes. Needs
+ * a saved file, so the image has a folder to live in. */
 static void paste_image(App *a) {
     if (!a->path) { snprintf(a->msg, sizeof a->msg, "save the file first to paste an image"); return; }
 
@@ -1282,20 +1284,27 @@ static void paste_image(App *a) {
     char *dot = strrchr(stem, '.'); if (dot && dot != stem) *dot = '\0';
     for (char *p = stem; *p; p++) if (*p == ' ') *p = '-';   /* keep the link space-free */
 
-    char fname[300], full[4500];
-    for (int n = 1; ; n++) {                       /* first free <stem>-N.png */
-        snprintf(fname, sizeof fname, "%s-%d.png", stem, n);
-        snprintf(full, sizeof full, "%s/%s", dir, fname);
+    char media[4400];
+    snprintf(media, sizeof media, "%s/%s_media", dir, stem);
+    if (mkdir(media, 0755) != 0 && errno != EEXIST) {
+        snprintf(a->msg, sizeof a->msg, "can't create %s_media", stem);
+        return;
+    }
+
+    char rel[400], full[4900];                     /* rel is relative to the document */
+    for (int n = 1; ; n++) {                        /* first free <stem>_media/image-N.png */
+        snprintf(rel, sizeof rel, "%s_media/image-%d.png", stem, n);
+        snprintf(full, sizeof full, "%s/%s", dir, rel);
         if (access(full, F_OK) != 0) break;
         if (n >= 9999) { snprintf(a->msg, sizeof a->msg, "too many pasted images"); return; }
     }
 
     if (clip_image_save(full)) {
-        char ref[400];
-        int rn = snprintf(ref, sizeof ref, "![](%s)", fname);
+        char ref[420];
+        int rn = snprintf(ref, sizeof ref, "![](%s)", rel);
         editor_insert(&a->ed, ref, (size_t)rn);
         a->ed.dirty = a->dirty = 1;
-        snprintf(a->msg, sizeof a->msg, "pasted image -> %s", fname);
+        snprintf(a->msg, sizeof a->msg, "pasted image -> %s", rel);
     } else {
         snprintf(a->msg, sizeof a->msg, "no image in clipboard");
     }
