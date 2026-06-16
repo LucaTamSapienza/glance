@@ -86,8 +86,10 @@ Full parity with the original Go app, plus the vault/agent features:
   `Ctrl-V` in the editor pastes a clipboard image: it saves the bytes as a PNG
   in a `<name>_media/` folder beside the document (osascript / sips) and inserts
   a `![](…)` reference.
-- **Cursor sync** maps reader↔editor by content-attributed source lines
-  (`Line.source_line`), exact at structural lines, with a proportional fallback.
+- **Cursor sync** maps reader↔editor by exact source lines: md4c text pointers
+  index the preprocessed source, so each visual line records its source line
+  during the parse (`Line.source_line`); `preprocess_map` recovers the original
+  line across any blank lines preprocessing inserts.
 
 ## Keys
 
@@ -127,10 +129,10 @@ real terminal and is verified interactively.
 
 ## Known limitations / future
 
-- **Cursor sync** is exact at structural lines (headings, code, list items,
-  table rows, single-line paragraphs) via content attribution, but md4c 0.5.2
-  exposes no source byte-offsets, so a soft-wrapped multi-line paragraph is still
-  approximate (it maps to the block, not the exact wrapped sub-line).
+- **Cursor sync** is exact per source line (offset-based). The only residual is
+  inherent to a rendered preview: consecutive source lines md4c folds into one
+  paragraph (a soft break) render as a single visual line, so they share the
+  first line's number rather than each getting their own.
 - Display width counts one column per codepoint (wide/zero-width chars TBD).
 - Syntax highlighting is line-by-line and best-effort (no full grammar): it
   covers common languages and may mis-tokenise exotic constructs; unknown
