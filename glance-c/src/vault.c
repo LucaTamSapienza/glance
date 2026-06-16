@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <dirent.h>
+#include <sys/stat.h>
 
 void vault_stem(const char *name, char *out, size_t cap) {
     const char *base = strrchr(name, '/');
@@ -66,4 +68,101 @@ void vlinks_free(VLinks *out) {
     for (int i = 0; i < out->n; i++) free(out->v[i].target);
     free(out->v);
     out->v = NULL; out->n = out->cap = 0;
+}
+
+/* ---- recursive vault scan ------------------------------------------------- */
+
+static void vfiles_push(VFiles *f, const char *rel) {
+    if (f->n == f->cap) {
+        int nc = f->cap ? f->cap * 2 : 32;
+        char **p = realloc(f->v, nc * sizeof(char *));
+        if (!p) return;
+        f->v = p; f->cap = nc;
+    }
+    f->v[f->n++] = strdup(rel);
+}
+
+/* Recurse into root/rel, appending the .md files found (relative to root). */
+static void scan_rec(const char *root, const char *rel, VFiles *out) {
+    if (out->n > 100000) return;                 /* runaway guard */
+    char dir[4096];
+    if (rel[0]) snprintf(dir, sizeof dir, "%s/%s", root, rel);
+    else        snprintf(dir, sizeof dir, "%s", root);
+    DIR *dp = opendir(dir);
+    if (!dp) return;
+    struct dirent *e;
+    while ((e = readdir(dp))) {
+        if (e->d_name[0] == '.') continue;       /* skip ., .., and hidden */
+        char childrel[4096], childpath[8192];
+        if (rel[0]) snprintf(childrel, sizeof childrel, "%s/%s", rel, e->d_name);
+        else        snprintf(childrel, sizeof childrel, "%s", e->d_name);
+        snprintf(childpath, sizeof childpath, "%s/%s", root, childrel);
+        struct stat st;
+        if (stat(childpath, &st) != 0) continue;
+        if (S_ISDIR(st.st_mode)) {
+            scan_rec(root, childrel, out);
+        } else {
+            size_t l = strlen(e->d_name);
+            if (l > 3 && strcasecmp(e->d_name + l - 3, ".md") == 0)
+                vfiles_push(out, childrel);
+        }
+    }
+    closedir(dp);
+}
+
+void vault_scan(const char *root, VFiles *out) {
+    out->n = 0;
+    scan_rec(root, "", out);
+}
+
+void vfiles_free(VFiles *out) {
+    for (int i = 0; i < out->n; i++) free(out->v[i]);
+    free(out->v);
+    out->v = NULL; out->n = out->cap = 0;
+}
+
+/* True if `dir` contains an entry named `name`. */
+static int has_entry(const char *dir, const char *name) {
+    char p[4096];
+    snprintf(p, sizeof p, "%s/%s", dir, name);
+    struct stat st;
+    return stat(p, &st) == 0;
+}
+
+void vault_root(const char *path, char *out, size_t cap) {
+    /* start from the file's directory */
+    char dir[4096];
+    snprintf(dir, sizeof dir, "%s", path);
+    char *slash = strrchr(dir, '/');
+    if (slash) *slash = '\0'; else snprintf(dir, sizeof dir, ".");
+
+    /* walk up looking for a vault marker; remember the starting dir as fallback */
+    char start[4096]; snprintf(start, sizeof start, "%s", dir);
+    for (;;) {
+        if (has_entry(dir, ".git") || has_entry(dir, ".obsidian")) {
+            snprintf(out, cap, "%s", dir);
+            return;
+        }
+        char *up = strrchr(dir, '/');
+        if (!up || up == dir) break;             /* reached "/" or a bare name */
+        *up = '\0';
+    }
+    snprintf(out, cap, "%s", start);             /* no marker: the file's dir */
+}
+
+char *vault_find(const char *root, const char *name) {
+    char want[256]; vault_stem(name, want, sizeof want);
+    VFiles f = {0};
+    vault_scan(root, &f);
+    char *hit = NULL;
+    for (int i = 0; i < f.n && !hit; i++) {
+        char have[256]; vault_stem(f.v[i], have, sizeof have);
+        if (strcasecmp(have, want) == 0) {
+            char full[8192];
+            snprintf(full, sizeof full, "%s/%s", root, f.v[i]);
+            hit = strdup(full);
+        }
+    }
+    vfiles_free(&f);
+    return hit;
 }

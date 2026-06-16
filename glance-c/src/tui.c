@@ -322,8 +322,9 @@ static void draw_backlinks(App *a) {
         ncplane_set_styles(p, sel ? NCSTYLE_BOLD : NCSTYLE_NONE);
         if (sel) { ncplane_set_fg_rgb8(p, 0, 0, 0); ncplane_set_bg_rgb8(p, 255, 200, 90); }
         else     { ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b); ncplane_set_bg_rgb8(p, panel.r, panel.g, panel.b); }
+        const char *slash = strrchr(a->bl[idx], '/');   /* show the base name */
         char buf[TOC_W * 4];
-        snprintf(buf, sizeof buf, " %s", a->bl[idx]);
+        snprintf(buf, sizeof buf, " %s", slash ? slash + 1 : a->bl[idx]);
         size_t cut = ed_col_to_byte(buf, strlen(buf), TOC_W - 1);
         buf[cut] = '\0';
         ncplane_putstr_yx(p, row, 0, buf);
@@ -858,26 +859,40 @@ static int is_external(const char *u) {
            strncmp(u, "mailto:", 7) == 0 || strncmp(u, "ftp://", 6) == 0;
 }
 
-/* Follow a link: external URLs open in the browser; a wikilink or relative .md
- * link opens that file in glance, pushing the current file onto the back-stack. */
+/* Load `full` into the app, pushing the current file onto the back-stack. */
+static void navigate_to(App *a, const char *full) {
+    char *cur = a->path ? strdup(a->path) : NULL;
+    if (load_into(a, full) == 0) {
+        if (cur && a->nback < 64) a->back[a->nback++] = cur; else free(cur);
+        snprintf(a->msg, sizeof a->msg, "→ %s", a->title);
+    } else {
+        free(cur);
+    }
+}
+
+/* Follow a link: external URLs open in the browser; a relative .md path resolves
+ * against the current file; a bare [[wikilink]] name is searched across the
+ * whole vault (recursively) — the way Obsidian resolves links. */
 static void open_link_target(App *a, const char *u) {
     if (is_external(u)) { open_url(u); snprintf(a->msg, sizeof a->msg, "opening %s", u); return; }
     if (!a->path) { snprintf(a->msg, sizeof a->msg, "can't follow links from stdin"); return; }
     if (a->dirty) { snprintf(a->msg, sizeof a->msg, "unsaved changes — :w before following links"); return; }
 
-    char file[1024];
     size_t ul = strlen(u);
-    if (ul > 3 && strcasecmp(u + ul - 3, ".md") == 0) snprintf(file, sizeof file, "%s", u);
-    else snprintf(file, sizeof file, "%s.md", u);     /* wikilink page -> page.md */
-    char *full = resolve_path(a->path, file);
-    char *cur = strdup(a->path);
-    if (load_into(a, full) == 0) {
-        if (a->nback < 64) a->back[a->nback++] = cur; else free(cur);
-        snprintf(a->msg, sizeof a->msg, "→ %s", a->title);
-    } else {
-        free(cur);
+    int is_md = ul > 3 && strcasecmp(u + ul - 3, ".md") == 0;
+    if (strchr(u, '/') || is_md) {                 /* a path: resolve relatively */
+        char file[1024];
+        snprintf(file, sizeof file, is_md ? "%s" : "%s.md", u);
+        char *full = resolve_path(a->path, file);
+        navigate_to(a, full);
+        free(full);
+    } else {                                        /* a wikilink name: vault-wide */
+        char root[4096]; vault_root(a->path, root, sizeof root);
+        char *full = vault_find(root, u);
+        if (!full) { snprintf(a->msg, sizeof a->msg, "not found in vault: [[%s]]", u); return; }
+        navigate_to(a, full);
+        free(full);
     }
-    free(full);
 }
 
 /* Return to the previously viewed file. */
@@ -889,37 +904,36 @@ static void go_back(App *a) {
     free(prev);
 }
 
-/* Scan the current file's directory for .md files that link back to it, and
- * open the backlinks panel listing them. */
+/* Scan the whole vault (recursively) for .md files that link to the current
+ * one, and open the backlinks panel listing them. */
 static void open_backlinks(App *a) {
     for (int i = 0; i < a->nbl; i++) free(a->bl[i]);
     a->nbl = a->bl_sel = 0;
     if (!a->path) { snprintf(a->msg, sizeof a->msg, "no vault (reading stdin)"); return; }
 
-    char dbuf[1024]; snprintf(dbuf, sizeof dbuf, "%s", a->path);
-    char *dir = dirname(dbuf);
+    char root[4096]; vault_root(a->path, root, sizeof root);
     char self[256]; vault_stem(a->path, self, sizeof self);
+    char selfreal[4096]; if (!realpath(a->path, selfreal)) selfreal[0] = '\0';
 
-    DIR *dp = opendir(dir);
-    if (!dp) { snprintf(a->msg, sizeof a->msg, "can't read directory"); return; }
-    struct dirent *e;
-    while ((e = readdir(dp)) && a->nbl < 256) {
-        size_t l = strlen(e->d_name);
-        if (!(l > 3 && strcasecmp(e->d_name + l - 3, ".md") == 0)) continue;
-        char nstem[256]; vault_stem(e->d_name, nstem, sizeof nstem);
-        if (strcasecmp(nstem, self) == 0) continue;          /* skip the file itself */
-        char full[2048]; snprintf(full, sizeof full, "%s/%s", dir, e->d_name);
+    VFiles files = {0};
+    vault_scan(root, &files);
+    for (int i = 0; i < files.n && a->nbl < 256; i++) {
+        char full[8192];
+        snprintf(full, sizeof full, "%s/%s", root, files.v[i]);
+        char freal[4096];
+        if (realpath(full, freal) && selfreal[0] && strcmp(freal, selfreal) == 0)
+            continue;                                        /* skip the file itself */
         FILE *f = fopen(full, "rb"); if (!f) continue;
         size_t len; char *s = read_file(f, &len); fclose(f); if (!s) continue;
         VLinks vl = {0}; vault_links(s, len, &vl);
         for (int k = 0; k < vl.n; k++) {
             char t[256]; vault_stem(vl.v[k].target, t, sizeof t);
-            if (strcasecmp(t, self) == 0) { a->bl[a->nbl++] = strdup(e->d_name); break; }
+            if (strcasecmp(t, self) == 0) { a->bl[a->nbl++] = strdup(full); break; }
         }
         vlinks_free(&vl);
         free(s);
     }
-    closedir(dp);
+    vfiles_free(&files);
     if (a->nbl == 0) { snprintf(a->msg, sizeof a->msg, "no backlinks to %s", a->title); return; }
     a->blmode = 1;
 }
@@ -930,7 +944,8 @@ static int handle_backlinks(App *a, uint32_t id, const ncinput *ni) {
     else if (id == 'k' || id == NCKEY_UP)   { if (a->bl_sel > 0) a->bl_sel--; }
     else if (id == NCKEY_ENTER || id == '\r' || id == '\n') {
         a->blmode = 0;
-        if (a->nbl) open_link_target(a, a->bl[a->bl_sel]);
+        if (a->nbl && !a->dirty) navigate_to(a, a->bl[a->bl_sel]);
+        else if (a->dirty) snprintf(a->msg, sizeof a->msg, "unsaved changes — :w first");
     } else if (id == 'b' || id == NCKEY_ESC || id == 'q' ||
                (id == 'c' && ncinput_ctrl_p(ni))) {
         a->blmode = 0;

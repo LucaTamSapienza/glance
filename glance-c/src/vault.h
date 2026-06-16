@@ -25,4 +25,23 @@ void vlinks_free(VLinks *out);
  * a trailing ".md". Used to match a [[wikilink]] or relative path to a file. */
 void vault_stem(const char *name, char *out, size_t cap);
 
+/* A list of file paths relative to a vault root. */
+typedef struct { char **v; int n, cap; } VFiles;
+
+/* Recursively collect every *.md file under `root` (skipping dot-directories).
+ * Paths are stored relative to `root`. `out` is cleared first. */
+void vault_scan(const char *root, VFiles *out);
+
+void vfiles_free(VFiles *out);
+
+/* Find the vault root for `path`: walk up to the nearest ancestor containing a
+ * `.git` or `.obsidian` entry; if none, use the file's own directory. The root
+ * is written to `out`. */
+void vault_root(const char *path, char *out, size_t cap);
+
+/* Resolve a [[wikilink]] name to a file under `root` by stem (case-insensitive,
+ * searching the whole tree). Returns an owned absolute-ish path (root/rel), or
+ * NULL if no file matches. */
+char *vault_find(const char *root, const char *name);
+
 #endif /* GLANCE_VAULT_H */

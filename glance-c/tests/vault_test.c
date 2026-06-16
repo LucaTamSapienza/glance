@@ -2,7 +2,10 @@
 #include "../src/vault.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/stat.h>
 
 static int fails = 0;
 static void expect(int cond, const char *msg) {
@@ -39,6 +42,35 @@ int main(void) {
     vault_links("no links here", 13, &empty);
     expect(empty.n == 0, "no links");
     vlinks_free(&empty);
+
+    /* recursive scan + wikilink resolution over a temp directory tree */
+    char dir[] = "/tmp/glance_vault_XXXXXX";
+    if (mkdtemp(dir)) {
+        char p[1024];
+        snprintf(p, sizeof p, "%s/a.md", dir); fclose(fopen(p, "w"));
+        snprintf(p, sizeof p, "%s/sub", dir);  mkdir(p, 0755);
+        snprintf(p, sizeof p, "%s/sub/Deep Note.md", dir); fclose(fopen(p, "w"));
+
+        VFiles f = {0};
+        vault_scan(dir, &f);
+        expect(f.n == 2, "scan finds two files across subdir");
+        vfiles_free(&f);
+
+        char *hit = vault_find(dir, "Deep Note");   /* by stem, in a subdir */
+        expect(hit && strstr(hit, "sub/Deep Note.md") != NULL, "wikilink resolves into subdir");
+        free(hit);
+        char *miss = vault_find(dir, "nope");
+        expect(miss == NULL, "missing wikilink resolves to NULL");
+        free(miss);
+
+        char stem[64]; vault_stem("x/y/Page.md", stem, sizeof stem);
+        expect(strcmp(stem, "Page") == 0, "stem drops dir and .md");
+
+        snprintf(p, sizeof p, "%s/sub/Deep Note.md", dir); unlink(p);
+        snprintf(p, sizeof p, "%s/a.md", dir); unlink(p);
+        snprintf(p, sizeof p, "%s/sub", dir); rmdir(p);
+        rmdir(dir);
+    }
 
     if (fails) { printf("%d vault test(s) FAILED\n", fails); return 1; }
     printf("all vault tests passed\n");

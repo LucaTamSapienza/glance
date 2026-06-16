@@ -55,57 +55,51 @@ void agent_links(const char *src, size_t len) {
 
 /* ---- vault graph ---------------------------------------------------------- */
 
-/* Index of the node whose stem matches `target` (case-insensitive), or -1. */
-static int node_for(const char *target, char names[][256], int n) {
+/* Index of the vault file whose stem matches `target`, or -1. */
+static int node_for(const char *target, VFiles *f) {
     char want[256]; vault_stem(target, want, sizeof want);
-    for (int i = 0; i < n; i++) {
-        char have[256]; vault_stem(names[i], have, sizeof have);
+    for (int i = 0; i < f->n; i++) {
+        char have[256]; vault_stem(f->v[i], have, sizeof have);
         if (strcasecmp(have, want) == 0) return i;
     }
     return -1;
 }
 
 int agent_graph(const char *dir) {
-    DIR *dp = opendir(dir);
-    if (!dp) return 1;
+    DIR *probe = opendir(dir);
+    if (!probe) return 1;                          /* unreadable root */
+    closedir(probe);
 
-    /* collect the .md file names (bounded; vaults this big are unusual) */
-    static char names[4096][256];
-    int n = 0;
-    struct dirent *e;
-    while ((e = readdir(dp)) && n < 4096) {
-        size_t l = strlen(e->d_name);
-        if (l > 3 && strcasecmp(e->d_name + l - 3, ".md") == 0)
-            snprintf(names[n++], 256, "%s", e->d_name);
-    }
-    closedir(dp);
+    VFiles f = {0};
+    vault_scan(dir, &f);                           /* recursive: all *.md under dir */
 
     printf("{\"nodes\":[");
-    for (int i = 0; i < n; i++) { printf("%s", i ? "," : ""); json_str(names[i]); }
+    for (int i = 0; i < f.n; i++) { printf("%s", i ? "," : ""); json_str(f.v[i]); }
     printf("],\"edges\":[");
 
     int edges = 0;
-    for (int i = 0; i < n; i++) {
-        char path[4096];
-        snprintf(path, sizeof path, "%s/%s", dir, names[i]);
-        FILE *f = fopen(path, "rb");
-        if (!f) continue;
-        size_t len; char *src = read_file(f, &len);
-        fclose(f);
+    for (int i = 0; i < f.n; i++) {
+        char path[8192];
+        snprintf(path, sizeof path, "%s/%s", dir, f.v[i]);
+        FILE *fp = fopen(path, "rb");
+        if (!fp) continue;
+        size_t len; char *src = read_file(fp, &len);
+        fclose(fp);
         if (!src) continue;
 
         VLinks l = {0};
         vault_links(src, len, &l);
         for (int k = 0; k < l.n; k++) {
-            int j = node_for(l.v[k].target, names, n);
+            int j = node_for(l.v[k].target, &f);
             if (j < 0) continue;                       /* external / unresolved */
             printf("%s{\"from\":", edges++ ? "," : "");
-            json_str(names[i]); printf(",\"to\":");
-            json_str(names[j]); printf(",\"wiki\":%s}", l.v[k].wiki ? "true" : "false");
+            json_str(f.v[i]); printf(",\"to\":");
+            json_str(f.v[j]); printf(",\"wiki\":%s}", l.v[k].wiki ? "true" : "false");
         }
         vlinks_free(&l);
         free(src);
     }
     puts("]}");
+    vfiles_free(&f);
     return 0;
 }
