@@ -459,15 +459,23 @@ static void blit_image(App *a, const char *src, int row, int rows) {
     if (a->nimgpl >= (int)(sizeof a->imgpl / sizeof a->imgpl[0])) return;
     int body = content_rows(a);
     int h = rows; if (row + h > body) h = body - row;
-    int w = a->cols - 2;
+    int w = a->cols;
     if (h < 1 || w < 2) return;
     char *path = resolve_image_path(a, src);
     if (!path) return;
     struct ncvisual *v = ncvisual_from_file(path);
     free(path);
     if (!v) return;
+    /* Wipe the placeholder text from the reserved rows so it can't show through
+     * the letterbox margins NCSCALE_SCALE leaves around the picture. */
+    ncplane_set_fg_default(a->plane);
+    ncplane_set_bg_default(a->plane);
+    for (int ry = row; ry < row + h; ry++)
+        for (int rx = 0; rx < w; rx++) ncplane_putchar_yx(a->plane, ry, rx, ' ');
+    /* Cover the full row width (from column 0); NCSCALE_SCALE letterboxes the
+     * picture within the box. */
     struct ncplane_options no; memset(&no, 0, sizeof no);
-    no.y = row; no.x = 1; no.rows = (unsigned)h; no.cols = (unsigned)w;
+    no.y = row; no.x = 0; no.rows = (unsigned)h; no.cols = (unsigned)w;
     struct ncplane *ip = ncplane_create(a->plane, &no);
     if (!ip) { ncvisual_destroy(v); return; }
     struct ncvisual_options vo; memset(&vo, 0, sizeof vo);
