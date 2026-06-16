@@ -51,14 +51,21 @@ git clone https://github.com/LucaTamSapienza/glance
 cd glance
 make                 # builds ./glance (TUI) and ./glance-render (CLI)
 make test            # runs the unit tests under AddressSanitizer/UBSan
+sudo make install    # copy glance + glance-render to /usr/local/bin
 ```
+
+`make install` honours `PREFIX` and `DESTDIR`, so for a no-sudo, user-local
+install use `make install PREFIX=~/.local` (with `~/.local/bin` on your `PATH`).
+`make uninstall` removes them.
 
 ## Usage
 
 ```sh
 glance file.md                 # open in the reader TUI
+glance new.md                  # a path that doesn't exist opens empty; :w creates it
 glance-render -w 80 file.md    # render to ANSI on stdout (-l for a light theme)
 cat note.md | glance           # read from stdin
+glance --help                  # full usage and every key binding
 glance --keys                  # diagnostic: print raw key events
 ```
 
@@ -125,6 +132,28 @@ AGENTS.md       guide for using this repo with a coding agent
 ```
 
 See [STATUS.md](STATUS.md) for the full module-by-module map.
+
+## Roadmap / known limitations
+
+Good first contributions, in rough priority:
+
+- **Sharper inline images.** Images are blitted with pixel graphics where the
+  terminal supports them, but decoded and redrawn every frame. The right fix is a
+  *persistent image plane* per picture: decode and blit once, then `ncplane_move_yx`
+  it on scroll and hide it when a panel/editor covers it — crisper, flicker-free,
+  and far cheaper. See `blit_image` in `src/tui.c`.
+- **`Option`+arrow word-jump in the editor.** `Cmd`+arrows (line start/end) and
+  `Alt`/`Ctrl`+arrows (word) work, but some terminals — iTerm2 included — send
+  `Option`+`←`/`→` as a bare `b`/`f` with no modifier bit, indistinguishable from
+  typed letters. Detecting them needs the enhanced (kitty/CSI-u) keyboard
+  protocol, which we deliberately disable to avoid an escape-leak on exit; making
+  both work together is the open item.
+- **Remote images** (`http(s)://`) aren't fetched — only local paths render.
+- **Wide tables** overflow the viewport instead of wrapping or truncating.
+- **Cursor sync** is exact on structural lines but maps a soft-wrapped paragraph
+  to its block, not the precise wrapped sub-line (md4c exposes no byte offsets).
+
+See [STATUS.md](STATUS.md) for the full list with rationale.
 
 ## License
 
