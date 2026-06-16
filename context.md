@@ -1,7 +1,7 @@
 # glance — Project Context
 
 > Orientation for anyone (including Claude) picking up the work.
-> Last updated: 2026-06-16 (migration to C root + per-language syntax highlighting).
+> Last updated: 2026-06-16 (C-at-root migration; highlighting, tables, images, cursor sync).
 
 ## What it is
 
@@ -54,12 +54,23 @@ CLAUDE.md, STATUS.md, AGENT_FEATURES.md, and the new AGENTS.md) were rewritten t
 describe the C app and the new layout. Build is clean and **all ten unit-test
 suites pass** under ASan/UBSan.
 
-**Syntax highlighting (gap 1) done.** Fenced code blocks now get per-language
-token coloring via a new spec-driven highlighter (`src/highlight.c`,
-`highlight_test.c`): C/C++, Go, Python, JS/TS, Rust, bash, YAML, JSON. md4c
-reports the fence language; `render.c` resolves it and pushes one styled run per
-token (keyword/string/number/comment/function/variable/property/operator) over
-the code background. Unknown languages fall back to the plain styled box.
+**All four renderer gaps closed.**
+
+1. **Syntax highlighting** — per-language token coloring via a spec-driven
+   highlighter (`src/highlight.c`): C/C++, Go, Python, JS/TS, Rust, bash, YAML,
+   JSON. `render.c` resolves the fence language and pushes one styled run per
+   token over the code background. Unknown languages keep the plain box.
+2. **Inline images** — an image span becomes a placeholder block (`▦ alt`,
+   linked, reserved rows) in `render.c`; the reader (`tui.c::blit_image`) decodes
+   it with notcurses ncvisual and draws it over the rows (pixel or half-blocks),
+   degrading to the placeholder for URLs / missing files / plain terminals.
+3. **Table alignment** — tables are buffered whole, then emitted bordered and
+   column-aligned (left/center/right from md4c's `MD_BLOCK_TD_DETAIL`).
+4. **Cursor sync** — `render.c::tag_source_lines` attributes each visual line to
+   a source line by content (forward, monotonic); `tui.c` uses `Line.source_line`
+   for an exact reader↔editor map, with the proportional map as fallback.
+
+All covered by `render_test.c` (+ `highlight_test.c`); 11 test suites total.
 
 Branch `master`, pushed to `git@github.com:LucaTamSapienza/glance.git` (the
 default branch is `master`; there is no `main`). Backup branches retained:
@@ -74,21 +85,18 @@ auto dark/light, bracket auto-pairing. Plus the agent-era features: wikilinks +
 cross-file navigation with a back-stack, backlinks panel (`b`), graph explorer
 (`Ctrl-G`), and the `--outline`/`--links`/`--graph` JSON exports.
 
-## Known gaps / open items (next up)
+## Known gaps / open items
 
-The gaps the user wants closed, in the C app:
+The four gaps the user prioritised are all **done** (see above). Residual polish:
 
-1. ~~Per-language syntax highlighting in code blocks.~~ **Done** (`highlight.c`).
-   Future polish: more languages, multi-line raw strings (Go backticks), better
-   YAML scalar typing.
-2. **Inline images** (notcurses supports sixel/kitty/iterm protocols). — next
-3. **Table column alignment.**
-4. **Exact 1:1 reader↔editor cursor sync.** md4c exposes no source byte-offsets,
-   so the mapping is proportional by design; an exact map needs a source-tracking
-   pass.
-
-Smaller: display width counts one column per codepoint (wide/zero-width chars
-TBD).
+- Syntax highlighting: more languages, multi-line raw strings (Go backticks),
+  better YAML scalar typing.
+- Images: fixed reserved height (no aspect sizing), decoded per frame (no cache),
+  hidden until the top row scrolls in, and remote (`http`) images aren't fetched.
+- Cursor sync: soft-wrapped multi-line paragraphs map to the block, not the exact
+  wrapped sub-line (bounded by md4c having no source offsets).
+- Wide tables overflow rather than wrap/truncate.
+- Display width counts one column per codepoint (wide/zero-width chars TBD).
 
 ## Where to find more
 

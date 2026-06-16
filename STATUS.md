@@ -25,6 +25,7 @@ heading lines. Nothing about the output is opaque to us.
 | File watch     | kqueue on parent dir (`fswatch.c`)           | fsnotify                     |
 | Clipboard/open | pbcopy / open (`clipboard.c`)                | atotto/clipboard             |
 | Syntax hl      | spec-driven highlighter (`highlight.c`)      | chroma                       |
+| Images         | notcurses ncvisual blit (`tui.c`)            | images.go (detection only)   |
 
 ## Module map (`src/`)
 
@@ -74,6 +75,12 @@ Full parity with the original Go app, plus the vault/agent features:
 - **Syntax highlighting** in fenced code blocks, per language (`highlight.c`):
   C/C++, Go, Python, JS/TS, Rust, bash, YAML, JSON — keywords, strings, numbers,
   comments, function calls, shell `$vars`, and YAML/JSON keys.
+- **Tables** are bordered and column-aligned, honouring the `:---:` markers
+  (left/center/right); the table is buffered, then emitted once widths are known.
+- **Inline images:** drawn in the reader via notcurses (pixel graphics or
+  Unicode half-blocks), with a `▦ alt` placeholder + Enter-to-open fallback.
+- **Cursor sync** maps reader↔editor by content-attributed source lines
+  (`Line.source_line`), exact at structural lines, with a proportional fallback.
 
 ## Keys
 
@@ -93,20 +100,24 @@ make test             # all module unit tests, ASan/UBSan
 
 ## Tests
 
-Pure modules are unit-tested under ASan/UBSan (`make test`) — ten suites:
-editor, preprocess, search, toc, fs_save, completion, highlight, vault, agent,
-graph. The renderer is additionally exercised through the search/toc/agent tests
-and the `glance-render` CLI. The notcurses front-end needs a real terminal and is
-verified interactively.
+Pure modules are unit-tested under ASan/UBSan (`make test`) — eleven suites:
+editor, preprocess, search, toc, fs_save, completion, highlight, render, vault,
+agent, graph. `render_test` covers table alignment, source-line attribution, and
+the image placeholder model. The renderer is also exercised through the
+`glance-render` CLI. The notcurses front-end (including image blitting) needs a
+real terminal and is verified interactively.
 
 ## Known limitations / future
 
-- **Cursor sync is proportional**, not an exact rendered<->source 1:1 line map:
-  md4c 0.5.2 exposes no source byte-offsets, so the Go app's proportional
-  approach is used. Exact mapping needs a source-tracking pass.
+- **Cursor sync** is exact at structural lines (headings, code, list items,
+  table rows, single-line paragraphs) via content attribution, but md4c 0.5.2
+  exposes no source byte-offsets, so a soft-wrapped multi-line paragraph is still
+  approximate (it maps to the block, not the exact wrapped sub-line).
 - Display width counts one column per codepoint (wide/zero-width chars TBD).
 - Syntax highlighting is line-by-line and best-effort (no full grammar): it
   covers common languages and may mis-tokenise exotic constructs; unknown
   languages fall back to a plain styled background.
-- Tables aren't column-aligned; inline images not rendered (notcurses can —
-  a candidate feature).
+- Inline images use a fixed reserved height, are decoded per frame (no cache),
+  and only blit once the image's top row scrolls into view; remote (`http`)
+  images aren't fetched — they keep the placeholder and open with Enter.
+- Very wide tables overflow the width rather than wrapping/truncating.

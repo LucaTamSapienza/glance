@@ -97,6 +97,7 @@ Key invariants worth preserving:
 ## Good first tasks
 
 Open items are tracked in [`STATUS.md`](STATUS.md) and [`context.md`](context.md).
-The current known gaps: inline images (notcurses supports sixel/kitty/iterm),
-table column alignment, and an exact 1:1 reader↔editor cursor map. (Per-language
-syntax highlighting in code blocks is done — see `highlight.c`.)
+The four renderer features once listed here — syntax highlighting, inline images,
+table alignment, and reader↔editor cursor sync — are all implemented. What's left
+is polish (see the residuals in STATUS.md): more highlight languages, image
+caching/aspect sizing, wide-table wrapping, and wide-character display widths.
