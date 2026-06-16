@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <poll.h>
+#include <time.h>
 #include <libgen.h>
 #include <dirent.h>
 #include <unistd.h>
@@ -122,6 +123,24 @@ static void term_kbd_reset(void) {
     const char *seq = "\033[<u\033[=0u\033[>4;0m";
     ssize_t w = write(STDOUT_FILENO, seq, strlen(seq));
     (void)w;
+}
+
+/* Swallow terminal query responses (OSC colour reports and the like) that can
+ * land a few milliseconds after notcurses initialises. If they reach the input
+ * loop they are misread as a burst of keystrokes — e.g. the ':' in an
+ * "rgb:ffff/d7d7/8787" report opens the command line and the rest fills it. A
+ * brief drain at startup keeps the first frame clean; the user has not typed
+ * anything yet, so no real key is lost. */
+static void drain_startup_responses(struct notcurses *nc) {
+    struct timespec deadline;
+    if (clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) return;
+    deadline.tv_nsec += 50L * 1000000L;            /* ~50ms from now */
+    if (deadline.tv_nsec >= 1000000000L) { deadline.tv_sec++; deadline.tv_nsec -= 1000000000L; }
+    ncinput ni;
+    for (;;) {
+        uint32_t id = notcurses_get(nc, &deadline, &ni);
+        if (id == 0 || id == (uint32_t)-1) break;  /* 0 = deadline reached, nothing pending */
+    }
 }
 /* Decide dark vs light from the terminal's reported background colour. Falls
  * back to dark when the terminal doesn't tell us (the common, safe default). */
@@ -1585,6 +1604,7 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
 
     if (rerender(&a) != 0) { shutdown_tui(); free(a.src); return 1; }
     redraw(&a);
+    drain_startup_responses(a.nc);   /* discard stray terminal query replies */
 
     /* Watch the file for external edits, and poll it alongside terminal input.
      * The watcher fd lives in the App so cross-file navigation can re-point it. */
