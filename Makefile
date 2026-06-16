@@ -42,6 +42,8 @@ test:
 	$(CC) $(TCFLAGS) -o build-t-fssave tests/fs_save_test.c $(SRC)/fs_save.c && ./build-t-fssave; \
 	$(CC) $(TCFLAGS) -o build-t-completion tests/completion_test.c $(SRC)/completion.c && ./build-t-completion; \
 	$(CC) $(TCFLAGS) -o build-t-highlight tests/highlight_test.c $(SRC)/highlight.c && ./build-t-highlight; \
+	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-render tests/render_test.c \
+	  $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/preprocess.c $(SRC)/highlight.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-render; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-vault tests/vault_test.c \
 	  $(SRC)/vault.c $(shell pkg-config --libs md4c) && ./build-t-vault; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-agent tests/agent_test.c \

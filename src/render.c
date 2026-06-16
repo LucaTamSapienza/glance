@@ -65,6 +65,12 @@ static RGB hl_fg(HLKind k, int dark) {
 
 #define MAX_LIST  16
 #define MAX_STYLE 32
+#define MAX_COLS  32
+
+/* A table cell: a small list of styled runs plus its display width. */
+typedef struct { Run *runs; size_t nrun, cap; int width; } Cell;
+/* A table row: up to MAX_COLS cells; header rows render bold. */
+typedef struct { Cell cells[MAX_COLS]; int ncell, header; } TRow;
 
 typedef struct {
     Doc  *doc;
@@ -88,6 +94,12 @@ typedef struct {
     char   *code_buf; size_t code_len, code_cap;
     int     code_lang;     /* hl_lang() id for the current fence, or -1 */
     HLState hl;            /* multi-line highlighter state within the fence */
+
+    /* table buffering: rows collected here, emitted aligned on leave TABLE */
+    int      in_table, in_cell, tbl_header;
+    int      tbl_ncol, tbl_col, tbl_nrow, tbl_rowcap;
+    MD_ALIGN tbl_align[MAX_COLS];
+    TRow    *tbl_rows;
 
     int    quote_depth;
     int    list_depth;
@@ -258,6 +270,147 @@ static void code_line(R *r, const char *s, size_t n) {
     L->fill = 1; L->fill_bg = code_bg(r->dark);
 }
 
+/* ---- tables --------------------------------------------------------------- */
+/* A table is buffered whole (its cells stream in as inline text), then emitted
+ * as aligned, bordered Doc lines once md4c closes it — only then are all the
+ * column widths known. Box-drawing pieces: */
+#define BOX_H  "\xe2\x94\x80"  /* ─ */
+#define BOX_V  "\xe2\x94\x82"  /* │ */
+#define BOX_TL "\xe2\x94\x8c"  /* ┌ */
+#define BOX_TM "\xe2\x94\xac"  /* ┬ */
+#define BOX_TR "\xe2\x94\x90"  /* ┐ */
+#define BOX_ML "\xe2\x94\x9c"  /* ├ */
+#define BOX_MM "\xe2\x94\xbc"  /* ┼ */
+#define BOX_MR "\xe2\x94\xa4"  /* ┤ */
+#define BOX_BL "\xe2\x94\x94"  /* └ */
+#define BOX_BM "\xe2\x94\xb4"  /* ┴ */
+#define BOX_BR "\xe2\x94\x98"  /* ┘ */
+
+/* Style for the table's box-drawing rules. */
+static Style border_style(int dark) {
+    Style bs; memset(&bs, 0, sizeof bs);
+    bs.has_fg = 1; bs.fg = rule_fg(dark); bs.dim = 1;
+    return bs;
+}
+
+/* Push `k` spaces (plain style) onto the current line. */
+static void push_spaces(R *r, int k) {
+    if (k <= 0) return;
+    char buf[256]; if (k > 255) k = 255;
+    memset(buf, ' ', k);
+    Style plain; memset(&plain, 0, sizeof plain);
+    runs_push(&r->line, &r->line_n, &r->line_cap, buf, k, plain);
+    r->line_cols += k;
+}
+
+/* The row currently being filled (grows the row array as needed), or NULL. */
+static TRow *tbl_currow(R *r) {
+    if (r->tbl_nrow >= r->tbl_rowcap) {
+        int nc = r->tbl_rowcap ? r->tbl_rowcap * 2 : 8;
+        TRow *p = realloc(r->tbl_rows, (size_t)nc * sizeof(TRow));
+        if (!p) return NULL;
+        r->tbl_rows = p; r->tbl_rowcap = nc;
+    }
+    return &r->tbl_rows[r->tbl_nrow];
+}
+
+/* Append a styled run to the current table cell, carrying any active link. */
+static void cell_push(R *r, const char *s, size_t n, Style st) {
+    if (r->tbl_nrow >= r->tbl_rowcap || r->tbl_col < 0 || r->tbl_col >= MAX_COLS) return;
+    Cell *cell = &r->tbl_rows[r->tbl_nrow].cells[r->tbl_col];
+    if (runs_push(&cell->runs, &cell->nrun, &cell->cap, s, n, st) == 0) {
+        if (r->cur_link) cell->runs[cell->nrun - 1].link = strdup(r->cur_link);
+        cell->width += u8_width(s, n);
+    }
+}
+
+/* Emit one horizontal rule: left corner, dashes per column, right corner. */
+static void emit_border(R *r, const char *L, const char *M, const char *Rt,
+                        const int *colw, int ncol) {
+    line_start_indent(r);
+    int vis = 1; for (int c = 0; c < ncol; c++) vis += colw[c] + 3;  /* 2 pad + 1 junction */
+    char *buf = malloc((size_t)vis * 3 + 8);
+    if (!buf) return;
+    size_t p = 0;
+    memcpy(buf + p, L, 3); p += 3;
+    for (int c = 0; c < ncol; c++) {
+        for (int k = 0; k < colw[c] + 2; k++) { memcpy(buf + p, BOX_H, 3); p += 3; }
+        const char *j = (c == ncol - 1) ? Rt : M;
+        memcpy(buf + p, j, 3); p += 3;
+    }
+    runs_push(&r->line, &r->line_n, &r->line_cap, buf, p, border_style(r->dark));
+    r->line_cols += vis;
+    free(buf);
+    r->line_has = 1;
+    line_commit(r);
+}
+
+/* Emit one content row: vertical rules around each cell, padded per alignment. */
+static void emit_row(R *r, TRow *row, const int *colw, int ncol) {
+    line_start_indent(r);
+    Style bs = border_style(r->dark);
+    runs_push(&r->line, &r->line_n, &r->line_cap, BOX_V, 3, bs);
+    r->line_cols += 1;
+    for (int c = 0; c < ncol; c++) {
+        Cell *cell = (c < row->ncell) ? &row->cells[c] : NULL;
+        int pad = colw[c] - (cell ? cell->width : 0); if (pad < 0) pad = 0;
+        int lpad = 0, rpad = pad;
+        if (r->tbl_align[c] == MD_ALIGN_RIGHT)       { lpad = pad; rpad = 0; }
+        else if (r->tbl_align[c] == MD_ALIGN_CENTER) { lpad = pad / 2; rpad = pad - lpad; }
+        push_spaces(r, 1);          /* left cell padding inside the rule */
+        push_spaces(r, lpad);
+        if (cell) for (size_t k = 0; k < cell->nrun; k++) {
+            Run *rn = &cell->runs[k];
+            runs_push(&r->line, &r->line_n, &r->line_cap, rn->text, rn->len, rn->st);
+            if (rn->link) r->line[r->line_n - 1].link = strdup(rn->link);
+            r->line_cols += u8_width(rn->text, rn->len);
+        }
+        push_spaces(r, rpad);
+        push_spaces(r, 1);
+        runs_push(&r->line, &r->line_n, &r->line_cap, BOX_V, 3, bs);
+        r->line_cols += 1;
+    }
+    r->line_has = 1;
+    line_commit(r);
+}
+
+/* Turn the buffered table into bordered, column-aligned Doc lines. */
+static void table_emit(R *r) {
+    int ncol = r->tbl_ncol;
+    if (ncol <= 0 || ncol > MAX_COLS) return;
+    int colw[MAX_COLS];
+    for (int c = 0; c < ncol; c++) colw[c] = 1;   /* keep empty columns visible */
+    for (int i = 0; i < r->tbl_nrow; i++) {
+        TRow *row = &r->tbl_rows[i];
+        for (int c = 0; c < ncol && c < row->ncell; c++)
+            if (row->cells[c].width > colw[c]) colw[c] = row->cells[c].width;
+    }
+    emit_border(r, BOX_TL, BOX_TM, BOX_TR, colw, ncol);
+    for (int i = 0; i < r->tbl_nrow; i++) {
+        TRow *row = &r->tbl_rows[i];
+        emit_row(r, row, colw, ncol);
+        if (row->header && (i + 1 >= r->tbl_nrow || !r->tbl_rows[i + 1].header))
+            emit_border(r, BOX_ML, BOX_MM, BOX_MR, colw, ncol);
+    }
+    emit_border(r, BOX_BL, BOX_BM, BOX_BR, colw, ncol);
+}
+
+/* Free every buffered cell/row and reset table state. */
+static void table_free(R *r) {
+    for (int i = 0; i < r->tbl_nrow; i++) {
+        TRow *row = &r->tbl_rows[i];
+        for (int c = 0; c < row->ncell; c++) {
+            Cell *cell = &row->cells[c];
+            for (size_t k = 0; k < cell->nrun; k++) { free(cell->runs[k].text); free(cell->runs[k].link); }
+            free(cell->runs);
+        }
+    }
+    free(r->tbl_rows);
+    r->tbl_rows = NULL;
+    r->tbl_nrow = r->tbl_rowcap = r->tbl_ncol = r->tbl_col = 0;
+    r->in_table = r->in_cell = r->tbl_header = 0;
+}
+
 /* ---- md4c callbacks ------------------------------------------------------- */
 /* md4c invokes enter/leave_block, enter/leave_span, and text in document order;
  * each one mutates the renderer state R and emits runs/lines. */
@@ -332,10 +485,33 @@ static int cb_enter_block(MD_BLOCKTYPE type, void *detail, void *ud) {
             r->code_lang = (d && d->lang.text) ? hl_lang(d->lang.text, d->lang.size) : -1;
             break;
         }
-        case MD_BLOCK_TH:
-        case MD_BLOCK_TD:
-            style_push(r); r->cur.bold = 1;
+        case MD_BLOCK_TABLE: {
+            MD_BLOCK_TABLE_DETAIL *d = detail;
+            flush_word(r);
+            if (r->line_has) line_commit(r);
+            r->in_table = 1; r->tbl_nrow = 0; r->tbl_col = 0;
+            r->tbl_ncol = d ? (int)d->col_count : 0;
+            if (r->tbl_ncol > MAX_COLS) r->tbl_ncol = MAX_COLS;
+            for (int c = 0; c < MAX_COLS; c++) r->tbl_align[c] = MD_ALIGN_DEFAULT;
             break;
+        }
+        case MD_BLOCK_THEAD: r->tbl_header = 1; break;
+        case MD_BLOCK_TBODY: r->tbl_header = 0; break;
+        case MD_BLOCK_TR: {
+            TRow *row = tbl_currow(r);
+            if (row) { memset(row, 0, sizeof *row); row->header = r->tbl_header; }
+            r->tbl_col = 0;
+            break;
+        }
+        case MD_BLOCK_TH:
+        case MD_BLOCK_TD: {
+            MD_BLOCK_TD_DETAIL *d = detail;
+            if (d && r->tbl_col >= 0 && r->tbl_col < MAX_COLS) r->tbl_align[r->tbl_col] = d->align;
+            style_push(r);
+            if (type == MD_BLOCK_TH) r->cur.bold = 1;
+            r->in_cell = 1;
+            break;
+        }
         default: break;
     }
     return 0;
@@ -390,17 +566,22 @@ static int cb_leave_block(MD_BLOCKTYPE type, void *detail, void *ud) {
         }
         case MD_BLOCK_TH:
         case MD_BLOCK_TD:
-            flush_word(r);
             style_pop(r);
-            { Style plain; memset(&plain, 0, sizeof plain);
-              runs_push(&r->line, &r->line_n, &r->line_cap, "  ", 2, plain);
-              r->line_cols += 2; }
+            r->in_cell = 0;
+            if (r->tbl_nrow < r->tbl_rowcap && r->tbl_col < MAX_COLS)
+                r->tbl_rows[r->tbl_nrow].ncell = r->tbl_col + 1;
+            r->tbl_col++;
+            break;
+        case MD_BLOCK_THEAD:
+        case MD_BLOCK_TBODY:
             break;
         case MD_BLOCK_TR:
-            if (r->line_has) line_commit(r);
+            r->tbl_nrow++;
             break;
         case MD_BLOCK_TABLE:
-            line_commit(r);
+            table_emit(r);
+            table_free(r);
+            line_commit(r);            /* blank line after table */
             break;
         default: break;
     }
@@ -454,24 +635,19 @@ static int cb_text(MD_TEXTTYPE type, const MD_CHAR *text, MD_SIZE size, void *ud
     R *r = ud;
     switch (type) {
         case MD_TEXT_CODE:
-            if (r->in_code) {
-                code_buf_append(r, text, size);
-            } else {
-                li_marker(r);
-                word_run(r, text, size, r->cur);
-            }
+            if (r->in_code)      code_buf_append(r, text, size);
+            else if (r->in_cell) cell_push(r, text, size, r->cur);
+            else { li_marker(r); word_run(r, text, size, r->cur); }
             break;
         case MD_TEXT_NORMAL:
         case MD_TEXT_ENTITY:
-            li_marker(r);
-            feed_text(r, text, size);
+            if (r->in_cell) cell_push(r, text, size, r->cur);
+            else { li_marker(r); feed_text(r, text, size); }
             break;
         case MD_TEXT_BR:
-            flush_word(r);
-            if (r->line_has) line_commit(r);
-            break;
         case MD_TEXT_SOFTBR:
-            flush_word(r);
+            if (r->in_cell) cell_push(r, " ", 1, r->cur);   /* cells don't wrap */
+            else { flush_word(r); if (type == MD_TEXT_BR && r->line_has) line_commit(r); }
             break;
         case MD_TEXT_NULLCHAR:
             word_run(r, "\xef\xbf\xbd", 3, r->cur);  /* U+FFFD */
@@ -519,6 +695,7 @@ Doc *render_doc(const char *src, size_t len, int width, int dark) {
     free(r.line);
     free(r.code_buf);
     free(r.cur_link);
+    table_free(&r);            /* no-op unless a table was left unfinished */
 
     if (rc != 0) { doc_free(doc); return NULL; }
     return doc;

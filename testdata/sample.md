@@ -25,7 +25,7 @@ your terminal happens to be right now, reflowing live as you resize the window.
 3. ordered three
 
 - [x] task lists render too
-- [ ] this one is unchecked
+- [] this one is unchecked
 
 ## Code
 
