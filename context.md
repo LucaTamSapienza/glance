@@ -99,9 +99,9 @@ ASan regression test); an empty-document **yank** NULL-deref and an empty-line
 builders. Graph edges now grow geometrically. See STATUS.md "Robustness &
 security" for the residual notes.
 
-Branch `master`, pushed to `git@github.com:LucaTamSapienza/glance.git` (the
-default branch is `master`; there is no `main`). Backup branches retained:
-`c-rewrite` (Go-parity snapshot), `c-agent-features`, `feat-graph-view`.
+Default branch `main`, pushed to `git@github.com:LucaTamSapienza/glance.git`
+(renamed from `master`). Backup branches retained: `c-rewrite` (Go-parity
+snapshot), `c-agent-features`, `feat-graph-view`.
 
 ### Feature parity — done
 
