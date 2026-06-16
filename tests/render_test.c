@@ -136,6 +136,20 @@ int main(void) {
     expect(srcline_of(d, "func main") == 11,"code line maps to its source line");
     doc_free(d);
 
+    /* Heading background bar: H1/H2 lines get a full-width fill; H3+ do not. */
+    const char *hmd = "# One\n\n## Two\n\n### Three\n";
+    Doc *hd = render_doc(hmd, strlen(hmd), 60, 1);
+    int h1 = -1, h2 = -1, h3 = -1;
+    for (size_t i = 0; i < hd->nline; i++) {
+        if (hd->lines[i].heading == 1) h1 = (int)i;
+        if (hd->lines[i].heading == 2) h2 = (int)i;
+        if (hd->lines[i].heading == 3) h3 = (int)i;
+    }
+    expect(h1 >= 0 && hd->lines[h1].fill == 1, "H1 line gets a background bar");
+    expect(h2 >= 0 && hd->lines[h2].fill == 1, "H2 line gets a background bar");
+    expect(h3 >= 0 && hd->lines[h3].fill == 0, "H3 line has no background bar");
+    doc_free(hd);
+
     /* Exactness the old content-matching couldn't guarantee: a first word that
      * repeats far apart must map to its OWN source line (offset-based), and a
      * soft-wrapped paragraph's lines share the first source line. */

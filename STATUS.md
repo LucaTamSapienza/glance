@@ -77,6 +77,8 @@ Full parity with the original Go app, plus the vault/agent features:
 - **Syntax highlighting** in fenced code blocks, per language (`highlight.c`):
   C/C++, Go, Python, JS/TS, Rust, bash, YAML, JSON — keywords, strings, numbers,
   comments, function calls, shell `$vars`, and YAML/JSON keys.
+- **Headings** are coloured per level; `#`/`##` (title/subtitle) also get a
+  full-width background bar tinted to their hue.
 - **Tables** are bordered and column-aligned, honouring the `:---:` markers
   (left/center/right); the table is buffered, then emitted once widths are known.
 - **Inline images:** drawn in the reader via notcurses on a plane sized to the

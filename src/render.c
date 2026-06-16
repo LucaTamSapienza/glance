@@ -38,6 +38,12 @@ static RGB heading_fg(int dark, int level) {
         default: return rgb(96, 96, 96);
     }
 }
+/* Background bar behind a top-level heading (level 1/2), tinted toward the
+ * heading's own hue but muted so the bright foreground still reads on top. */
+static RGB heading_bg(int dark, int level) {
+    if (dark) return level == 1 ? rgb(64, 36, 64) : rgb(28, 50, 66);
+    return level == 1 ? rgb(246, 226, 246) : rgb(222, 238, 248);
+}
 static RGB code_bg(int dark)  { return dark ? rgb(48, 48, 48)   : rgb(228, 228, 228); }
 static RGB code_fg(int dark)  { return dark ? rgb(208, 208, 208): rgb(135, 0, 0); }
 static RGB link_fg(int dark)  { return dark ? rgb(95, 175, 255) : rgb(0, 95, 215); }
@@ -547,6 +553,10 @@ static int cb_enter_block(MD_BLOCKTYPE type, void *detail, void *ud) {
             style_push(r);
             r->cur.bold = 1; r->cur.has_fg = 1;
             r->cur.fg = heading_fg(r->dark, r->heading);
+            if (r->heading <= 2) {                  /* title/subtitle: coloured bar */
+                r->cur.has_bg = 1;
+                r->cur.bg = heading_bg(r->dark, r->heading);
+            }
             break;
         }
         case MD_BLOCK_P: break;
@@ -630,9 +640,19 @@ static int cb_leave_block(MD_BLOCKTYPE type, void *detail, void *ud) {
             flush_word(r);
             style_pop(r);
             if (r->line_has) line_commit(r);
-            /* tag the heading's first line so the TOC can find it */
-            if (r->heading_start < (int)r->doc->nline)
+            /* tag the heading's first line so the TOC can find it; for a title/
+             * subtitle, fill every heading line to the edge so the coloured bar
+             * spans the full width behind the (already bg-styled) text. */
+            if (r->heading_start < (int)r->doc->nline) {
                 r->doc->lines[r->heading_start].heading = r->heading;
+                if (r->heading <= 2) {
+                    RGB hbg = heading_bg(r->dark, r->heading);
+                    for (int li = r->heading_start; li < (int)r->doc->nline; li++) {
+                        r->doc->lines[li].fill = 1;
+                        r->doc->lines[li].fill_bg = hbg;
+                    }
+                }
+            }
             line_commit(r);            /* blank line after heading */
             r->heading = 0;
             break;
