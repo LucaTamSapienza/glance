@@ -350,8 +350,22 @@ static void draw_doc_line(struct ncplane *p, const Line *L, int row, int x0, int
     int x = 0;
     for (size_t j = 0; j < L->nrun && x < width; j++) {
         apply_style(p, &L->runs[j].st);
-        ncplane_putstr_yx(p, row, x0 + x, L->runs[j].text);
-        x += u8_width(L->runs[j].text, L->runs[j].len);
+        int rw = u8_width(L->runs[j].text, L->runs[j].len);
+        if (x + rw <= width) {                         /* whole run fits */
+            ncplane_putstr_yx(p, row, x0 + x, L->runs[j].text);
+            x += rw;
+        } else {                                       /* clip to the pane edge */
+            int remaining = width - x;
+            const char *t = L->runs[j].text;
+            size_t b = 0; int c = 0;
+            while (t[b] && c < remaining) {
+                int rl = u8_runelen((unsigned char)t[b]);
+                c += u8_width(t + b, (size_t)rl);
+                b += (size_t)rl;
+            }
+            ncplane_putnstr_yx(p, row, x0 + x, b, t);  /* at most b bytes */
+            x = width;
+        }
     }
 }
 
@@ -668,11 +682,14 @@ static void draw_split(App *a) {
     ncplane_set_bg_default(p);
     for (int row = 0; row < body; row++) ncplane_putstr_yx(p, row, leftw, "\xe2\x94\x82");
 
-    /* preview, centred on the line that matches the editor cursor */
+    /* Preview aligned to the editor's scroll: put the line that matches the
+     * editor cursor on the same screen row as the cursor, so the two panes scroll
+     * in lockstep (the preview moves only when the editor pane does, not on every
+     * keystroke) instead of re-centring constantly. */
     if (a->preview) {
         int focus = src_doc_line(a->preview, e->cy);
         if (focus < 0) focus = map_line(e->cy, (int)e->n, (int)a->preview->nline);
-        int ptop = focus - body / 2;
+        int ptop = focus - (e->cy - e->top);
         if (ptop > (int)a->preview->nline - body) ptop = (int)a->preview->nline - body;
         if (ptop < 0) ptop = 0;
         for (int row = 0; row < body; row++) {
