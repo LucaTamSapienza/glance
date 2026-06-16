@@ -1292,11 +1292,17 @@ static void paste_image(App *a) {
     }
 }
 
+/* True for Ctrl-V, whether notcurses reports it with a modifier or (in legacy
+ * keyboard mode, which glance uses) as the raw control code 0x16. */
+static int is_ctrl_v(uint32_t id, const ncinput *ni) {
+    return id == 0x16 || (id == 'v' && ncinput_ctrl_p(ni));
+}
+
 /* Insert-mode keys: Esc leaves, Ctrl-S saves, Ctrl-V pastes an image, else edits. */
 static int handle_insert(App *a, uint32_t id, const ncinput *ni) {
     if (id == NCKEY_ESC) leave_editor(a);
     else if (id == 's' && ncinput_ctrl_p(ni)) { sync_source(a); save_file(a); }
-    else if (id == 'v' && ncinput_ctrl_p(ni)) paste_image(a);
+    else if (is_ctrl_v(id, ni)) paste_image(a);
     else apply_edit_key(&a->ed, id, ni);
     return 1;
 }
@@ -1305,7 +1311,7 @@ static int handle_insert(App *a, uint32_t id, const ncinput *ni) {
 static int handle_split(App *a, uint32_t id, const ncinput *ni) {
     if (id == NCKEY_ESC) leave_editor(a);
     else if (id == 's' && ncinput_ctrl_p(ni)) { sync_source(a); save_file(a); }
-    else if (id == 'v' && ncinput_ctrl_p(ni)) { paste_image(a); render_preview(a); }
+    else if (is_ctrl_v(id, ni)) { paste_image(a); render_preview(a); }
     else { apply_edit_key(&a->ed, id, ni); render_preview(a); }
     return 1;
 }
