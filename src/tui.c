@@ -84,6 +84,15 @@ typedef struct {
 
 static int content_rows(App *a) { return a->rows - 1; }   /* last row = status */
 
+/* True if the event is Ctrl-<c> (c a lowercase letter). Terminals encode such a
+ * chord in three ways and we accept all: the raw control code (Ctrl-V = 0x16),
+ * or the letter plus a ctrl modifier — and the letter may arrive lower- or
+ * UPPER-case (some terminals, e.g. the user's, report Ctrl-V as 'V'+ctrl). */
+static int ctrl_is(uint32_t id, const ncinput *ni, char c) {
+    uint32_t lower = (uint32_t)c, upper = lower - 32, raw = lower - 'a' + 1;
+    return id == raw || ((id == lower || id == upper) && ncinput_ctrl_p(ni));
+}
+
 static int map_line(int from, int nfrom, int nto);        /* defined below */
 static const char *doc_dir(App *a, char *buf, size_t cap);/* defined below */
 static int doc_src_line(const Doc *d, int line);          /* defined below */
@@ -940,7 +949,7 @@ static int handle_toc(App *a, uint32_t id, const ncinput *ni) {
         reader_clamp_cursor(a);
         a->tocmode = 0;
     } else if (id == 't' || id == NCKEY_ESC || id == 'q' ||
-               (id == 'c' && ncinput_ctrl_p(ni))) {
+               (ctrl_is(id, ni, 'c'))) {
         a->tocmode = 0;
     }
     return 1;
@@ -986,7 +995,7 @@ static int handle_visual(App *a, uint32_t id, const ncinput *ni) {
     else if (id == NCKEY_PGUP)                a->rcur_line -= body;
     else if (id == 'y')                       yank_selection(a);
     else if (id == 'v' || id == 'V' || id == NCKEY_ESC ||
-             (id == 'c' && ncinput_ctrl_p(ni))) a->visualmode = 0;
+             (ctrl_is(id, ni, 'c'))) a->visualmode = 0;
     reader_clamp_cursor(a);
     return 1;
 }
@@ -1169,8 +1178,8 @@ static int handle_graph(App *a, uint32_t id, const ncinput *ni) {
     } else if (total && id == ' ') {                 /* re-centre on the selection */
         a->graph_focus = a->graph_sel < nb ? back[a->graph_sel] : out[a->graph_sel - nb];
         a->graph_sel = 0;
-    } else if (id == NCKEY_ESC || id == 'q' || id == 0x07 ||
-               (id == 'g' && ncinput_ctrl_p(ni)) || (id == 'c' && ncinput_ctrl_p(ni))) {
+    } else if (id == NCKEY_ESC || id == 'q' ||
+               ctrl_is(id, ni, 'g') || ctrl_is(id, ni, 'c')) {
         a->graphmode = 0;
     }
     return 1;
@@ -1185,7 +1194,7 @@ static int handle_backlinks(App *a, uint32_t id, const ncinput *ni) {
         if (a->nbl && !a->dirty) navigate_to(a, a->bl[a->bl_sel]);
         else if (a->dirty) snprintf(a->msg, sizeof a->msg, "unsaved changes — :w first");
     } else if (id == 'b' || id == NCKEY_ESC || id == 'q' ||
-               (id == 'c' && ncinput_ctrl_p(ni))) {
+               (ctrl_is(id, ni, 'c'))) {
         a->blmode = 0;
     }
     return 1;
@@ -1194,14 +1203,14 @@ static int handle_backlinks(App *a, uint32_t id, const ncinput *ni) {
 /* Reader-mode keys: move the block cursor, search, enter Insert/command, quit. */
 static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     int body = content_rows(a);
-    if (id == 'c' && ncinput_ctrl_p(ni))         return 0;   /* escape hatch */
+    if (ctrl_is(id, ni, 'c'))         return 0;   /* escape hatch */
     else if (id == ':')                          { a->cmdmode = 1; a->cmdbuf[0] = '\0'; a->cmdlen = 0; }
     else if (id == '/')                          { a->searchmode = 1; a->searchbuf[0] = '\0'; a->searchlen = 0; }
     else if (id == 't')                          open_toc(a);
     else if (id == 'b')                          open_backlinks(a);
-    else if ((id == 'g' && ncinput_ctrl_p(ni)) || id == 0x07) open_graph(a);  /* graph (Ctrl-G or :graph) */
+    else if (ctrl_is(id, ni, 'g')) open_graph(a);   /* graph explorer */
     else if (id == '?')                          a->helpmode = 1;
-    else if (id == 's' && ncinput_ctrl_p(ni))    save_file(a);
+    else if (ctrl_is(id, ni, 's'))    save_file(a);
     else if (id == 'n' && a->hits.n)             focus_hit(a, a->cur_hit + 1);
     else if (id == 'N' && a->hits.n)             focus_hit(a, a->cur_hit - 1);
     else if (id == NCKEY_ESC)                    clear_search(a);
@@ -1213,15 +1222,15 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
         if (u) open_link_target(a, u);
         else snprintf(a->msg, sizeof a->msg, "no link under cursor");
     }
-    else if (id == '-' || (id == 'o' && ncinput_ctrl_p(ni)))  go_back(a);
+    else if (id == '-' || (ctrl_is(id, ni, 'o')))  go_back(a);
     else if (id == 'j' || id == NCKEY_DOWN)      { a->rcur_line++; a->rcur_col = a->rcur_goal; }
     else if (id == 'k' || id == NCKEY_UP)        { a->rcur_line--; a->rcur_col = a->rcur_goal; }
     else if (id == 'h' || id == NCKEY_LEFT)      { a->rcur_col--; a->rcur_goal = a->rcur_col; }
     else if (id == 'l' || id == NCKEY_RIGHT)     { a->rcur_col++; a->rcur_goal = a->rcur_col; }
-    else if (id == NCKEY_PGDOWN || (id == 'f' && ncinput_ctrl_p(ni))) { a->rcur_line += body; a->rcur_col = a->rcur_goal; }
-    else if (id == NCKEY_PGUP   || (id == 'b' && ncinput_ctrl_p(ni))) { a->rcur_line -= body; a->rcur_col = a->rcur_goal; }
-    else if (id == 'd' && ncinput_ctrl_p(ni))    { a->rcur_line += body / 2; a->rcur_col = a->rcur_goal; }
-    else if (id == 'u' && ncinput_ctrl_p(ni))    { a->rcur_line -= body / 2; a->rcur_col = a->rcur_goal; }
+    else if (id == NCKEY_PGDOWN || (ctrl_is(id, ni, 'f'))) { a->rcur_line += body; a->rcur_col = a->rcur_goal; }
+    else if (id == NCKEY_PGUP   || (ctrl_is(id, ni, 'b'))) { a->rcur_line -= body; a->rcur_col = a->rcur_goal; }
+    else if (ctrl_is(id, ni, 'd'))    { a->rcur_line += body / 2; a->rcur_col = a->rcur_goal; }
+    else if (ctrl_is(id, ni, 'u'))    { a->rcur_line -= body / 2; a->rcur_col = a->rcur_goal; }
     else if (id == 'g' || id == NCKEY_HOME)      a->rcur_line = 0;
     else if (id == 'G' || id == NCKEY_END)       a->rcur_line = (int)a->doc->nline - 1;
     reader_clamp_cursor(a);
@@ -1292,17 +1301,11 @@ static void paste_image(App *a) {
     }
 }
 
-/* True for Ctrl-V, whether notcurses reports it with a modifier or (in legacy
- * keyboard mode, which glance uses) as the raw control code 0x16. */
-static int is_ctrl_v(uint32_t id, const ncinput *ni) {
-    return id == 0x16 || (id == 'v' && ncinput_ctrl_p(ni));
-}
-
 /* Insert-mode keys: Esc leaves, Ctrl-S saves, Ctrl-V pastes an image, else edits. */
 static int handle_insert(App *a, uint32_t id, const ncinput *ni) {
     if (id == NCKEY_ESC) leave_editor(a);
-    else if (id == 's' && ncinput_ctrl_p(ni)) { sync_source(a); save_file(a); }
-    else if (is_ctrl_v(id, ni)) paste_image(a);
+    else if (ctrl_is(id, ni, 's')) { sync_source(a); save_file(a); }
+    else if (ctrl_is(id, ni, 'v')) paste_image(a);
     else apply_edit_key(&a->ed, id, ni);
     return 1;
 }
@@ -1310,8 +1313,8 @@ static int handle_insert(App *a, uint32_t id, const ncinput *ni) {
 /* Split-mode keys: same editing as Insert, plus a live preview refresh. */
 static int handle_split(App *a, uint32_t id, const ncinput *ni) {
     if (id == NCKEY_ESC) leave_editor(a);
-    else if (id == 's' && ncinput_ctrl_p(ni)) { sync_source(a); save_file(a); }
-    else if (is_ctrl_v(id, ni)) { paste_image(a); render_preview(a); }
+    else if (ctrl_is(id, ni, 's')) { sync_source(a); save_file(a); }
+    else if (ctrl_is(id, ni, 'v')) { paste_image(a); render_preview(a); }
     else { apply_edit_key(&a->ed, id, ni); render_preview(a); }
     return 1;
 }
@@ -1341,7 +1344,7 @@ int tui_keyprobe(void) {
         if (ni.evtype == NCTYPE_RELEASE) continue;
         /* Esc, or Ctrl+C delivered as a key (raw mode swallows the signal),
          * quits through the normal clean path — no flow-control traps. */
-        if (id == NCKEY_ESC || (id == 'c' && ncinput_ctrl_p(&ni))) break;
+        if (id == NCKEY_ESC || ctrl_is(id, &ni, 'c')) break;
 
         char hex[64] = {0};
         int hp = 0;
