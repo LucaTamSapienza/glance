@@ -17,6 +17,7 @@
 #include "clipboard.h"
 #include "completion.h"
 #include "vault.h"
+#include "graph.h"
 #include "util.h"
 
 #include <notcurses/notcurses.h>
@@ -70,6 +71,11 @@ typedef struct {
     int    blmode;               /* backlinks panel open */
     char  *bl[256];              /* file names that link here (owned) */
     int    nbl, bl_sel;
+    int    graphmode;            /* interactive graph explorer open */
+    Graph  graph;                /* the vault link graph */
+    char   graph_root[4096];     /* vault root the graph was built from */
+    int    graph_focus;          /* node at the centre */
+    int    graph_sel;            /* selected neighbour (backlinks then outbound) */
 } App;
 
 #define TOC_W 30                 /* table-of-contents panel width */
@@ -334,6 +340,86 @@ static void draw_backlinks(App *a) {
     ncplane_set_bg_default(p);
 }
 
+/* The base name of a node's relative path. */
+static const char *node_base(const char *rel) {
+    const char *s = strrchr(rel, '/');
+    return s ? s + 1 : rel;
+}
+
+/* Collect the deduplicated backlink and outbound neighbours of the focus node. */
+static void graph_neighbors(App *a, int *back, int *nb, int *out, int *no) {
+    *nb = *no = 0;
+    int f = a->graph_focus;
+    for (int e = 0; e < a->graph.ne; e++) {
+        GEdge *ed = &a->graph.edge[e];
+        if (ed->from == f && ed->to != f) {
+            int dup = 0; for (int i = 0; i < *no; i++) if (out[i] == ed->to) dup = 1;
+            if (!dup && *no < 256) out[(*no)++] = ed->to;
+        }
+        if (ed->to == f && ed->from != f) {
+            int dup = 0; for (int i = 0; i < *nb; i++) if (back[i] == ed->from) dup = 1;
+            if (!dup && *nb < 256) back[(*nb)++] = ed->from;
+        }
+    }
+}
+
+/* Draw one neighbour name, highlighting it when selected. */
+static void graph_name(App *a, int y, int x, const char *name, int selected) {
+    struct ncplane *p = a->plane;
+    if (selected) { ncplane_set_styles(p, NCSTYLE_BOLD); ncplane_set_fg_rgb8(p, 0, 0, 0); ncplane_set_bg_rgb8(p, 255, 200, 90); }
+    else { ncplane_set_styles(p, NCSTYLE_NONE); ncplane_set_fg_rgb8(p, 200, 200, 200); ncplane_set_bg_default(p); }
+    ncplane_putstr_yx(p, y, x, name);
+}
+
+/* The interactive graph explorer: the focused note in the centre, the notes
+ * that link to it on the left, the notes it links to on the right. */
+static void draw_graph(App *a) {
+    struct ncplane *p = a->plane;
+    ncplane_set_styles(p, NCSTYLE_NONE);
+    ncplane_set_fg_default(p); ncplane_set_bg_default(p);
+    ncplane_erase(p);
+
+    int back[256], out[256], nb, no;
+    graph_neighbors(a, back, &nb, out, &no);
+
+    int midy = a->rows / 2;
+    int leftx = 2, rightx = a->cols * 2 / 3;
+    int centerx = a->cols / 3 + 2;
+
+    /* backlinks down the left, each with an arrow pointing at the focus */
+    for (int i = 0; i < nb; i++) {
+        int y = midy - nb / 2 + i;
+        if (y < 1 || y >= a->rows - 1) continue;
+        graph_name(a, y, leftx, node_base(a->graph.node[back[i]]), a->graph_sel == i);
+        ncplane_set_styles(p, NCSTYLE_NONE);
+        ncplane_set_fg_rgb8(p, 110, 110, 110); ncplane_set_bg_default(p);
+        ncplane_putstr_yx(p, y, centerx - 4, "──→");
+    }
+    /* outbound on the right, the focus pointing at each */
+    for (int i = 0; i < no; i++) {
+        int y = midy - no / 2 + i;
+        if (y < 1 || y >= a->rows - 1) continue;
+        ncplane_set_styles(p, NCSTYLE_NONE);
+        ncplane_set_fg_rgb8(p, 110, 110, 110); ncplane_set_bg_default(p);
+        ncplane_putstr_yx(p, y, centerx + 14, "──→");
+        graph_name(a, y, rightx, node_base(a->graph.node[out[i]]), a->graph_sel == nb + i);
+    }
+    /* the focus node, boxed in the centre */
+    ncplane_set_styles(p, NCSTYLE_BOLD);
+    ncplane_set_fg_rgb8(p, 20, 20, 20);
+    ncplane_set_bg_rgb8(p, 120, 200, 255);
+    char box[64];
+    snprintf(box, sizeof box, " %s ", node_base(a->graph.node[a->graph_focus]));
+    ncplane_putstr_yx(p, midy, centerx, box);
+
+    char title[256];
+    snprintf(title, sizeof title,
+             " GRAPH  %d in / %d out   —  j/k select   Enter open   Space recenter   Esc close",
+             nb, no);
+    status_bar(a, title);
+    notcurses_render(a->nc);
+}
+
 /* Render the visible Doc lines, overlay the block cursor, and the status. */
 static void draw_reader(App *a) {
     notcurses_cursor_disable(a->nc);
@@ -568,6 +654,7 @@ static void draw_help(App *a) {
         "    Enter               follow link / [[wikilink]] under cursor",
         "    -  / Ctrl-O         back to the previous file",
         "    b                   backlinks (files that link here)",
+        "    Ctrl-G              graph explorer (links in / out)",
         "",
         "  Insert / Split",
         "    Esc                 back to reader",
@@ -593,7 +680,8 @@ static void draw_help(App *a) {
 
 /* Draw whichever mode is active, plus the help overlay when open. */
 static void redraw(App *a) {
-    if (a->mode == MODE_READER)     draw_reader(a);
+    if (a->graphmode)               draw_graph(a);
+    else if (a->mode == MODE_READER)     draw_reader(a);
     else if (a->mode == MODE_SPLIT) draw_split(a);
     else                            draw_editor(a);
     if (a->helpmode) { draw_help(a); notcurses_render(a->nc); }
@@ -938,6 +1026,44 @@ static void open_backlinks(App *a) {
     a->blmode = 1;
 }
 
+/* Build the vault graph and open the explorer centred on the current file. */
+static void open_graph(App *a) {
+    if (!a->path) { snprintf(a->msg, sizeof a->msg, "no vault (reading stdin)"); return; }
+    vault_root(a->path, a->graph_root, sizeof a->graph_root);
+    graph_free(&a->graph);
+    graph_build(a->graph_root, &a->graph);
+    a->graph_focus = graph_find(&a->graph, a->path);
+    if (a->graph_focus < 0) { snprintf(a->msg, sizeof a->msg, "current file is not in the vault"); return; }
+    a->graph_sel = 0;
+    a->graphmode = 1;
+}
+
+/* Graph-explorer keys: j/k select a neighbour, Enter opens it, Space re-centres
+ * the graph on it, Esc/q/Ctrl-G close. */
+static int handle_graph(App *a, uint32_t id, const ncinput *ni) {
+    int back[256], out[256], nb, no;
+    graph_neighbors(a, back, &nb, out, &no);
+    int total = nb + no;
+
+    if (id == 'j' || id == NCKEY_DOWN)      { if (a->graph_sel + 1 < total) a->graph_sel++; }
+    else if (id == 'k' || id == NCKEY_UP)   { if (a->graph_sel > 0) a->graph_sel--; }
+    else if (total && (id == NCKEY_ENTER || id == '\r' || id == '\n')) {
+        int node = a->graph_sel < nb ? back[a->graph_sel] : out[a->graph_sel - nb];
+        char full[8192];
+        snprintf(full, sizeof full, "%s/%s", a->graph_root, a->graph.node[node]);
+        a->graphmode = 0;
+        if (!a->dirty) navigate_to(a, full);
+        else snprintf(a->msg, sizeof a->msg, "unsaved changes — :w first");
+    } else if (total && id == ' ') {                 /* re-centre on the selection */
+        a->graph_focus = a->graph_sel < nb ? back[a->graph_sel] : out[a->graph_sel - nb];
+        a->graph_sel = 0;
+    } else if (id == NCKEY_ESC || id == 'q' || (id == 'g' && ncinput_ctrl_p(ni)) ||
+               (id == 'c' && ncinput_ctrl_p(ni))) {
+        a->graphmode = 0;
+    }
+    return 1;
+}
+
 /* Backlinks-panel keys: move the selection, Enter opens, b/Esc/q close. */
 static int handle_backlinks(App *a, uint32_t id, const ncinput *ni) {
     if (id == 'j' || id == NCKEY_DOWN)      { if (a->bl_sel + 1 < a->nbl) a->bl_sel++; }
@@ -961,6 +1087,7 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     else if (id == '/')                          { a->searchmode = 1; a->searchbuf[0] = '\0'; a->searchlen = 0; }
     else if (id == 't')                          open_toc(a);
     else if (id == 'b')                          open_backlinks(a);
+    else if (id == 'g' && ncinput_ctrl_p(ni))    open_graph(a);   /* graph explorer */
     else if (id == '?')                          a->helpmode = 1;
     else if (id == 's' && ncinput_ctrl_p(ni))    save_file(a);
     else if (id == 'n' && a->hits.n)             focus_hit(a, a->cur_hit + 1);
@@ -1107,6 +1234,7 @@ static int dispatch_key(App *a, uint32_t id, ncinput *ni) {
     if (a->searchmode) return handle_search(a, id, ni);
     if (a->tocmode)    return handle_toc(a, id, ni);
     if (a->blmode)     return handle_backlinks(a, id, ni);
+    if (a->graphmode)  return handle_graph(a, id, ni);
     if (a->visualmode) return handle_visual(a, id, ni);
     if (a->mode == MODE_READER) return handle_reader(a, id, ni);
     if (a->mode == MODE_SPLIT)  return handle_split(a, id, ni);
@@ -1211,6 +1339,7 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
     shutdown_tui();
     for (int i = 0; i < a.nbl; i++) free(a.bl[i]);
     for (int i = 0; i < a.nback; i++) free(a.back[i]);
+    graph_free(&a.graph);
     free(a.path);
     free(a.src);
     return 0;

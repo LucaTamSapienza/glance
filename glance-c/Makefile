@@ -13,7 +13,7 @@ SRC := src
 
 # renderer + shared helpers, linked into both binaries
 CORE := $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/preprocess.c $(SRC)/search.c \
-        $(SRC)/toc.c $(SRC)/fs_save.c $(SRC)/vault.c $(SRC)/util.c
+        $(SRC)/toc.c $(SRC)/fs_save.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/util.c
 HDRS := $(wildcard $(SRC)/*.h)   # rebuild on any header change
 
 .PHONY: all test clean
@@ -43,8 +43,10 @@ test:
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-vault tests/vault_test.c \
 	  $(SRC)/vault.c $(shell pkg-config --libs md4c) && ./build-t-vault; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-agent tests/agent_test.c \
-	  $(SRC)/agent.c $(SRC)/render.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/util.c \
+	  $(SRC)/agent.c $(SRC)/render.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/util.c \
 	  $(shell pkg-config --libs md4c) && ./build-t-agent; \
+	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-graph tests/graph_test.c \
+	  $(SRC)/graph.c $(SRC)/vault.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-graph; \
 	rm -rf build-t-*
 
 clean:

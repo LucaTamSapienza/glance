@@ -3,6 +3,7 @@
 #include "render.h"
 #include "toc.h"
 #include "vault.h"
+#include "graph.h"
 #include "util.h"
 
 #include <stdio.h>
@@ -55,51 +56,23 @@ void agent_links(const char *src, size_t len) {
 
 /* ---- vault graph ---------------------------------------------------------- */
 
-/* Index of the vault file whose stem matches `target`, or -1. */
-static int node_for(const char *target, VFiles *f) {
-    char want[256]; vault_stem(target, want, sizeof want);
-    for (int i = 0; i < f->n; i++) {
-        char have[256]; vault_stem(f->v[i], have, sizeof have);
-        if (strcasecmp(have, want) == 0) return i;
-    }
-    return -1;
-}
-
 int agent_graph(const char *dir) {
     DIR *probe = opendir(dir);
     if (!probe) return 1;                          /* unreadable root */
     closedir(probe);
 
-    VFiles f = {0};
-    vault_scan(dir, &f);                           /* recursive: all *.md under dir */
+    Graph g;
+    graph_build(dir, &g);                          /* shared with the TUI graph view */
 
     printf("{\"nodes\":[");
-    for (int i = 0; i < f.n; i++) { printf("%s", i ? "," : ""); json_str(f.v[i]); }
+    for (int i = 0; i < g.nn; i++) { printf("%s", i ? "," : ""); json_str(g.node[i]); }
     printf("],\"edges\":[");
-
-    int edges = 0;
-    for (int i = 0; i < f.n; i++) {
-        char path[8192];
-        snprintf(path, sizeof path, "%s/%s", dir, f.v[i]);
-        FILE *fp = fopen(path, "rb");
-        if (!fp) continue;
-        size_t len; char *src = read_file(fp, &len);
-        fclose(fp);
-        if (!src) continue;
-
-        VLinks l = {0};
-        vault_links(src, len, &l);
-        for (int k = 0; k < l.n; k++) {
-            int j = node_for(l.v[k].target, &f);
-            if (j < 0) continue;                       /* external / unresolved */
-            printf("%s{\"from\":", edges++ ? "," : "");
-            json_str(f.v[i]); printf(",\"to\":");
-            json_str(f.v[j]); printf(",\"wiki\":%s}", l.v[k].wiki ? "true" : "false");
-        }
-        vlinks_free(&l);
-        free(src);
+    for (int e = 0; e < g.ne; e++) {
+        printf("%s{\"from\":", e ? "," : "");
+        json_str(g.node[g.edge[e].from]); printf(",\"to\":");
+        json_str(g.node[g.edge[e].to]); printf(",\"wiki\":%s}", g.edge[e].wiki ? "true" : "false");
     }
     puts("]}");
-    vfiles_free(&f);
+    graph_free(&g);
     return 0;
 }
