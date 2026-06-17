@@ -163,7 +163,11 @@ int main(int argc, char **argv) {
     if (argc > 5 && !strcmp(argv[1], "--edit")) {
         /* glance --edit FILE OP "Heading" "text"  (OP = append|insert|replace) */
         const char *file = argv[2], *opname = argv[3], *anchor = argv[4], *text = argv[5];
-        int op = !strcmp(opname, "insert") ? 1 : !strcmp(opname, "replace") ? 2 : 0;
+        int op;
+        if (!strcmp(opname, "append")) op = 0;
+        else if (!strcmp(opname, "insert")) op = 1;
+        else if (!strcmp(opname, "replace")) op = 2;
+        else { fprintf(stderr, "glance --edit: OP must be append, insert, or replace\n"); return 2; }
         return agent_edit(file, anchor, op, text);
     }
     if (argc > 4 && !strcmp(argv[1], "--set-frontmatter")) {

@@ -4,6 +4,7 @@
 #include "agent.h"
 #include "util.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,17 +16,34 @@
 
 /* ---- small JSON output helpers (writing is done by hand) ------------------ */
 
-/* Emit `s` as a JSON string literal (with surrounding quotes) to stdout. */
+/* Emit `s` as a JSON string literal (with surrounding quotes) to stdout. Valid
+ * UTF-8 multibyte sequences pass through; any invalid byte (captured tool output
+ * can come from arbitrary, possibly non-UTF-8 vault files) becomes U+FFFD so the
+ * emitted JSON stays well-formed. */
 static void emit_jstr(const char *s) {
+    static const unsigned min_cp[5] = { 0, 0, 0x80, 0x800, 0x10000 };
     putchar('"');
-    for (; *s; s++) {
-        unsigned char c = (unsigned char)*s;
-        if (c == '"' || c == '\\') { putchar('\\'); putchar((char)c); }
-        else if (c == '\n') fputs("\\n", stdout);
-        else if (c == '\r') fputs("\\r", stdout);
-        else if (c == '\t') fputs("\\t", stdout);
-        else if (c < 0x20) printf("\\u%04x", c);
-        else putchar((char)c);
+    const unsigned char *p = (const unsigned char *)s;
+    while (*p) {
+        unsigned char c = *p;
+        if (c == '"' || c == '\\') { putchar('\\'); putchar((char)c); p++; }
+        else if (c == '\n') { fputs("\\n", stdout); p++; }
+        else if (c == '\r') { fputs("\\r", stdout); p++; }
+        else if (c == '\t') { fputs("\\t", stdout); p++; }
+        else if (c < 0x20) { printf("\\u%04x", c); p++; }
+        else if (c < 0x80) { putchar((char)c); p++; }
+        else {
+            int len = (c & 0xE0) == 0xC0 ? 2 : (c & 0xF0) == 0xE0 ? 3 : (c & 0xF8) == 0xF0 ? 4 : 0;
+            unsigned cp = len ? (unsigned)(c & (0x7F >> len)) : 0;
+            int ok = len != 0;
+            for (int i = 1; ok && i < len; i++) {
+                if ((p[i] & 0xC0) != 0x80) ok = 0;
+                else cp = (cp << 6) | (p[i] & 0x3F);
+            }
+            if (ok && (cp < min_cp[len] || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF))) ok = 0;
+            if (ok) { for (int i = 0; i < len; i++) putchar((char)p[i]); p += len; }
+            else { fputs("\xEF\xBF\xBD", stdout); p++; }
+        }
     }
     putchar('"');
 }
@@ -35,8 +53,9 @@ static void emit_id(const Json *id) {
     if (!id) { fputs("null", stdout); return; }
     if (id->type == JSON_NUM) {
         double d = id->num;
-        if (d == (double)(long long)d) printf("%lld", (long long)d);
-        else printf("%g", d);
+        if (!isfinite(d)) { fputs("null", stdout); return; }   /* never emit inf/nan */
+        if (d == (double)(long long)d && d >= -9.2e18 && d <= 9.2e18) printf("%lld", (long long)d);
+        else printf("%.17g", d);
     } else if (id->type == JSON_STR) {
         emit_jstr(id->str);
     } else {
@@ -122,10 +141,12 @@ static char *run_tool(const char *name, const Json *args) {
         else printf("{\"error\":\"cannot read file\"}");
     } else if (!strcmp(name, "vault_edit")) {
         const char *opname = json_str_or(json_get(args, "op"), "append");
-        int op = !strcmp(opname, "insert") ? 1 : !strcmp(opname, "replace") ? 2 : 0;
-        agent_edit(json_str_or(json_get(args, "file"), ""),
-                   json_str_or(json_get(args, "heading"), NULL),
-                   op, json_str_or(json_get(args, "text"), ""));
+        int op = !strcmp(opname, "append") ? 0 : !strcmp(opname, "insert") ? 1
+               : !strcmp(opname, "replace") ? 2 : -1;
+        if (op < 0) printf("{\"ok\":false,\"error\":\"op must be append, insert, or replace\"}");
+        else agent_edit(json_str_or(json_get(args, "file"), ""),
+                        json_str_or(json_get(args, "heading"), NULL),
+                        op, json_str_or(json_get(args, "text"), ""));
     } else if (!strcmp(name, "vault_set_frontmatter")) {
         agent_frontmatter(json_str_or(json_get(args, "file"), ""),
                           json_str_or(json_get(args, "key"), ""),

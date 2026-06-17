@@ -2,11 +2,16 @@
 #include "json.h"
 #include "util.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* Parser cursor over a NUL-terminated buffer. */
-typedef struct { const char *p; } P;
+/* Cap on nesting so a crafted deeply-nested document (e.g. thousands of '[')
+ * cannot overflow the C stack — the MCP server parses untrusted input. */
+#define JSON_MAX_DEPTH 200
+
+/* Parser cursor over a NUL-terminated buffer; `depth` tracks container nesting. */
+typedef struct { const char *p; int depth; } P;
 
 static Json *parse_value(P *s);
 
@@ -19,6 +24,20 @@ static Json *node(JsonType t) {
     Json *j = calloc(1, sizeof *j);
     if (j) j->type = t;
     return j;
+}
+
+/* Read exactly four hex digits at s->p, advancing past them; -1 if not all hex. */
+static long read_hex4(P *s) {
+    long v = 0;
+    for (int i = 0; i < 4; i++) {
+        char h = *s->p++;
+        v <<= 4;
+        if (h >= '0' && h <= '9') v |= h - '0';
+        else if (h >= 'a' && h <= 'f') v |= h - 'a' + 10;
+        else if (h >= 'A' && h <= 'F') v |= h - 'A' + 10;
+        else return -1;
+    }
+    return v;
 }
 
 /* Parse a JSON string body (the opening quote is already consumed) into an owned
@@ -42,16 +61,20 @@ static char *parse_string_raw(P *s) {
             case 'r': out[len++] = '\r'; break;
             case 't': out[len++] = '\t'; break;
             case 'u': {
-                unsigned cp = 0;
-                for (int i = 0; i < 4; i++) {
-                    char h = *s->p++;
-                    cp <<= 4;
-                    if (h >= '0' && h <= '9') cp |= (unsigned)(h - '0');
-                    else if (h >= 'a' && h <= 'f') cp |= (unsigned)(h - 'a' + 10);
-                    else if (h >= 'A' && h <= 'F') cp |= (unsigned)(h - 'A' + 10);
-                    else { free(out); return NULL; }
+                long cp = read_hex4(s);
+                if (cp < 0) { free(out); return NULL; }
+                if (cp >= 0xD800 && cp <= 0xDBFF) {            /* high surrogate */
+                    if (s->p[0] != '\\' || s->p[1] != 'u') { free(out); return NULL; }
+                    s->p += 2;
+                    long lo = read_hex4(s);
+                    if (lo < 0xDC00 || lo > 0xDFFF) { free(out); return NULL; }
+                    cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                } else if (cp >= 0xDC00 && cp <= 0xDFFF) {     /* lone low surrogate */
+                    free(out); return NULL;
+                } else if (cp == 0) {                          /* interior NUL truncates */
+                    free(out); return NULL;
                 }
-                len += (size_t)u8_encode(cp, out + len);   /* up to 4 bytes; cap headroom kept above */
+                len += (size_t)u8_encode((uint32_t)cp, out + len);   /* ≤4 bytes; headroom kept above */
                 break;
             }
             default: free(out); return NULL;
@@ -73,11 +96,31 @@ static Json *parse_string(P *s) {
     return j;
 }
 
+/* Length of a valid JSON number at `p` (RFC 8259 grammar), or 0 if none. This
+ * rejects what strtod would otherwise accept — inf/nan, a leading '+', leading
+ * zeros, a bare '.5' or '1.', hex floats. */
+static int json_number_len(const char *p) {
+    const char *s = p;
+    if (*p == '-') p++;
+    if (*p == '0') p++;
+    else if (*p >= '1' && *p <= '9') { while (*p >= '0' && *p <= '9') p++; }
+    else return 0;
+    if (*p == '.') { p++; if (!(*p >= '0' && *p <= '9')) return 0; while (*p >= '0' && *p <= '9') p++; }
+    if (*p == 'e' || *p == 'E') {
+        p++;
+        if (*p == '+' || *p == '-') p++;
+        if (!(*p >= '0' && *p <= '9')) return 0;
+        while (*p >= '0' && *p <= '9') p++;
+    }
+    return (int)(p - s);
+}
+
 static Json *parse_number(P *s) {
-    char *end;
-    double v = strtod(s->p, &end);
-    if (end == s->p) return NULL;
-    s->p = end;
+    int n = json_number_len(s->p);
+    if (n == 0) return NULL;
+    double v = strtod(s->p, NULL);
+    if (!isfinite(v)) return NULL;        /* e.g. 1e9999 overflows to inf */
+    s->p += n;
     Json *j = node(JSON_NUM);
     if (j) j->num = v;
     return j;
@@ -151,9 +194,14 @@ static Json *parse_literal(P *s, const char *word, JsonType t, int boolean) {
 
 static Json *parse_value(P *s) {
     skip_ws(s);
+    if (*s->p == '{' || *s->p == '[') {
+        if (s->depth >= JSON_MAX_DEPTH) return NULL;   /* too deeply nested */
+        s->depth++;
+        Json *j = (*s->p == '{') ? parse_object(s) : parse_array(s);
+        s->depth--;
+        return j;
+    }
     switch (*s->p) {
-        case '{': return parse_object(s);
-        case '[': return parse_array(s);
         case '"': return parse_string(s);
         case 't': return parse_literal(s, "true", JSON_BOOL, 1);
         case 'f': return parse_literal(s, "false", JSON_BOOL, 0);
@@ -164,7 +212,7 @@ static Json *parse_value(P *s) {
 
 Json *json_parse(const char *text) {
     if (!text) return NULL;
-    P s = { text };
+    P s = { text, 0 };
     Json *j = parse_value(&s);
     if (!j) return NULL;
     skip_ws(&s);

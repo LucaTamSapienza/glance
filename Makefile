@@ -55,7 +55,7 @@ test:
 	$(CC) $(TCFLAGS) -lm -o build-t-embed tests/embed_test.c $(SRC)/embed.c && ./build-t-embed; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-edit tests/edit_test.c \
 	  $(SRC)/edit.c $(SRC)/section.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-edit; \
-	$(CC) $(TCFLAGS) -o build-t-json tests/json_test.c $(SRC)/json.c $(SRC)/util.c && ./build-t-json; \
+	$(CC) $(TCFLAGS) -lm -o build-t-json tests/json_test.c $(SRC)/json.c $(SRC)/util.c && ./build-t-json; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-mcp tests/mcp_test.c \
 	  $(SRC)/mcp.c $(SRC)/json.c $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
 	  $(shell pkg-config --libs md4c) -lm && ./build-t-mcp; \

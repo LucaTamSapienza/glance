@@ -68,3 +68,23 @@ Net: the HANDOFF's gaps are real. The setext gap is the one the handoff under-ra
 1. **Cap JSON parser depth** (`json.c`) — the only crash-on-untrusted-input bug; ~10 lines + a deep-nesting test, closes the MCP DoS.
 2. **Harden the write path as one batch**: validate `--edit` OP membership (`main.c:166`), escape/reject frontmatter values (`edit.c:166-187`), and add setext awareness to `edit_section` (`edit.c:93-112`). These three are the agent-facing data-integrity defects, including the under-rated setext REPLACE data-loss case.
 3. **Tighten JSON/MCP conformance**: combine surrogate pairs + reject lone surrogates (`json.c:44-55`), validate the number grammar / reject non-finite (`json.c:76-84`) and guard `emit_id` with `isfinite()` (`mcp.c:34-45`), and sanitize non-UTF-8 in `emit_jstr` (`mcp.c:19-31`) — together they stop glance from emitting invalid JSON-RPC to strict clients.
+
+## 7. Fixed in branch `feat/review-fixes`
+
+The HIGH defect and the entire write-path + JSON/MCP-conformance cluster (the
+recommended next-3-actions) are fixed, each with a test:
+
+- **HIGH** — JSON parser depth cap (`JSON_MAX_DEPTH 200`); the deep-nesting MCP
+  DoS now returns a clean `-32700` and the server survives (verified).
+- **Write path** — `--edit`/`vault_edit` reject an unknown op; `edit_frontmatter`
+  rejects newlines and double-quotes YAML-unsafe values; `edit_section` is now
+  **setext-aware** (target + boundary), closing the REPLACE data-loss case; the
+  fence tracker distinguishes ``` from `~~~` (char + run length + info string);
+  `split_lines` checks `realloc`.
+- **JSON/MCP conformance** — `\u` combines UTF-16 surrogate pairs and rejects
+  lone surrogates and interior NUL; JSON number grammar validated and non-finite
+  rejected; `emit_id` guarded with `isfinite()`; `emit_jstr` validates UTF-8 and
+  emits U+FFFD for invalid bytes.
+
+The remaining low-severity items and the §3 cleanups are left as follow-ups; the
+§5 level-up roadmap is unchanged. `make test`: 23 suites green under ASan/UBSan.
