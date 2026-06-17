@@ -82,7 +82,17 @@ notes a keyword search misses can surface. Lexical stays the default. The
 hashing embedder is a *structural* signal, not a semantic model — the real jump
 is a MiniLM-class encoder behind the same interface + an embedding cache in
 `.glance/`, deliberately deferred to the on-device latency/heat benchmark (see
-`docs/DESIGN.md` §11). Unit-tested (`embed_test`). Next: M4 (surgical write API).
+`docs/DESIGN.md` §11). Unit-tested (`embed_test`).
+
+**Surgical write API — M4 shipped (branch `feat/m4-write-api`).** The agent
+declares intent + location and glance does the surgery: `edit.c` performs
+structure-addressed edits on the raw source (formatting preserved; headings
+inside fenced code ignored) — `--edit FILE append|insert|replace "Heading"
+"text"` and `--set-frontmatter FILE KEY VALUE` — written via `atomic_write` and
+exposed as MCP `vault_edit` / `vault_set_frontmatter`. The agent never rewrites a
+whole file. Unit-tested (`edit_test`, plus a write roundtrip in `agent_test`).
+This closes the M1–M4 roadmap; the one remaining gated item is the MiniLM
+runtime for M3 (with the benchmark).
 
 **Post-merge fixes (theme discoverability + selection bar).** Two follow-ups
 after `feature/legend` landed. (1) The `T` theme picker existed but was

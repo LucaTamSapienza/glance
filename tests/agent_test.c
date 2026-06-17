@@ -30,6 +30,14 @@ int main(void) {
     agent_since(vault, 0);                                 /* everything is newer than epoch */
     agent_context(vault, "rendering markdown", 200, 0);    /* budgeted bundle (lexical) */
     agent_context(vault, "rendering markdown", 200, 1);    /* same, semantic fusion on */
+
+    /* Write path: edit a throwaway file and frontmatter it, then verify on disk. */
+    char md[] = "/tmp/glance_w_XXXXXX";
+    int wfd = mkstemp(md);
+    const char *seed = "# N\n\n## Tasks\n\n- a\n";
+    if (wfd >= 0) { (void)!write(wfd, seed, strlen(seed)); close(wfd); }
+    agent_edit(md, "Tasks", 0, "- b");                     /* append */
+    agent_frontmatter(md, "status", "done");
     fflush(stdout);
 
     FILE *r = fopen(tmp, "r");
@@ -59,9 +67,19 @@ int main(void) {
         {"\"truncated\":[",                       "context truncation manifest"},
         {"\"receipt\":{\"used_tokens\":",         "context receipt"},
         {"\"semantic\":true",                     "context semantic flag"},
+        {"\"ok\":true",                            "edit/frontmatter ok"},
     };
     for (size_t i = 0; i < sizeof checks / sizeof checks[0]; i++)
         if (!strstr(buf, checks[i].needle)) { fprintf(stderr, "FAIL: %s\n", checks[i].what); fails++; }
+
+    /* The edits must actually be on disk. */
+    FILE *mf = fopen(md, "r");
+    if (mf) {
+        char mb[4096]; size_t mn = fread(mb, 1, sizeof mb - 1, mf); mb[mn] = '\0'; fclose(mf);
+        if (!strstr(mb, "- b"))          { fprintf(stderr, "FAIL: appended line on disk\n"); fails++; }
+        if (!strstr(mb, "status: done")) { fprintf(stderr, "FAIL: frontmatter on disk\n"); fails++; }
+    } else { fprintf(stderr, "FAIL: edited file missing\n"); fails++; }
+    unlink(md);
 
     free(buf);
     fprintf(stderr, fails ? "%d agent test(s) FAILED\n" : "all agent tests passed\n", fails);

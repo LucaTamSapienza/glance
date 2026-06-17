@@ -28,6 +28,10 @@ Section section_find(const Doc *d, const char *anchor);
  * range is clamped to the document bounds. */
 char *section_text(const Doc *d, int start, int end);
 
+/* True if heading text `title` matches `anchor` — by trimmed, ASCII
+ * case-insensitive text or by GitHub-style slug. Shared with the write API. */
+int section_title_matches(const char *title, const char *anchor);
+
 /* The "abstract" of a section [start,end): its heading line plus the first
  * non-empty paragraph beneath it (or just the heading if there is no body).
  * This is the cheap, low-resolution projection the budget planner falls back to

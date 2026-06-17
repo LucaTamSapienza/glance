@@ -41,6 +41,16 @@ int agent_backlinks(const char *dir, const char *note, int want_context);
  * success, non-zero if dir is unreadable. */
 int agent_since(const char *dir, long since);
 
+/* Surgically edit the section under heading `anchor` in `file` and write it back
+ * atomically. `op` is an EditOp (0=append, 1=insert, 2=replace). Prints
+ * {ok,file,anchor,bytes,section} (the updated section) or {ok:false,error} as
+ * JSON. Returns 0 on success, non-zero on failure. */
+int agent_edit(const char *file, const char *anchor, int op, const char *text);
+
+/* Set YAML frontmatter `key` to `value` in `file` and write it back atomically.
+ * Prints {ok,file,key,value,bytes} or {ok:false,error}. Returns 0 on success. */
+int agent_frontmatter(const char *file, const char *key, const char *value);
+
 /* Scan `dir` for *.md files and print the link graph as {nodes,edges}. Edges
  * connect files via Markdown links and [[wikilinks]] resolved by base name.
  * Returns 0 on success, non-zero if the directory can't be read. */
