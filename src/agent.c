@@ -2,6 +2,8 @@
 #include "agent.h"
 #include "render.h"
 #include "toc.h"
+#include "section.h"
+#include "receipt.h"
 #include "vault.h"
 #include "graph.h"
 #include "util.h"
@@ -38,6 +40,32 @@ void agent_outline(const char *src, size_t len) {
     }
     puts("]");
     toc_free(&t);
+    doc_free(d);
+}
+
+void agent_section(const char *src, size_t len, const char *anchor) {
+    Doc *d = render_doc(src, len, 100000, 1);   /* huge width: no wrapping */
+    Section s = section_find(d, anchor);
+
+    printf("{\"anchor\":");
+    json_str(anchor ? anchor : "");
+    printf(",\"found\":%s", s.found ? "true" : "false");
+
+    if (s.found) {
+        char *text = section_text(d, s.start, s.end);
+        Receipt r = {
+            text ? receipt_estimate_tokens(text, strlen(text)) : 0,
+            receipt_estimate_tokens(src, len),
+        };
+        char rj[160];
+        receipt_to_json(rj, sizeof rj, &r);
+        printf(",\"level\":%d,\"start_line\":%d,\"end_line\":%d,\"text\":",
+               s.level, s.start, s.end);
+        json_str(text ? text : "");
+        printf(",\"receipt\":%s", rj);
+        free(text);
+    }
+    puts("}");
     doc_free(d);
 }
 

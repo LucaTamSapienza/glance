@@ -10,6 +10,12 @@
 /* Print the heading outline of `src` as a JSON array of {level,title,line}. */
 void agent_outline(const char *src, size_t len);
 
+/* Print the section of `src` addressed by `anchor` (a heading text or slug; NULL
+ * = whole document) as a JSON object {anchor,found,level,start_line,end_line,
+ * text,receipt}, where receipt accounts the section's tokens versus a whole-file
+ * read. This is the token-cheap bounded read behind `glance --section`. */
+void agent_section(const char *src, size_t len, const char *anchor);
+
 /* Print the links in `src` as a JSON array of {target,wiki}. */
 void agent_links(const char *src, size_t len);
 

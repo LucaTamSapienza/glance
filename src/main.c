@@ -30,6 +30,7 @@ static void print_help(void) {
 "  cat FILE | glance        read Markdown from stdin\n"
 "  glance --keys            diagnostic: print raw key events, Esc to quit\n"
 "  glance --outline FILE    print the heading tree as JSON (for agents)\n"
+"  glance --section F#H     print the section under heading H as JSON (+ token receipt)\n"
 "  glance --links FILE      print the file's outbound links as JSON\n"
 "  glance --graph DIR       print the vault's link graph as JSON\n"
 "  glance --theme NAME      open using colour theme NAME (see --list-themes)\n"
@@ -115,6 +116,25 @@ int main(int argc, char **argv) {
     if (argc > 2 && !strcmp(argv[1], "--outline")) return run_export(agent_outline, argv[2]);
     if (argc > 2 && !strcmp(argv[1], "--links"))   return run_export(agent_links, argv[2]);
     if (argc > 2 && !strcmp(argv[1], "--graph"))   return agent_graph(argv[2]);
+    if (argc > 2 && !strcmp(argv[1], "--section")) {
+        /* Argument is "FILE#anchor"; a bare "FILE" selects the whole document. */
+        char *arg = argv[2], *hash = strrchr(arg, '#');
+        char fpath[1024];
+        const char *anchor = NULL;
+        if (hash) {
+            size_t flen = (size_t)(hash - arg);
+            if (flen >= sizeof fpath) flen = sizeof fpath - 1;
+            memcpy(fpath, arg, flen); fpath[flen] = '\0';
+            anchor = hash + 1;
+        } else {
+            snprintf(fpath, sizeof fpath, "%s", arg);
+        }
+        size_t l; char *s = load(fpath, &l);
+        if (!s) return 1;
+        agent_section(s, l, anchor);
+        free(s);
+        return 0;
+    }
 
     FILE *f = stdin;
     char title[256] = "stdin";
