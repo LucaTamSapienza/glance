@@ -6,6 +6,7 @@
 #include "receipt.h"
 #include "context.h"
 #include "bm25.h"
+#include "embed.h"
 #include "vault.h"
 #include "graph.h"
 #include "util.h"
@@ -344,8 +345,11 @@ static void sec_push(Sec **v, int *n, int *cap, int note, char *anchor,
 
 /* Strength of the graph prior relative to a section's own BM25 score. */
 #define CTX_GRAPH_ALPHA 0.25
+/* Embedding dimension and the weight of the semantic signal in the fused score. */
+#define CTX_EMBED_DIM      256
+#define CTX_SEMANTIC_LAMBDA 1.0
 
-int agent_context(const char *dir, const char *query, size_t budget) {
+int agent_context(const char *dir, const char *query, size_t budget, int semantic) {
     DIR *probe = opendir(dir);
     if (!probe) return 1;
     closedir(probe);
@@ -400,6 +404,32 @@ int agent_context(const char *dir, const char *query, size_t budget) {
         if (hits[h].id >= 0 && hits[h].id < nsec) sec[hits[h].id].score = hits[h].score;
     free(hits);
 
+    /* Optional semantic fusion: blend the lexical score (normalized to [0,1] by
+     * the top BM25 score) with each section's embedding cosine to the query, so
+     * notes a keyword search misses can still surface. Lexical-only is default. */
+    if (semantic) {
+        Embedder *emb = embedder_default(CTX_EMBED_DIM);
+        if (emb) {
+            int dim = emb->dim;
+            float *qv = malloc((size_t)dim * sizeof *qv);
+            float *sv = malloc((size_t)dim * sizeof *sv);
+            if (qv && sv) {
+                emb->embed(emb, query, strlen(query), qv);
+                double maxb = 0.0;
+                for (int s = 0; s < nsec; s++) if (sec[s].score > maxb) maxb = sec[s].score;
+                for (int s = 0; s < nsec; s++) {
+                    double bn = (maxb > 0.0) ? sec[s].score / maxb : 0.0;
+                    emb->embed(emb, sec[s].full, strlen(sec[s].full), sv);
+                    double cos = embed_cosine(qv, sv, dim);
+                    if (cos < 0.0) cos = 0.0;
+                    sec[s].score = bn + CTX_SEMANTIC_LAMBDA * cos;
+                }
+            }
+            free(qv); free(sv);
+            embedder_free(emb);
+        }
+    }
+
     /* Graph prior: a section is boosted by the best base score among sections in
      * its note's 1-hop neighbours, so notes linked to strong matches rank up. */
     Graph g;
@@ -448,7 +478,8 @@ int agent_context(const char *dir, const char *query, size_t budget) {
     /* Emit the JSON bundle. */
     printf("{\"query\":");
     json_str(query);
-    printf(",\"budget_tokens\":%zu,\"chunks\":[", budget);
+    printf(",\"budget_tokens\":%zu,\"semantic\":%s,\"chunks\":[",
+           budget, semantic ? "true" : "false");
     for (int i = 0; i < plan.npick; i++) {
         int s = cand2sec[plan.picks[i].cand];
         int abstract = (plan.picks[i].granularity == CTX_ABSTRACT);

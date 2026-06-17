@@ -33,7 +33,8 @@ static void print_help(void) {
 "  glance --outline FILE    print the heading tree as JSON (--depth N, --abstract)\n"
 "  glance --section F#H     print the section under heading H as JSON (+ token receipt)\n"
 "  glance --context \"Q\" DIR  retrieve a token-cheap context bundle for query Q\n"
-"                           over vault DIR as JSON (--budget N caps the tokens)\n"
+"                           over vault DIR as JSON (--budget N caps tokens;\n"
+"                           --semantic fuses embedding similarity with the lexical score)\n"
 "  glance --links FILE      print the file's outbound links as JSON\n"
 "  glance --backlinks N DIR notes linking to N as JSON (--context adds the line)\n"
 "  glance --neighbors N DIR link-graph neighbourhood of note N (--depth H hops)\n"
@@ -177,14 +178,16 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (argc > 2 && !strcmp(argv[1], "--context")) {
-        /* glance --context "QUERY" [DIR] [--budget N]; DIR defaults to ".". */
+        /* glance --context "QUERY" [DIR] [--budget N] [--semantic]; DIR = ".". */
         const char *query = argv[2], *dir = ".";
         size_t budget = 0;
+        int semantic = 0;
         for (int i = 3; i < argc; i++) {
             if (!strcmp(argv[i], "--budget") && i + 1 < argc) budget = (size_t)strtoul(argv[++i], NULL, 10);
+            else if (!strcmp(argv[i], "--semantic")) semantic = 1;
             else dir = argv[i];
         }
-        return agent_context(dir, query, budget);
+        return agent_context(dir, query, budget, semantic);
     }
 
     FILE *f = stdin;

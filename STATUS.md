@@ -51,6 +51,7 @@ section.c      heading anchor -> subtree + abstract projection (bounded reads)
 receipt.c      token-cost estimate + saved-% receipt (used vs raw-read)
 bm25.c         Okapi BM25 lexical ranking index (the retrieval core)
 context.c      budget planner: score order, diversity, coarse-to-fine, manifest
+embed.c        embedding seam: Embedder interface + a hashing default + cosine
 json.c         a small dependency-free JSON parser (for the MCP server)
 mcp.c          MCP server over stdio (JSON-RPC 2.0): the agent-memory tools
 agent.c        JSON exports: --outline/--section/--context/--neighbors/
@@ -114,6 +115,12 @@ Full parity with the original Go app, plus the vault/agent features:
   `vault_section`, `vault_outline`, `vault_neighbors`, `vault_backlinks`,
   `vault_since`, `vault_links`, `vault_graph`). The tool bodies reuse the exact
   CLI exports. Wiring + tool reference in `docs/MCP.md`.
+- **Semantic fusion (M3, infrastructure)** — `--context --semantic` (and the MCP
+  `semantic` arg) fuses an embedding cosine with the lexical BM25 score so notes
+  a keyword search misses can surface; lexical stays the default. The dense
+  pipeline ships behind an `Embedder` interface (`embed.c`) with a dependency-free
+  feature-hashing default; a MiniLM-class encoder plugs in behind the same
+  interface (gated on a latency/heat benchmark — see `docs/DESIGN.md` §11).
 - **Syntax highlighting** in fenced code blocks, per language (`highlight.c`):
   C/C++, Go, Python, JS/TS, Rust, bash, YAML, JSON — keywords, strings, numbers,
   comments, function calls, shell `$vars`, and YAML/JSON keys.

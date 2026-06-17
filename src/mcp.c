@@ -88,7 +88,8 @@ static char *run_tool(const char *name, const Json *args) {
     if (!strcmp(name, "vault_context")) {
         agent_context(json_str_or(json_get(args, "dir"), "."),
                       json_str_or(json_get(args, "query"), ""),
-                      (size_t)json_num_or(json_get(args, "budget"), 0));
+                      (size_t)json_num_or(json_get(args, "budget"), 0),
+                      json_bool_or(json_get(args, "semantic"), 0));
     } else if (!strcmp(name, "vault_neighbors")) {
         agent_neighbors(json_str_or(json_get(args, "dir"), "."),
                         json_str_or(json_get(args, "note"), ""),
@@ -134,7 +135,7 @@ typedef struct { const char *name, *desc, *schema; } ToolDef;
 static const ToolDef TOOLS[] = {
     { "vault_context",
       "Retrieve a token-cheap, budget-bounded context bundle for a query over a Markdown vault: ranked note sections (BM25 + a link-graph prior), with diversity, coarse-to-fine projection, a truncation manifest, and a token receipt.",
-      "{\"type\":\"object\",\"properties\":{\"dir\":{\"type\":\"string\",\"description\":\"vault directory\"},\"query\":{\"type\":\"string\"},\"budget\":{\"type\":\"integer\",\"description\":\"max tokens (0 = no cap)\"}},\"required\":[\"dir\",\"query\"]}" },
+      "{\"type\":\"object\",\"properties\":{\"dir\":{\"type\":\"string\",\"description\":\"vault directory\"},\"query\":{\"type\":\"string\"},\"budget\":{\"type\":\"integer\",\"description\":\"max tokens (0 = no cap)\"},\"semantic\":{\"type\":\"boolean\",\"description\":\"fuse embedding similarity with the lexical score\"}},\"required\":[\"dir\",\"query\"]}" },
     { "vault_section",
       "Return one heading's subtree from a Markdown file (matched by heading text or slug), plus a token receipt versus reading the whole file.",
       "{\"type\":\"object\",\"properties\":{\"file\":{\"type\":\"string\"},\"heading\":{\"type\":\"string\"}},\"required\":[\"file\"]}" },

@@ -47,11 +47,12 @@ int agent_since(const char *dir, long since);
 int agent_graph(const char *dir);
 
 /* Retrieve a token-cheap context bundle for `query` over the vault at `dir`:
- * rank note sections (BM25 + a graph prior), select under `budget` tokens
- * (0 = no cap), and print {query,budget_tokens,chunks,truncated,receipt} as
- * JSON. `chunks` are the included sections (full or, coarse-to-fine, abstract);
- * `truncated` is the manifest of what was left out. Returns 0 on success,
- * non-zero if the directory can't be read. */
-int agent_context(const char *dir, const char *query, size_t budget);
+ * rank note sections (BM25 + a graph prior; with `semantic`, fused with an
+ * embedding cosine), select under `budget` tokens (0 = no cap), and print
+ * {query,budget_tokens,semantic,chunks,truncated,receipt} as JSON. `chunks` are
+ * the included sections (full or, coarse-to-fine, abstract); `truncated` is the
+ * manifest of what was left out. Returns 0 on success, non-zero if the directory
+ * can't be read. */
+int agent_context(const char *dir, const char *query, size_t budget, int semantic);
 
 #endif /* GLANCE_AGENT_H */

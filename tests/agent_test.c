@@ -28,7 +28,8 @@ int main(void) {
     agent_neighbors(vault, "Rendering", 1);
     agent_backlinks(vault, "Rendering", 1);                /* with context */
     agent_since(vault, 0);                                 /* everything is newer than epoch */
-    agent_context(vault, "rendering markdown", 200);       /* budgeted bundle */
+    agent_context(vault, "rendering markdown", 200, 0);    /* budgeted bundle (lexical) */
+    agent_context(vault, "rendering markdown", 200, 1);    /* same, semantic fusion on */
     fflush(stdout);
 
     FILE *r = fopen(tmp, "r");
@@ -57,6 +58,7 @@ int main(void) {
         {"\"chunks\":[",                          "context chunks"},
         {"\"truncated\":[",                       "context truncation manifest"},
         {"\"receipt\":{\"used_tokens\":",         "context receipt"},
+        {"\"semantic\":true",                     "context semantic flag"},
     };
     for (size_t i = 0; i < sizeof checks / sizeof checks[0]; i++)
         if (!strstr(buf, checks[i].needle)) { fprintf(stderr, "FAIL: %s\n", checks[i].what); fails++; }
