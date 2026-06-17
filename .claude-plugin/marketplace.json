@@ -5,16 +5,16 @@
     "url": "https://github.com/LucaTamSapienza"
   },
   "metadata": {
-    "description": "glance — a terminal Markdown reader/editor, as a Claude Code plugin: agent-facing vault exports plus an in-session renderer.",
-    "version": "0.1.2"
+    "description": "glance — a terminal Markdown reader/editor and agent-native memory layer over a vault, as a Claude Code plugin: token-cheap retrieval plus an in-session renderer.",
+    "version": "0.2.0"
   },
   "plugins": [
     {
       "name": "glance",
       "source": "./",
-      "description": "Let Claude navigate markdown vaults (outline/links/graph) and render markdown for you in-session with glance.",
+      "description": "Let Claude retrieve token-cheap context from a markdown vault (/glance-context) and map it (outline/links/graph), and render markdown in-session — with the full read/write surface available via 'glance mcp'.",
       "category": "productivity",
-      "tags": ["markdown", "vault", "wikilinks", "renderer", "notes"]
+      "tags": ["markdown", "vault", "wikilinks", "renderer", "notes", "agent", "mcp"]
     }
   ]
 }

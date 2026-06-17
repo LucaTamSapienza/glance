@@ -1,12 +1,13 @@
 {
   "name": "glance",
-  "description": "Navigate and visualize markdown vaults with glance — agent exports (outline/links/graph) plus an in-session renderer.",
-  "version": "0.1.2",
+  "description": "glance: an agent-native memory layer over a markdown vault — token-cheap retrieval (context/outline/links/graph) with a token receipt, plus an in-session renderer. Full surface (sections, neighbours, backlinks, surgical edits) via 'glance mcp'.",
+  "version": "0.2.0",
   "author": {
     "name": "LucaTamSapienza",
     "url": "https://github.com/LucaTamSapienza"
   },
   "commands": [
+    "./commands/glance-context.md",
     "./commands/glance-outline.md",
     "./commands/glance-links.md",
     "./commands/glance-graph.md",
@@ -15,5 +16,5 @@
   "homepage": "https://github.com/LucaTamSapienza/glance",
   "repository": "https://github.com/LucaTamSapienza/glance",
   "license": "MIT",
-  "keywords": ["markdown", "vault", "wikilinks", "renderer", "tui", "notes", "obsidian"]
+  "keywords": ["markdown", "vault", "wikilinks", "renderer", "tui", "notes", "obsidian", "agent", "mcp", "retrieval"]
 }
