@@ -207,13 +207,30 @@ locked after an on-device latency/heat benchmark.**
 
 ## 9. Milestones (sequenced for adoption)
 
-- **M1 — `glance context --budget` + token receipt.** The wedge: a shareable,
-  viral screenshot straight from the terminal, on infrastructure that already
-  mostly exists (`agent.c`, `graph.c`, `render.c`, `search.c`).
+- **M1 — bounded reads + budgeted retrieval + token receipt. ✅ shipped.** See
+  the CLI surface below.
 - **M2 — `glance mcp`.** Expose the read primitives over MCP: native in Claude
   Desktop / Cursor / the SDK. This is the distribution channel.
 - **M3 — semantic search behind a flag.** Model + index decided in §11.
 - **M4 — surgical write API.** Closes the loop; the moat.
+
+### M1 — shipped command surface
+All print JSON to stdout; every read view is bounded so it stays token-cheap.
+
+| Command | What it returns |
+|---|---|
+| `glance --outline FILE [--depth N] [--abstract]` | heading tree, depth-bounded, each heading's first paragraph as `abstract` |
+| `glance --section "FILE#Heading"` | one heading's subtree + a token `receipt` (anchor matches the heading text or its slug) |
+| `glance --context "QUERY" DIR [--budget N]` | the budgeted bundle: `{query,budget_tokens,chunks,truncated,receipt}` |
+| `glance --neighbors "Note" DIR [--depth H]` | link-graph neighbourhood to H hops, with `direction` (outbound/backlink/both/path) |
+| `glance --backlinks "Note" DIR [--context]` | notes linking to Note; `--context` adds the citing line |
+| `glance --since TS DIR` | notes modified after Unix time TS |
+
+Modules (all pure, unit-tested under ASan/UBSan): `section.c` (anchor →
+subtree + abstract), `receipt.c` (token estimate + saved-% receipt), `bm25.c`
+(Okapi BM25 lexical core), `context.c` (the budget planner: score order,
+diversity, coarse-to-fine, truncation manifest). The vault I/O, BM25 indexing,
+graph prior, and JSON emission live in `agent.c`.
 
 The read side + MCP + receipt is the adoption wedge (maximum perceived value,
 low risk, mostly refinement of existing code). Write comes last because, for the

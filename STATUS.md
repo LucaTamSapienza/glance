@@ -47,7 +47,12 @@ fswatch.c      kqueue watch of the parent directory
 clipboard.c    pbcopy + open (system clipboard / link opening)
 vault.c        vault scan + wikilink resolution (the folder is the vault)
 graph.c        the vault link graph (shared by --graph and the Ctrl-G explorer)
-agent.c        --outline / --links / --graph JSON exports
+section.c      heading anchor -> subtree + abstract projection (bounded reads)
+receipt.c      token-cost estimate + saved-% receipt (used vs raw-read)
+bm25.c         Okapi BM25 lexical ranking index (the retrieval core)
+context.c      budget planner: score order, diversity, coarse-to-fine, manifest
+agent.c        JSON exports: --outline/--section/--context/--neighbors/
+               --backlinks/--since/--links/--graph (the agent-memory layer)
 util.c         shared UTF-8 + whole-file helpers
 tui.c          notcurses front-end: modes, input, drawing, event loop
 main.c         glance entry (TUI)         main_render.c  glance-render entry (CLI)
@@ -93,7 +98,14 @@ Full parity with the original Go app, plus the vault/agent features:
 - **Bracket auto-pairing** in the editor.
 - **Vault navigation:** `[[wikilinks]]` resolve and follow across subfolders;
   back-stack (`-` / `Ctrl-O`); backlinks panel (`b`); graph explorer (`Ctrl-G`).
-- **Agent exports:** `glance --outline|--links|--graph` print JSON to stdout.
+- **Agent-memory layer (M1)** — token-cheap, bounded JSON exports for agents
+  (see `docs/DESIGN.md`): `--outline` (with `--depth`/`--abstract`), `--section
+  "FILE#Heading"` (a heading subtree + a token receipt), `--context "Q" DIR
+  [--budget N]` (a budgeted retrieval bundle — BM25 + a graph prior, with
+  diversity, coarse-to-fine projection, and a truncation manifest), `--neighbors`
+  (graph neighbourhood to N hops), `--backlinks … --context` (who links here, and
+  the citing line), `--since TS` (what changed). Plus the original `--links` and
+  `--graph`. Each carries a token receipt where it saves tokens.
 - **Syntax highlighting** in fenced code blocks, per language (`highlight.c`):
   C/C++, Go, Python, JS/TS, Rust, bash, YAML, JSON — keywords, strings, numbers,
   comments, function calls, shell `$vars`, and YAML/JSON keys.

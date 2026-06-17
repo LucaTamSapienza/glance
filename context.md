@@ -54,6 +54,19 @@ lines, each a sequence of styled runs — and two sinks consume it: `doc_ansi.c`
 
 ## Current status (2026-06-17)
 
+**Agent-memory layer — M1 shipped (branch `docs/design-agent-memory`, PR #9).**
+The first milestone of the [`docs/DESIGN.md`](docs/DESIGN.md) roadmap: token-cheap,
+bounded JSON exports that let an agent read a vault for a fraction of the tokens.
+New pure, unit-tested modules — `section.c` (anchor → subtree + abstract),
+`receipt.c` (token receipt), `bm25.c` (BM25 lexical core), `context.c` (the
+budget planner: score order, diversity, coarse-to-fine, truncation manifest) —
+plus the `agent.c` exports `--section`, `--context "Q" DIR --budget N`,
+`--neighbors`, `--backlinks --context`, `--since`, and `--outline --depth
+--abstract`. `glance --context "…" DIR --budget N` is the wedge: it returns
+`{query,budget_tokens,chunks,truncated,receipt}` with a token receipt (on the
+test vault, ~78% saved vs reading everything). Next: M2 (`glance mcp`), M3
+(semantic, behind a flag), M4 (surgical write API).
+
 **Post-merge fixes (theme discoverability + selection bar).** Two follow-ups
 after `feature/legend` landed. (1) The `T` theme picker existed but was
 undocumented: it is now listed in `--help` (KEYS — Reader), in the `?` legend

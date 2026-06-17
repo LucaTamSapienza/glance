@@ -15,6 +15,19 @@
 #include <string.h>
 #include <strings.h>
 #include <dirent.h>
+#include <sys/stat.h>
+
+/* Read dir/rel into a NUL-terminated buffer; *len gets the byte length, or NULL
+ * on failure. Shared by the vault-scanning exports below. */
+static char *read_rel(const char *dir, const char *rel, size_t *len) {
+    char path[4096];
+    snprintf(path, sizeof path, "%s/%s", dir, rel);
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    char *s = read_file(f, len);
+    fclose(f);
+    return s;
+}
 
 /* Print s as a JSON string literal, escaping as needed. */
 static void json_str(const char *s) {
@@ -30,20 +43,42 @@ static void json_str(const char *s) {
     putchar('"');
 }
 
-void agent_outline(const char *src, size_t len) {
+void agent_outline_ex(const char *src, size_t len, int depth, int abstract) {
     Doc *d = render_doc(src, len, 100000, 1);   /* huge width: no wrapping */
     TOC t = {0};
     toc_build(d, &t);
     putchar('[');
+    int first = 1;
     for (int i = 0; i < t.n; i++) {
-        printf("%s{\"level\":%d,\"title\":", i ? "," : "", t.v[i].level);
+        if (depth > 0 && t.v[i].level > depth) continue;   /* bounded depth */
+        printf("%s{\"level\":%d,\"title\":", first ? "" : ",", t.v[i].level);
         json_str(t.v[i].title);
-        printf(",\"line\":%d}", t.v[i].line);
+        printf(",\"line\":%d", t.v[i].line);
+        if (abstract) {
+            int level = t.v[i].level, end = (int)d->nline;
+            for (int j = i + 1; j < t.n; j++) if (t.v[j].level <= level) { end = t.v[j].line; break; }
+            char *ab = section_abstract(d, t.v[i].line, end);
+            char *body = ab;   /* drop the heading line (already in "title") */
+            if (ab) { char *nl = strchr(ab, '\n'); if (nl) body = nl + 1; }
+            while (body && (*body == '\n' || *body == ' ' || *body == '\t')) body++;
+            if (body) {        /* trim trailing whitespace for a clean field */
+                size_t bl = strlen(body);
+                while (bl > 0 && (body[bl-1] == '\n' || body[bl-1] == ' ' ||
+                                  body[bl-1] == '\t' || body[bl-1] == '\r')) body[--bl] = '\0';
+            }
+            printf(",\"abstract\":");
+            json_str(body ? body : "");
+            free(ab);
+        }
+        putchar('}');
+        first = 0;
     }
     puts("]");
     toc_free(&t);
     doc_free(d);
 }
+
+void agent_outline(const char *src, size_t len) { agent_outline_ex(src, len, 0, 0); }
 
 void agent_section(const char *src, size_t len, const char *anchor) {
     Doc *d = render_doc(src, len, 100000, 1);   /* huge width: no wrapping */
@@ -107,6 +142,179 @@ int agent_graph(const char *dir) {
     return 0;
 }
 
+/* ---- graph neighbourhood -------------------------------------------------- */
+
+int agent_neighbors(const char *dir, const char *note, int depth) {
+    DIR *probe = opendir(dir);
+    if (!probe) return 1;
+    closedir(probe);
+    if (depth <= 0) depth = 1;
+
+    Graph g;
+    graph_build(dir, &g);
+    int start = graph_find(&g, note);
+
+    printf("{\"note\":");
+    json_str(note);
+    if (start < 0) { puts(",\"found\":false,\"neighbors\":[]}"); graph_free(&g); return 0; }
+    printf(",\"found\":true,\"depth\":%d,\"neighbors\":[", depth);
+
+    int n = g.nn ? g.nn : 1;
+    int *dist    = malloc((size_t)n * sizeof(int));
+    int *linkdir = calloc((size_t)n, sizeof(int));   /* 1=outbound 2=backlink 3=both 0=path */
+    int *q       = malloc((size_t)n * sizeof(int));
+    for (int i = 0; i < g.nn; i++) dist[i] = -1;
+
+    /* Breadth-first to `depth` hops over the undirected link graph; record the
+     * link direction only for the immediate (distance-1) neighbours. */
+    int qh = 0, qt = 0;
+    dist[start] = 0;
+    q[qt++] = start;
+    while (qh < qt) {
+        int u = q[qh++];
+        if (dist[u] >= depth) continue;
+        for (int e = 0; e < g.ne; e++) {
+            int v = -1, outbound = 0;
+            if (g.edge[e].from == u)      { v = g.edge[e].to;   outbound = 1; }
+            else if (g.edge[e].to == u)   { v = g.edge[e].from; outbound = 0; }
+            if (v < 0 || v == start) continue;
+            if (dist[v] == -1) { dist[v] = dist[u] + 1; q[qt++] = v; }
+            if (u == start) linkdir[v] |= outbound ? 1 : 2;
+        }
+    }
+
+    int first = 1;
+    for (int v = 0; v < g.nn; v++) {
+        if (v == start || dist[v] < 0) continue;
+        const char *d = linkdir[v] == 3 ? "both" : linkdir[v] == 1 ? "outbound"
+                      : linkdir[v] == 2 ? "backlink" : "path";
+        printf("%s{\"note\":", first ? "" : ",");
+        json_str(g.node[v]);
+        printf(",\"distance\":%d,\"direction\":\"%s\"}", dist[v], d);
+        first = 0;
+    }
+    puts("]}");
+
+    free(dist); free(linkdir); free(q);
+    graph_free(&g);
+    return 0;
+}
+
+/* ---- backlinks & recency -------------------------------------------------- */
+
+/* ASCII case-insensitive string equality. */
+static int ci_eq(const char *a, const char *b) {
+    for (; *a && *b; a++, b++) {
+        unsigned char ca = (unsigned char)*a, cb = (unsigned char)*b;
+        if (ca >= 'A' && ca <= 'Z') ca += 32;
+        if (cb >= 'A' && cb <= 'Z') cb += 32;
+        if (ca != cb) return 0;
+    }
+    return *a == *b;
+}
+
+/* The first source line of `src` that mentions `needle` (case-insensitive),
+ * trimmed of surrounding whitespace, copied into out[cap]; out is emptied if no
+ * line matches. This is the "why it links here" snippet for a backlink. */
+static void mention_line(const char *src, const char *needle, char *out, size_t cap) {
+    out[0] = '\0';
+    size_t nl = strlen(needle);
+    if (nl == 0) return;
+    const char *line = src;
+    while (*line) {
+        const char *eol = strchr(line, '\n');
+        size_t llen = eol ? (size_t)(eol - line) : strlen(line);
+        for (size_t i = 0; i + nl <= llen; i++) {
+            if (strncasecmp(line + i, needle, nl) == 0) {
+                const char *s = line; size_t e = llen;
+                while (s < line + e && (*s == ' ' || *s == '\t')) s++;
+                while (e > (size_t)(s - line) && (line[e-1] == ' ' || line[e-1] == '\t' || line[e-1] == '\r')) e--;
+                size_t len = (size_t)(line + e - s);
+                if (len >= cap) len = cap - 1;
+                memcpy(out, s, len); out[len] = '\0';
+                return;
+            }
+        }
+        if (!eol) break;
+        line = eol + 1;
+    }
+}
+
+int agent_backlinks(const char *dir, const char *note, int want_context) {
+    DIR *probe = opendir(dir);
+    if (!probe) return 1;
+    closedir(probe);
+
+    char target[512];
+    vault_stem(note, target, sizeof target);
+
+    VFiles files = {0};
+    vault_scan(dir, &files);
+
+    printf("{\"note\":");
+    json_str(note);
+    printf(",\"backlinks\":[");
+    int first = 1;
+    for (int k = 0; k < files.n; k++) {
+        size_t len;
+        char *src = read_rel(dir, files.v[k], &len);
+        if (!src) continue;
+
+        VLinks l = {0};
+        vault_links(src, len, &l);
+        int linked = 0;
+        for (int i = 0; i < l.n && !linked; i++) {
+            char stem[512];
+            vault_stem(l.v[i].target, stem, sizeof stem);
+            if (ci_eq(stem, target)) linked = 1;
+        }
+        vlinks_free(&l);
+
+        if (linked) {
+            printf("%s{\"note\":", first ? "" : ",");
+            json_str(files.v[k]);
+            if (want_context) {
+                char snippet[512];
+                mention_line(src, target, snippet, sizeof snippet);
+                printf(",\"context\":");
+                json_str(snippet);
+            }
+            putchar('}');
+            first = 0;
+        }
+        free(src);
+    }
+    puts("]}");
+    vfiles_free(&files);
+    return 0;
+}
+
+int agent_since(const char *dir, long since) {
+    DIR *probe = opendir(dir);
+    if (!probe) return 1;
+    closedir(probe);
+
+    VFiles files = {0};
+    vault_scan(dir, &files);
+
+    printf("{\"since\":%ld,\"changed\":[", since);
+    int first = 1;
+    for (int k = 0; k < files.n; k++) {
+        char path[4096];
+        snprintf(path, sizeof path, "%s/%s", dir, files.v[k]);
+        struct stat st;
+        if (stat(path, &st) != 0) continue;
+        if ((long)st.st_mtime <= since) continue;
+        printf("%s{\"note\":", first ? "" : ",");
+        json_str(files.v[k]);
+        printf(",\"mtime\":%ld}", (long)st.st_mtime);
+        first = 0;
+    }
+    puts("]}");
+    vfiles_free(&files);
+    return 0;
+}
+
 /* ---- context retrieval ---------------------------------------------------- */
 
 /* One retrievable unit: a section of a note, with both projections precomputed. */
@@ -119,18 +327,6 @@ typedef struct {
     size_t abstract_tokens;
     double score;            /* BM25 base, with the graph prior folded in */
 } Sec;
-
-/* Read dir/rel into a NUL-terminated buffer; *len gets the byte length, or NULL
- * on failure. */
-static char *read_rel(const char *dir, const char *rel, size_t *len) {
-    char path[4096];
-    snprintf(path, sizeof path, "%s/%s", dir, rel);
-    FILE *f = fopen(path, "rb");
-    if (!f) return NULL;
-    char *s = read_file(f, len);
-    fclose(f);
-    return s;
-}
 
 /* Append a section unit to a growable array. Takes ownership of anchor/full/abs. */
 static void sec_push(Sec **v, int *n, int *cap, int note, char *anchor,
