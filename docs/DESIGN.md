@@ -175,8 +175,11 @@ needed (the "it was at token 4001" problem). The budget therefore:
 
 ### Semantic search
 Behind a flag (`--semantic`); **lexical is the default** so the base user installs
-nothing. Word2Vec is too weak (context-free word vectors). **Decided: lean
-MiniLM-class** (e.g. `all-MiniLM-L6-v2`, 22M params, 384-dim) for quality — a
+nothing. The dense pipeline ships now — an `Embedder` interface (`embed.c`),
+cosine similarity, and lexical+dense fusion in `agent_context` — with a
+dependency-free feature-hashing default embedder as the seam. A real encoder
+plugs in behind `Embedder` with no change to the retrieval code. Word2Vec is too
+weak (context-free word vectors). **Decided: lean MiniLM-class** (e.g. `all-MiniLM-L6-v2`, 22M params, 384-dim) for quality — a
 single query embedding is a ~5–15 ms CPU forward pass (negligible heat), and the
 one-time index build is incremental thereafter via `fswatch`. Static-distilled
 embeddings (model2vec/potion-style) remain the ultra-light fallback for
@@ -216,7 +219,16 @@ locked after an on-device latency/heat benchmark.**
   framed. Native in Claude Desktop / Cursor / the SDK — the distribution channel.
   Wiring + tool reference: `docs/MCP.md`. New modules: `json.c` (a small JSON
   parser) and `mcp.c` (the server). Unit-tested (`json_test`, `mcp_test`).
-- **M3 — semantic search behind a flag.** Model + index decided in §11.
+- **M3 — semantic search behind a flag. ◑ infrastructure shipped; model pending
+  the benchmark.** The full dense pipeline is in place: an `Embedder` interface
+  (`embed.c`), cosine similarity, and `--context --semantic` fusing the
+  embedding score with the lexical BM25 score (notes a keyword search misses can
+  surface). The shipped default embedder is dependency-free (feature-hashed token
+  n-grams) — a *structural* signal that exercises the whole pipeline, **not** a
+  semantic model. The real quality jump is a MiniLM-class encoder plugged in
+  behind the same `Embedder` interface, plus an embedding cache in `.glance/`;
+  that step is deliberately deferred to the on-device latency/heat benchmark we
+  agreed to run together (§11). Lexical stays the default.
 - **M4 — surgical write API.** Closes the loop; the moat.
 
 ### M1 — shipped command surface
@@ -258,9 +270,11 @@ Everything we build either serves this loop or waits.
   model2vec/potion-style static embeddings as the ultra-light fallback.
 - ~~**Index location.**~~ **Decided: `.glance/` inside the vault** (git-ignored
   local cache, invalidated by `fswatch`).
-- **Embedder runtime in C.** onnxruntime vs llama.cpp/ggml embeddings vs an
-  optional sidecar installed only for the semantic power-up — to be locked after
-  an on-device latency/heat benchmark of MiniLM on Apple Silicon.
+- **Embedder runtime in C.** The `Embedder` interface (`embed.c`) is in place and
+  a real encoder drops in behind it with no change to retrieval. Still to lock,
+  after an on-device latency/heat benchmark of MiniLM on Apple Silicon:
+  onnxruntime vs llama.cpp/ggml embeddings vs an optional sidecar installed only
+  for the semantic power-up — plus the embedding cache layout under `.glance/`.
 - **Name.** Stays `glance` for now; discoverability handled via README / a
   Homebrew tap (note the OpenStack `glance` CLI name collision).
 

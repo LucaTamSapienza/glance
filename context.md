@@ -72,8 +72,17 @@ Cursor / SDK). New modules: `json.c` (a small dependency-free JSON parser) and
 `mcp.c` (the server — `initialize`/`tools/list`/`tools/call`, eight `vault_*`
 tools whose bodies reuse the exact `agent.c` exports, captured via a stdout
 redirect). Unit-tested (`json_test`, `mcp_test`); wiring + tool reference in
-[`docs/MCP.md`](docs/MCP.md). Next: M3 (semantic, behind a flag), M4 (surgical
-write API).
+[`docs/MCP.md`](docs/MCP.md).
+
+**Semantic fusion — M3 infrastructure shipped (branch `feat/m3-semantic`).** The
+dense pipeline is in place: `embed.c` (an `Embedder` interface + cosine + a
+dependency-free feature-hashing default), and `--context --semantic` (plus the
+MCP `semantic` arg) fusing the embedding cosine with the normalized BM25 score so
+notes a keyword search misses can surface. Lexical stays the default. The
+hashing embedder is a *structural* signal, not a semantic model — the real jump
+is a MiniLM-class encoder behind the same interface + an embedding cache in
+`.glance/`, deliberately deferred to the on-device latency/heat benchmark (see
+`docs/DESIGN.md` §11). Unit-tested (`embed_test`). Next: M4 (surgical write API).
 
 **Post-merge fixes (theme discoverability + selection bar).** Two follow-ups
 after `feature/legend` landed. (1) The `T` theme picker existed but was
