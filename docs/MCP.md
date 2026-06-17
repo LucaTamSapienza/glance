@@ -60,6 +60,8 @@ Every read is **bounded** so it stays token-cheap; `vault_context` and
 | `vault_since`     | `dir`, `since`            | notes modified after a Unix timestamp |
 | `vault_links`     | `file`                    | a file's outbound links |
 | `vault_graph`     | `dir`                     | the whole vault's link graph |
+| `vault_edit`      | `file`, `heading`, `op`, `text` | surgically edit a section (`op` = append/insert/replace), saved atomically; echoes the new section |
+| `vault_set_frontmatter` | `file`, `key`, `value` | set a YAML frontmatter key, saved atomically |
 
 Each tool's result is a text content block whose text is the same JSON the
 corresponding `glance --…` command prints, so an agent can parse it directly.
@@ -72,5 +74,6 @@ corresponding `glance --…` command prints, so an agent can parse it directly.
   client's `protocolVersion`.
 - **Errors:** standard JSON-RPC codes — `-32700` parse error, `-32601` method not
   found, `-32602` unknown tool.
-- **No write tools yet:** the M2 surface is read-only. Surgical writes
-  (`vault_edit`, frontmatter) arrive with M4.
+- **Writes are surgical:** `vault_edit` / `vault_set_frontmatter` change a
+  section or a frontmatter key in place (formatting preserved) and save
+  atomically — the agent never rewrites a whole file.

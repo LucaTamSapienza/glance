@@ -7,6 +7,8 @@
 #include "context.h"
 #include "bm25.h"
 #include "embed.h"
+#include "edit.h"
+#include "fs_save.h"
 #include "vault.h"
 #include "graph.h"
 #include "util.h"
@@ -515,5 +517,67 @@ int agent_context(const char *dir, const char *query, size_t budget, int semanti
     free(sec);
     bm25_free(ix);
     vfiles_free(&files);
+    return 0;
+}
+
+/* ---- surgical writes ------------------------------------------------------ */
+
+/* Read a whole file by path into a NUL-terminated buffer; *len gets the length. */
+static char *read_path(const char *path, size_t *len) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    char *s = read_file(f, len);
+    fclose(f);
+    return s;
+}
+
+int agent_edit(const char *file, const char *anchor, int op, const char *text) {
+    size_t len;
+    char *src = read_path(file, &len);
+    if (!src) { puts("{\"ok\":false,\"error\":\"cannot read file\"}"); return 1; }
+
+    char *out = edit_section(src, len, anchor, (EditOp)op, text ? text : "");
+    free(src);
+    if (!out) { puts("{\"ok\":false,\"error\":\"heading not found\"}"); return 1; }
+
+    if (atomic_write(file, out, strlen(out)) != 0) {
+        puts("{\"ok\":false,\"error\":\"write failed\"}"); free(out); return 1;
+    }
+
+    /* Confirm by echoing the updated section back. */
+    Doc *d = render_doc(out, strlen(out), 100000, 1);
+    Section s = section_find(d, anchor);
+    char *sectext = s.found ? section_text(d, s.start, s.end) : NULL;
+    printf("{\"ok\":true,\"file\":");
+    json_str(file);
+    printf(",\"anchor\":");
+    json_str(anchor ? anchor : "");
+    printf(",\"bytes\":%zu,\"section\":", strlen(out));
+    json_str(sectext ? sectext : "");
+    puts("}");
+    free(sectext); doc_free(d); free(out);
+    return 0;
+}
+
+int agent_frontmatter(const char *file, const char *key, const char *value) {
+    size_t len;
+    char *src = read_path(file, &len);
+    if (!src) { puts("{\"ok\":false,\"error\":\"cannot read file\"}"); return 1; }
+
+    char *out = edit_frontmatter(src, len, key, value);
+    free(src);
+    if (!out) { puts("{\"ok\":false,\"error\":\"out of memory\"}"); return 1; }
+
+    if (atomic_write(file, out, strlen(out)) != 0) {
+        puts("{\"ok\":false,\"error\":\"write failed\"}"); free(out); return 1;
+    }
+    printf("{\"ok\":true,\"file\":");
+    json_str(file);
+    printf(",\"key\":");
+    json_str(key);
+    printf(",\"value\":");
+    json_str(value);
+    printf(",\"bytes\":%zu}\n", strlen(out));
+    free(out);
     return 0;
 }

@@ -120,6 +120,16 @@ static char *run_tool(const char *name, const Json *args) {
         size_t len; char *src = load_file(file, &len);
         if (src) { agent_links(src, len); free(src); }
         else printf("{\"error\":\"cannot read file\"}");
+    } else if (!strcmp(name, "vault_edit")) {
+        const char *opname = json_str_or(json_get(args, "op"), "append");
+        int op = !strcmp(opname, "insert") ? 1 : !strcmp(opname, "replace") ? 2 : 0;
+        agent_edit(json_str_or(json_get(args, "file"), ""),
+                   json_str_or(json_get(args, "heading"), NULL),
+                   op, json_str_or(json_get(args, "text"), ""));
+    } else if (!strcmp(name, "vault_set_frontmatter")) {
+        agent_frontmatter(json_str_or(json_get(args, "file"), ""),
+                          json_str_or(json_get(args, "key"), ""),
+                          json_str_or(json_get(args, "value"), ""));
     } else {
         known = 0;
     }
@@ -157,6 +167,12 @@ static const ToolDef TOOLS[] = {
     { "vault_graph",
       "The whole vault's link graph as {nodes,edges}.",
       "{\"type\":\"object\",\"properties\":{\"dir\":{\"type\":\"string\"}},\"required\":[\"dir\"]}" },
+    { "vault_edit",
+      "Surgically edit a section of a Markdown file and save it atomically: op=append adds text at the end of the section under the given heading, insert adds it right after the heading, replace swaps the section body. All other formatting is preserved.",
+      "{\"type\":\"object\",\"properties\":{\"file\":{\"type\":\"string\"},\"heading\":{\"type\":\"string\"},\"op\":{\"type\":\"string\",\"enum\":[\"append\",\"insert\",\"replace\"]},\"text\":{\"type\":\"string\"}},\"required\":[\"file\",\"heading\",\"text\"]}" },
+    { "vault_set_frontmatter",
+      "Set a YAML frontmatter key to a value in a Markdown file (updating the key, adding it, or creating the frontmatter block), saved atomically.",
+      "{\"type\":\"object\",\"properties\":{\"file\":{\"type\":\"string\"},\"key\":{\"type\":\"string\"},\"value\":{\"type\":\"string\"}},\"required\":[\"file\",\"key\",\"value\"]}" },
 };
 static const int NTOOLS = (int)(sizeof TOOLS / sizeof TOOLS[0]);
 

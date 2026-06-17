@@ -40,6 +40,9 @@ static void print_help(void) {
 "  glance --neighbors N DIR link-graph neighbourhood of note N (--depth H hops)\n"
 "  glance --since TS DIR    notes in DIR modified after Unix time TS, as JSON\n"
 "  glance --graph DIR       print the vault's link graph as JSON\n"
+"  glance --edit F OP H T   edit section H of file F (OP=append|insert|replace,\n"
+"                           T=text), saved atomically; prints the new section\n"
+"  glance --set-frontmatter F K V   set YAML frontmatter key K to value V in F\n"
 "  glance mcp               serve the agent-memory tools over MCP (stdio JSON-RPC)\n"
 "  glance --theme NAME      open using colour theme NAME (see --list-themes)\n"
 "  glance --list-themes     list the available colour themes\n"
@@ -156,6 +159,16 @@ int main(int argc, char **argv) {
         /* glance --since TIMESTAMP DIR */
         long ts = strtol(argv[2], NULL, 10);
         return agent_since(argv[3], ts);
+    }
+    if (argc > 5 && !strcmp(argv[1], "--edit")) {
+        /* glance --edit FILE OP "Heading" "text"  (OP = append|insert|replace) */
+        const char *file = argv[2], *opname = argv[3], *anchor = argv[4], *text = argv[5];
+        int op = !strcmp(opname, "insert") ? 1 : !strcmp(opname, "replace") ? 2 : 0;
+        return agent_edit(file, anchor, op, text);
+    }
+    if (argc > 4 && !strcmp(argv[1], "--set-frontmatter")) {
+        /* glance --set-frontmatter FILE KEY VALUE */
+        return agent_frontmatter(argv[2], argv[3], argv[4]);
     }
     if (argc > 2 && !strcmp(argv[1], "--graph"))   return agent_graph(argv[2]);
     if (argc > 2 && !strcmp(argv[1], "--section")) {

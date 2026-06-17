@@ -229,7 +229,14 @@ locked after an on-device latency/heat benchmark.**
   behind the same `Embedder` interface, plus an embedding cache in `.glance/`;
   that step is deliberately deferred to the on-device latency/heat benchmark we
   agreed to run together (§11). Lexical stays the default.
-- **M4 — surgical write API.** Closes the loop; the moat.
+- **M4 — surgical write API. ✅ shipped.** Structure-addressed edits on the raw
+  source (formatting preserved), written atomically: `--edit FILE
+  append|insert|replace "Heading" "text"` and `--set-frontmatter FILE KEY VALUE`,
+  plus the MCP tools `vault_edit` and `vault_set_frontmatter`. The agent declares
+  intent + location; glance does the surgery (finds the section by anchor,
+  ignores headings inside fenced code, splices cleanly, writes via
+  `atomic_write`) and echoes the updated section back. New module: `edit.c`
+  (pure, unit-tested). Closes the loop; the moat.
 
 ### M1 — shipped command surface
 All print JSON to stdout; every read view is bounded so it stays token-cheap.

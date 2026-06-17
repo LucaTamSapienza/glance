@@ -42,7 +42,7 @@ static void slug(const char *s, char *out, size_t cap) {
 }
 
 /* Does heading `title` match `anchor`, by trimmed text or by slug? */
-static int title_matches(const char *title, const char *anchor) {
+int section_title_matches(const char *title, const char *anchor) {
     if (ci_trim_eq(title, anchor)) return 1;
     char s1[512], s2[512];
     slug(title, s1, sizeof s1);
@@ -61,7 +61,7 @@ Section section_find(const Doc *d, const char *anchor) {
     toc_build(d, &t);
     int mi = -1;
     for (int i = 0; i < t.n; i++)
-        if (title_matches(t.v[i].title, anchor)) { mi = i; break; }
+        if (section_title_matches(t.v[i].title, anchor)) { mi = i; break; }
     if (mi >= 0) {
         int level = t.v[mi].level;
         int end = (int)d->nline;

@@ -52,6 +52,7 @@ receipt.c      token-cost estimate + saved-% receipt (used vs raw-read)
 bm25.c         Okapi BM25 lexical ranking index (the retrieval core)
 context.c      budget planner: score order, diversity, coarse-to-fine, manifest
 embed.c        embedding seam: Embedder interface + a hashing default + cosine
+edit.c         surgical source edits: section append/insert/replace, frontmatter
 json.c         a small dependency-free JSON parser (for the MCP server)
 mcp.c          MCP server over stdio (JSON-RPC 2.0): the agent-memory tools
 agent.c        JSON exports: --outline/--section/--context/--neighbors/
@@ -121,6 +122,13 @@ Full parity with the original Go app, plus the vault/agent features:
   pipeline ships behind an `Embedder` interface (`embed.c`) with a dependency-free
   feature-hashing default; a MiniLM-class encoder plugs in behind the same
   interface (gated on a latency/heat benchmark — see `docs/DESIGN.md` §11).
+- **Surgical write API (M4)** — the agent declares intent + location and glance
+  does the surgery: `--edit FILE append|insert|replace "Heading" "text"` splices
+  into the addressed section (formatting preserved, headings inside code fences
+  ignored) and `--set-frontmatter FILE KEY VALUE` updates/creates a YAML key;
+  both write via `atomic_write` and are exposed as MCP `vault_edit` /
+  `vault_set_frontmatter`. The agent never rewrites a whole file. `edit.c` is
+  pure and unit-tested.
 - **Syntax highlighting** in fenced code blocks, per language (`highlight.c`):
   C/C++, Go, Python, JS/TS, Rust, bash, YAML, JSON — keywords, strings, numbers,
   comments, function calls, shell `$vars`, and YAML/JSON keys.
