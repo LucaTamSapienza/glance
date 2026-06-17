@@ -16,7 +16,7 @@ PREFIX ?= /usr/local
 BINDIR := $(DESTDIR)$(PREFIX)/bin
 
 # renderer + shared helpers, linked into both binaries
-CORE := $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/preprocess.c $(SRC)/search.c \
+CORE := $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/preprocess.c $(SRC)/theme.c $(SRC)/search.c \
         $(SRC)/toc.c $(SRC)/fs_save.c $(SRC)/vault.c $(SRC)/graph.c \
         $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c
 HDRS := $(wildcard $(SRC)/*.h)   # rebuild on any header change
@@ -26,7 +26,8 @@ HDRS := $(wildcard $(SRC)/*.h)   # rebuild on any header change
 all: glance glance-render
 
 GUI := $(SRC)/main.c $(SRC)/tui.c $(SRC)/editor.c $(SRC)/fswatch.c \
-       $(SRC)/clipboard.c $(SRC)/completion.c $(SRC)/agent.c
+       $(SRC)/clipboard.c $(SRC)/completion.c $(SRC)/agent.c $(SRC)/legend.c \
+       $(SRC)/progress.c
 glance: $(GUI) $(CORE) $(HDRS)
 	$(CC) $(CFLAGS) -o $@ $(GUI) $(CORE) $(MD4C_LIBS) $(NC_LIBS)
 
@@ -40,19 +41,22 @@ test:
 	$(CC) $(TCFLAGS) -o build-t-editor tests/editor_test.c $(SRC)/editor.c $(SRC)/util.c && ./build-t-editor; \
 	$(CC) $(TCFLAGS) -o build-t-preprocess tests/preprocess_test.c $(SRC)/preprocess.c && ./build-t-preprocess; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-search tests/search_test.c \
-	  $(SRC)/search.c $(SRC)/render.c $(SRC)/preprocess.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-search; \
+	  $(SRC)/search.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-search; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-toc tests/toc_test.c \
-	  $(SRC)/toc.c $(SRC)/render.c $(SRC)/preprocess.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-toc; \
+	  $(SRC)/toc.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-toc; \
 	$(CC) $(TCFLAGS) -o build-t-fssave tests/fs_save_test.c $(SRC)/fs_save.c && ./build-t-fssave; \
 	$(CC) $(TCFLAGS) -o build-t-completion tests/completion_test.c $(SRC)/completion.c && ./build-t-completion; \
+	$(CC) $(TCFLAGS) -o build-t-legend tests/legend_test.c $(SRC)/legend.c && ./build-t-legend; \
+	$(CC) $(TCFLAGS) -o build-t-progress tests/progress_test.c $(SRC)/progress.c && ./build-t-progress; \
+	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-theme tests/theme_test.c $(SRC)/theme.c && ./build-t-theme; \
 	$(CC) $(TCFLAGS) -o build-t-highlight tests/highlight_test.c $(SRC)/highlight.c && ./build-t-highlight; \
 	$(CC) $(TCFLAGS) -o build-t-imagesize tests/image_size_test.c $(SRC)/image_size.c && ./build-t-imagesize; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-render tests/render_test.c \
-	  $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/preprocess.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-render; \
+	  $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/preprocess.c $(SRC)/theme.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-render; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-vault tests/vault_test.c \
 	  $(SRC)/vault.c $(shell pkg-config --libs md4c) && ./build-t-vault; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-agent tests/agent_test.c \
-	  $(SRC)/agent.c $(SRC)/render.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
+	  $(SRC)/agent.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
 	  $(shell pkg-config --libs md4c) && ./build-t-agent; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-graph tests/graph_test.c \
 	  $(SRC)/graph.c $(SRC)/vault.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-graph; \
