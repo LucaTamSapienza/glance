@@ -1,65 +1,28 @@
 # glance
 
-The terminal Markdown reader/editor for macOS — read, search, edit, and
-*navigate* a folder of `.md` files without leaving your shell.
+A terminal Markdown tool with two faces, over the same folder of `.md` files:
+
+- **For you** — a beautifully rendered reader and a real editor: syntax-highlighted
+  code, aligned tables, inline images, vault navigation (`[[wikilinks]]`,
+  backlinks, a graph explorer), themes, search. Obsidian, in your shell.
+- **For your agent** — an **agent-native memory layer**: token-cheap, structure-aware
+  reads, budget-bounded retrieval with a *token receipt*, an **MCP server**, and a
+  **surgical write API**. Your assistant reads and maintains your vault for a
+  fraction of the tokens — locally, with citations, no embeddings required.
 
 ```
-$ glance README.md
+$ glance README.md                      # open the reader (you)
+$ glance --context "how do we deploy?" ./vault --budget 4000   # retrieve (your agent)
+$ glance mcp                            # serve the vault to Claude Desktop / Cursor
 ```
 
-glance opens any Markdown file in a beautifully rendered reader — with
-**syntax-highlighted** code blocks, **column-aligned tables**, and **inline
-images**. Press `i` to edit, `e` for a split editor with **live preview**, `/` to
-search, `t` for a table of contents, `Enter` to follow a `[[wikilink]]`, and
-`Ctrl-G` to walk the link graph of the whole vault — all in the terminal.
+Same files, same renderer, two consumers. The vault's own structure — headings
+and the link graph — is the engine; nothing is a black box, nothing leaves your
+machine.
 
-It is also a **lens for agents**: `glance --outline`, `--links`, and `--graph`
-print a document's structure as JSON, so a tool or an LLM can understand how a
-set of notes connects with no server, no embeddings, and no index step.
+---
 
-## Why C, why own the renderer
-
-glance began as a Go program built on the Charmbracelet stack (bubbletea +
-glamour). Most of that code existed to *fight* glamour's opacity: inserting
-marker paragraphs to survive rendering, stripping ANSI to search and re-injecting
-it to highlight. So glance was rewritten in C, owning the whole pipeline:
-
-```
-Markdown ──▶ md4c (CommonMark/GFM parser) ──▶ our Doc ──▶ ┌─ ANSI string  (CLI, tests)
-             our renderer builds a            (styled     └─ notcurses cells (TUI)
-             structured document model         runs)
-```
-
-Because *we* build the document model, search reads run text directly, the cursor
-is a real cell, the TOC is just the tagged heading lines, and link-following is a
-lookup — nothing about the output is a black box. The result is smaller, faster,
-and fully under our control.
-
-> glance was originally a Go program built on glamour; that implementation now
-> lives only in git history, at the **`go-final`** tag
-> (`git checkout go-final`).
-
-## Install
-
-Requires a C11 compiler and two libraries — [md4c](https://github.com/mity/md4c)
-(Markdown parser) and [notcurses](https://github.com/dankamongmen/notcurses)
-(TUI runtime). `pkg-config` is needed at build time to locate them:
-
-```sh
-brew install md4c notcurses pkg-config
-git clone https://github.com/LucaTamSapienza/glance
-cd glance
-make                 # builds ./glance (TUI) and ./glance-render (CLI)
-make test            # runs the unit tests under AddressSanitizer/UBSan
-make install         # copy glance + glance-render onto your PATH (/usr/local/bin)
-```
-
-`make install` honours `PREFIX` and `DESTDIR`. The default `/usr/local/bin` may
-need `sudo`; for a no-sudo, user-local install use `make install PREFIX=~/.local`
-(with `~/.local/bin` on your `PATH`).
-`make uninstall` removes them.
-
-## Usage
+## User-side: the reader/editor
 
 ```sh
 glance file.md                 # open in the reader TUI
@@ -67,8 +30,12 @@ glance new.md                  # a path that doesn't exist opens empty; :w creat
 glance-render -w 80 file.md    # render to ANSI on stdout (-l for a light theme)
 cat note.md | glance           # read from stdin
 glance --help                  # full usage and every key binding
-glance --keys                  # diagnostic: print raw key events
 ```
+
+glance renders Markdown with **syntax-highlighted** code blocks, **column-aligned
+tables**, and **inline images** (pixel graphics where the terminal supports them).
+Three modes: **Reader** (rendered, with a block cursor), **Insert** (full-screen
+editor), **Split** (editor + live preview).
 
 ### Keys
 
@@ -79,40 +46,34 @@ glance --keys                  # diagnostic: print raw key events
 | `h j k l` / arrows | move cursor | `i` | insert mode (full-screen editor) |
 | `g` / `G` | top / bottom | `e` | split: editor + live preview |
 | `Ctrl-D` / `Ctrl-U` | half page | `v` / `V` | select chars / lines |
-| `/` | search | `y` | yank selection → system clipboard |
-| `n` / `N` | next / prev match | `t` | table of contents |
-| `Enter` | follow link / `[[wikilink]]` | `b` | backlinks panel |
-| `-` / `Ctrl-O` | back to previous file | `Ctrl-G` | graph explorer |
-| `?` | key legend (sidebar) | `Ctrl-S` | save |
+| `/` `n` `N` | search, next, prev | `y` | yank selection → system clipboard |
+| `Enter` | follow link / `[[wikilink]]` | `t` | table of contents |
+| `-` / `Ctrl-O` | back to previous file | `b` | backlinks panel |
+| `?` | key legend (sidebar) | `Ctrl-G` | graph explorer |
+| `T` | theme picker (live) | `Ctrl-S` | save |
 | `:w` `:wq` `:x` `:q` `:q!` | write / quit (vi-style) | | |
 
-Press `?` to slide out a **key legend** on the right: a rounded panel listing the
-reader's bindings. It doesn't cover the text — the document reflows into the
-space beside it — and it shows its own `Esc · ? close` hint. Press `?` again or
-`Esc` to dismiss it. (On a window too narrow to reflow, `?` shows a centered
-overlay instead.)
+Press `?` to slide out a **key legend** on the right; the document reflows into
+the space beside it. **Trackpad / mouse-wheel scrolling** works (the cursor rides
+along), with a small reading-progress readout in the top-right corner.
 
-**Trackpad / mouse-wheel scrolling** works in the reader (the cursor rides along
-so it stays put on screen). A thin reading-progress readout sits in the top-right
-corner — a percentage with a small dots-ring spinner (`◜◠◝◞◡◟`) that comes alive
-while you scroll and settles to `◌` when you stop.
+**Insert / Split** — type to edit, `Esc` returns to the reader, `Ctrl-S` saves,
+`Ctrl-V` pastes a clipboard image (saved in a `<name>_media/` folder beside the
+document). Brackets `[ ( {` auto-close; you type fences by hand. The editor
+soft-wraps long lines to the pane width.
+
+In the **graph explorer** (`Ctrl-G`) the current note sits in the centre, notes
+that link *to* it on the left and notes it links *to* on the right; `Space`
+re-centres to walk the vault.
 
 ### Themes
 
-glance ships several color themes — `auto` (the default: follows your terminal's
-dark/light background), `dracula`, `nord`, `gruvbox-dark`, `solarized-dark`,
-`solarized-light`, `github-light`. List them, pick one with the flag, or press
-**`T`** in the reader to open a **live picker** — move with `j`/`k` and the page
-recolors as you browse, `Enter` keeps the choice (and saves it as your default),
-`Esc` reverts:
-
-```sh
-glance --list-themes            # print the available theme names
-glance --theme dracula file.md
-glance-render --theme nord file.md
-```
-
-Set a default — and define or override your own — in `~/.config/glance/config`:
+Eight built-ins — `auto` (default; follows your terminal background), `dracula`,
+`nord`, `gruvbox-dark`, `solarized-dark`, `solarized-light`, `github-light`. Pick
+one with `--theme`, list them with `--list-themes`, or press **`T`** in the reader
+for a **live picker** (the page recolors as you browse; `Enter` keeps and saves
+it, `Esc` reverts). Set a default and define custom palettes in
+`~/.config/glance/config`:
 
 ```ini
 theme = nord
@@ -120,100 +81,159 @@ theme = nord
 [theme:mine]
 base = dracula
 heading1 = #ff00aa
-syntax_string = #a6e22e
 ```
 
-Themes recolor the document (headings, code, links, syntax) and the UI chrome
-(status bar, panels, selection, progress); they ride on your terminal's own
-background rather than painting a full-screen color.
+### The vault — no init needed
 
-**Insert / Split** — type to edit, `Esc` returns to the reader, `Ctrl-S` saves,
-`Ctrl-V` pastes an image from the clipboard (saves it in a `<name>_media/` folder
-beside the document and inserts a Markdown reference). Brackets `[` `(` `{` auto-close (backticks do not
-— you type fences by hand).
-
-In the **graph explorer** (`Ctrl-G`) the current note sits in the centre, notes
-that link *to* it on the left and notes it links *to* on the right. `j`/`k` or
-↑/↓ select a neighbour, `h`/`l` or ←/→ switch column, `Enter` opens it, `Space`
-re-centres the graph on it to walk the vault, `Esc` closes.
-
-## The vault — no init needed
-
-There is no `glance --init` and no index file: **the folder is the vault**, just
-like Obsidian. When you open a file, glance finds the vault root by walking up to
-the nearest `.git` or `.obsidian` marker (falling back to the file's own
+**The folder is the vault**, just like Obsidian. glance finds the root by walking
+up to the nearest `.git` or `.obsidian` marker (falling back to the file's
 directory), then scans it **recursively** — so `[[wikilinks]]` resolve to notes
-anywhere in the tree, including subfolders.
+anywhere in the tree. No `--init`, no index file.
 
-## Agent-facing exports
+---
 
-glance serves two readers at once: the human at the terminal and the agent
-reading the same files. The non-interactive subcommands print JSON to stdout:
+## Agent-side: the memory layer
+
+Markdown is the lingua franca agents use for memory and context. The problem:
+today an agent reads a vault by loading whole files — expensive, and blind to how
+notes connect. glance is the layer in between. Every read is **bounded** so it
+stays token-cheap, and the retrieval and write paths are built *for* an agent.
+
+All commands print JSON to stdout; the retrieval ones carry a **token receipt**
+(how many tokens they used versus a naive whole-file read).
+
+### Reads
 
 ```sh
-glance --outline file.md   # heading tree:    [{level, title, line}, ...]
-glance --links   file.md   # outbound links:  [{target, wiki}, ...]
-glance --graph   ./notes   # whole-vault link graph: {nodes, edges}
+glance --context "QUERY" DIR [--budget N] [--semantic]   # the headline
+glance --section "FILE#Heading"        # one heading's subtree + a token receipt
+glance --outline FILE [--depth N] [--abstract]           # heading tree, bounded
+glance --neighbors "Note" DIR [--depth H]                # link-graph neighbourhood
+glance --backlinks "Note" DIR [--context]                # who links here (+ the line)
+glance --since TS DIR                  # notes changed after a Unix timestamp
+glance --links FILE                    # a file's outbound links
+glance --graph DIR                     # the whole vault's link graph
 ```
 
-An agent can call `glance --graph .` to learn how a document set connects, then
-`glance --outline x.md` to navigate one file. See [AGENT_FEATURES.md](AGENT_FEATURES.md)
-for the design rationale, and [AGENTS.md](AGENTS.md) if you are running this repo
-with a coding agent.
+`--context` is the wedge. It assembles the **optimal bundle under a token budget**:
+note sections ranked by BM25 fused with a **link-graph prior**, chosen with
+diversity and a coarse-to-fine projection (full section, or — if it won't fit —
+its abstract), plus a **truncation manifest** so the agent knows what was left out
+and can follow up. It returns `{query, budget_tokens, chunks, truncated, receipt}`
+— and on a real vault routinely saves 90%+ of the tokens a raw read would cost.
+
+Retrieval is **lexical + graph by default** (local, deterministic, private);
+`--semantic` fuses in an embedding score so notes a keyword search would miss can
+surface (a dependency-free embedder ships today; a MiniLM-class encoder is a
+drop-in behind the same interface).
+
+### Writes — surgical, never a whole-file rewrite
+
+The agent declares **intent + location**; glance does the surgery and writes
+atomically (temp file + rename), preserving all other formatting:
+
+```sh
+glance --edit FILE append|insert|replace "Heading" "text"
+glance --set-frontmatter FILE KEY VALUE
+```
+
+It resolves the section by heading (text or slug), ignores headings inside fenced
+code, and keeps the vault coherent — so an agent can *maintain* your notes, not
+just read them.
+
+### MCP server — native in any agent
+
+```sh
+glance mcp
+```
+
+`glance mcp` speaks JSON-RPC 2.0 over stdio and exposes the reads and writes as
+native [MCP](https://modelcontextprotocol.io) tools (`vault_context`,
+`vault_section`, `vault_outline`, `vault_neighbors`, `vault_backlinks`,
+`vault_since`, `vault_links`, `vault_graph`, `vault_edit`, `vault_set_frontmatter`).
+Wire it into Claude Desktop / Cursor / the Agent SDK in three lines — see
+[docs/MCP.md](docs/MCP.md):
+
+```json
+{ "mcpServers": { "glance": { "command": "glance", "args": ["mcp"] } } }
+```
+
+The design and rationale for the whole memory layer is in
+[docs/DESIGN.md](docs/DESIGN.md).
+
+---
+
+## Why C, why own the renderer
+
+glance began as a Go program built on the Charmbracelet stack (bubbletea +
+glamour). Most of that code existed to *fight* glamour's opacity. So glance was
+rewritten in C, owning the whole pipeline:
+
+```
+Markdown ──▶ md4c (CommonMark/GFM) ──▶ our Doc ──▶ ┌─ ANSI string  (CLI, tests)
+             our renderer builds a     (styled    ├─ notcurses cells (TUI)
+             structured document model  runs)      └─ projections    (agent reads)
+```
+
+Because *we* build the document model, search reads run text directly, the TOC is
+the tagged heading lines, and the agent layer can project the same note at any
+granularity (full / section / abstract) — a glamour black box could not. Local,
+fast, and fully under our control.
+
+> The original Go implementation lives only in git history, at the **`go-final`**
+> tag (`git checkout go-final`).
+
+## Install
+
+Requires a C11 compiler, [md4c](https://github.com/mity/md4c),
+[notcurses](https://github.com/dankamongmen/notcurses), and `pkg-config`:
+
+```sh
+brew install md4c notcurses pkg-config
+git clone https://github.com/LucaTamSapienza/glance
+cd glance
+make                 # builds ./glance (TUI) and ./glance-render (CLI)
+make test            # unit tests under AddressSanitizer/UBSan
+make install         # copy onto your PATH (/usr/local/bin; honours PREFIX/DESTDIR)
+```
+
+For a no-sudo install: `make install PREFIX=~/.local` (with `~/.local/bin` on your
+`PATH`). `make uninstall` removes them.
 
 ## Use with Claude Code (plugin)
 
-This repo is also a **Claude Code plugin**. Install it from the marketplace:
+This repo is also a **Claude Code plugin** (it shells out to your installed
+`glance`, so `make install` first):
 
 ```sh
 claude plugin marketplace add LucaTamSapienza/glance
 claude plugin install glance
 ```
 
-It gives Claude two things (it shells out to your installed `glance`, so run
-`make install` first):
-
-- **Slash commands** — `/glance-outline`, `/glance-links`, `/glance-graph`, and
-  `/glance-preview` (renders a doc inline in your session).
-- **Two skills** — one lets Claude *use* glance to navigate a vault's structure;
-  the other has Claude *proactively offer* to render markdown with glance when it
-  writes a doc or you ask to read one.
+It adds slash commands wrapping the JSON exports and the renderer, plus skills
+that let Claude *use* glance to navigate and render a vault.
 
 ## Repository layout
 
 ```
-src/            the C application (renderer + TUI + agent exports)
+src/            the C app: renderer + TUI (user-side) + the agent-memory layer
 tests/          unit tests, one per pure module (make test)
 testdata/       sample.md showcase + a small example vault/
-Makefile        build (glance + glance-render) and test targets
-STATUS.md       module map, feature list, and design notes
-AGENT_FEATURES.md   why the vault/graph/JSON features exist
-AGENTS.md       guide for using this repo with a coding agent
+docs/           DESIGN.md (agent-memory north-star) · MCP.md · HANDOFF.md · REVIEW.md
+.claude-plugin/ commands/ skills/   the Claude Code plugin
+STATUS.md       module map + the full user-side / agent-side feature list
+AGENT_FEATURES.md   why the agent-memory layer exists
+AGENTS.md       guide for running this repo with a coding agent
 ```
-
-See [STATUS.md](STATUS.md) for the full module-by-module map.
 
 ## Roadmap / known limitations
 
-Good first contributions, in rough priority:
-
-- **Sharper inline images.** Images are blitted with pixel graphics where the
-  terminal supports them, but decoded and redrawn every frame. The right fix is a
-  *persistent image plane* per picture: decode and blit once, then `ncplane_move_yx`
-  it on scroll and hide it when a panel/editor covers it — crisper, flicker-free,
-  and far cheaper. See `blit_image` in `src/tui.c`.
-- **`Option`+arrow word-jump in the editor.** `Cmd`+arrows (line start/end) and
-  `Alt`/`Ctrl`+arrows (word) work, but some terminals — iTerm2 included — send
-  `Option`+`←`/`→` as a bare `b`/`f` with no modifier bit, indistinguishable from
-  typed letters. Detecting them needs the enhanced (kitty/CSI-u) keyboard
-  protocol, which we deliberately disable to avoid an escape-leak on exit; making
-  both work together is the open item.
-- **Remote images** (`http(s)://`) aren't fetched — only local paths render.
-- **Wide tables** overflow the viewport instead of wrapping or truncating.
-- **Cursor sync** is exact on structural lines but maps a soft-wrapped paragraph
-  to its block, not the precise wrapped sub-line (md4c exposes no byte offsets).
-
-See [STATUS.md](STATUS.md) for the full list with rationale.
+User-side: sharper inline images (persistent image planes), `Option`+arrow
+word-jump under the legacy keyboard protocol, remote-image fetch, wide-table
+wrapping. Agent-side: a MiniLM-class semantic encoder behind the embedder
+interface (with an on-device benchmark), a persistent `.glance/` index cache, and
+graph-expansion retrieval. See [STATUS.md](STATUS.md) and
+[docs/REVIEW.md](docs/REVIEW.md) for the full list.
 
 ## License
 
