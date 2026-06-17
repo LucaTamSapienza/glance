@@ -57,6 +57,33 @@ int main(void) {
     assert(json_parse("{\"a\":1} trailing") == NULL);
     assert(json_parse("") == NULL);
 
+    /* Deep nesting must be rejected, not crash the stack. */
+    {
+        char deep[6000];
+        for (int i = 0; i < 5000; i++) deep[i] = '[';
+        deep[5000] = '\0';
+        assert(json_parse(deep) == NULL);
+    }
+
+    /* \u surrogate pairs combine into one non-BMP codepoint; lone ones fail. */
+    {
+        Json *e = json_parse("\"\\uD83D\\uDE00\"");      /* U+1F600 😀 */
+        assert(e && e->type == JSON_STR);
+        assert(strcmp(e->str, "\xF0\x9F\x98\x80") == 0);
+        json_free(e);
+        assert(json_parse("\"\\uD83D\"") == NULL);        /* lone high */
+        assert(json_parse("\"\\uDE00\"") == NULL);        /* lone low */
+        assert(json_parse("\"\\u0000\"") == NULL);        /* interior NUL */
+    }
+
+    /* Number grammar: reject what strtod would wrongly accept. */
+    assert(json_parse("01") == NULL);
+    assert(json_parse("+1") == NULL);
+    assert(json_parse(".5") == NULL);
+    assert(json_parse("1.") == NULL);
+    assert(json_parse("1e9999") == NULL);                 /* overflows to inf */
+    assert(json_parse("-0.5e2") != NULL);                 /* a valid number */
+
     printf("all json tests passed\n");
     return 0;
 }

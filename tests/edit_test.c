@@ -103,6 +103,40 @@ int main(void) {
         free(out);
     }
 
+    /* Setext headings are editable and act as boundaries. The key case: a setext
+       sibling inside an ATX section's body must STOP a REPLACE (no data loss). */
+    {
+        const char *d = "## A\n\nbody of A\n\nB\n---\n\nbody of B\n\n## C\n\nbody of C\n";
+        char *out = edit_section(d, strlen(d), "B", EDIT_APPEND, "added");   /* setext addressable */
+        assert(out && idx(out, "added") >= 0 && idx(out, "body of B") < idx(out, "added"));
+        free(out);
+        char *r = edit_section(d, strlen(d), "A", EDIT_REPLACE, "newA");
+        assert(r);
+        assert(idx(r, "newA") >= 0 && idx(r, "body of A") < 0);   /* A body replaced */
+        assert(idx(r, "body of B") >= 0);                          /* setext B NOT deleted */
+        assert(idx(r, "---") >= 0 && idx(r, "body of C") >= 0);
+        free(r);
+    }
+
+    /* A ~~~ line inside a ```-fence must not close it, so ## inside stays code. */
+    {
+        const char *d = "# Real\n\n```\n~~~\n## NotAHeading\n~~~\n```\n\nbody\n";
+        assert(edit_section(d, strlen(d), "NotAHeading", EDIT_APPEND, "x") == NULL);
+        char *r = edit_section(d, strlen(d), "Real", EDIT_APPEND, "added");
+        assert(r && idx(r, "added") >= 0 && idx(r, "## NotAHeading") >= 0);
+        free(r);
+    }
+
+    /* Frontmatter: a value with a colon is quoted; a newline is rejected. */
+    {
+        const char *p = "# H\n\nbody\n";
+        char *out = edit_frontmatter(p, strlen(p), "title", "Notes: part 1");
+        assert(out && idx(out, "title: \"Notes: part 1\"") >= 0);
+        free(out);
+        assert(edit_frontmatter(p, strlen(p), "k", "line1\nline2") == NULL);
+        assert(edit_frontmatter(p, strlen(p), "bad:key", "v") == NULL);
+    }
+
     printf("all edit tests passed\n");
     return 0;
 }
