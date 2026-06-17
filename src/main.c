@@ -9,6 +9,7 @@
  */
 #include "tui.h"
 #include "agent.h"
+#include "mcp.h"
 #include "theme.h"
 #include "util.h"
 
@@ -38,6 +39,7 @@ static void print_help(void) {
 "  glance --neighbors N DIR link-graph neighbourhood of note N (--depth H hops)\n"
 "  glance --since TS DIR    notes in DIR modified after Unix time TS, as JSON\n"
 "  glance --graph DIR       print the vault's link graph as JSON\n"
+"  glance mcp               serve the agent-memory tools over MCP (stdio JSON-RPC)\n"
 "  glance --theme NAME      open using colour theme NAME (see --list-themes)\n"
 "  glance --list-themes     list the available colour themes\n"
 "  glance --help            show this help\n"
@@ -118,6 +120,7 @@ int main(int argc, char **argv) {
     }
     if (argc > 1 && (!strcmp(argv[1], "-k") || !strcmp(argv[1], "--keys")))
         return tui_keyprobe();
+    if (argc > 1 && !strcmp(argv[1], "mcp")) return mcp_serve();
     if (argc > 2 && !strcmp(argv[1], "--outline")) {
         /* glance --outline FILE [--depth N] [--abstract] */
         const char *fpath = argv[2];

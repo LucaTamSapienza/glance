@@ -209,8 +209,13 @@ locked after an on-device latency/heat benchmark.**
 
 - **M1 — bounded reads + budgeted retrieval + token receipt. ✅ shipped.** See
   the CLI surface below.
-- **M2 — `glance mcp`.** Expose the read primitives over MCP: native in Claude
-  Desktop / Cursor / the SDK. This is the distribution channel.
+- **M2 — `glance mcp`. ✅ shipped.** A stdio JSON-RPC 2.0 MCP server exposing the
+  eight reads as native tools (`vault_context`, `vault_section`, `vault_outline`,
+  `vault_neighbors`, `vault_backlinks`, `vault_since`, `vault_links`,
+  `vault_graph`); the tool bodies are the same `agent.c` exports, captured and
+  framed. Native in Claude Desktop / Cursor / the SDK — the distribution channel.
+  Wiring + tool reference: `docs/MCP.md`. New modules: `json.c` (a small JSON
+  parser) and `mcp.c` (the server). Unit-tested (`json_test`, `mcp_test`).
 - **M3 — semantic search behind a flag.** Model + index decided in §11.
 - **M4 — surgical write API.** Closes the loop; the moat.
 
