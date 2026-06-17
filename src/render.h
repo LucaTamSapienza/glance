@@ -73,6 +73,18 @@ Doc *render_doc_themed(const char *src, size_t len, int width,
 
 void doc_free(Doc *d);
 
+/* Concatenate a line's run text into a newly malloc'd, NUL-terminated string
+ * (caller frees), or NULL on OOM. This is the plain text behind the styling —
+ * what search and the table of contents match against. */
+char *line_text(const Line *L);
+
+/* Plain text of the inclusive charwise range between (line0,col0) and
+ * (line1,col1), where the cols are display columns; the endpoints may be given
+ * in either order, and the char under the higher endpoint is included. Lines are
+ * joined with '\n'. Returns a malloc'd NUL-terminated string (caller frees), or
+ * NULL on an empty doc / OOM. Used by the reader's charwise visual yank. */
+char *doc_range_text(const Doc *d, int line0, int col0, int line1, int col1);
+
 /* Serialize a Doc to a newly malloc'd, NUL-terminated ANSI string (caller
  * frees). Used by the render-only CLI and by tests. */
 char *doc_to_ansi(const Doc *d);

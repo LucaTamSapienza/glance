@@ -136,9 +136,27 @@ static void tighten_line(SB *out, const char *s, size_t n) {
 /* ---- driver --------------------------------------------------------------- */
 
 char *preprocess(const char *src, size_t len, size_t *out_len) {
+    return preprocess_map(src, len, out_len, NULL, NULL);
+}
+
+/* Append one pp-line -> src-line entry to a growable map. */
+static void map_push(int **map, size_t *n, size_t *cap, int src_line) {
+    if (*n + 1 > *cap) {
+        size_t nc = *cap ? *cap * 2 : 64;
+        int *p = realloc(*map, nc * sizeof(int));
+        if (!p) return;
+        *map = p; *cap = nc;
+    }
+    if (*map) (*map)[(*n)++] = src_line;
+}
+
+char *preprocess_map(const char *src, size_t len, size_t *out_len,
+                     int **out_map, int *out_n) {
     SB out = {0};
     int in_fence = 0, prev_nonblank = 0;
     size_t i = 0;
+    int *map = NULL; size_t mn = 0, mcap = 0;
+    int src_line = 0;                         /* 0-based original source line */
     while (i <= len) {
         size_t start = i;
         while (i < len && src[i] != '\n') i++;
@@ -147,8 +165,11 @@ char *preprocess(const char *src, size_t len, size_t *out_len) {
 
         int fence = is_fence(line, llen);
         if (!in_fence && !fence && prev_nonblank &&
-            (is_thematic_break(line, llen) || is_setext_underline(line, llen)))
+            (is_thematic_break(line, llen) || is_setext_underline(line, llen))) {
             sb_putc(&out, '\n');             /* keep it off the paragraph above */
+            map_push(&map, &mn, &mcap, src_line);   /* the inserted blank pp line */
+        }
+        map_push(&map, &mn, &mcap, src_line);       /* this source line's pp line */
 
         if (fence) {
             in_fence = !in_fence;
@@ -164,8 +185,11 @@ char *preprocess(const char *src, size_t len, size_t *out_len) {
 
         if (i < len) sb_putc(&out, '\n');    /* re-add the separator */
         i++;                                  /* step past the '\n' (or end) */
+        src_line++;
     }
     if (!out.data) out.data = calloc(1, 1);
     if (out_len) *out_len = out.len;
+    if (out_map) *out_map = map; else free(map);
+    if (out_n) *out_n = (int)mn;
     return out.data;
 }

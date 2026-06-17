@@ -147,6 +147,7 @@ static size_t find_sub(const char *s, size_t n, size_t from, const char *sub) {
 }
 
 /* Whole-word match of s[i..i+len) against a NULL-terminated list. */
+/* True if the word [s, s+len) appears in the NULL-terminated keyword/type list. */
 static int in_list(const char *const *list, const char *s, size_t len) {
     if (!list) return 0;
     for (; *list; list++)
@@ -154,9 +155,12 @@ static int in_list(const char *const *list, const char *s, size_t len) {
     return 0;
 }
 
+/* Identifier character classes: a byte >= 0x80 is treated as part of a word so
+ * UTF-8 identifiers stay whole. id_start excludes digits, id_cont includes them. */
 static int id_start(unsigned char c) { return c == '_' || isalpha(c) || c >= 0x80; }
 static int id_cont(unsigned char c)  { return c == '_' || isalnum(c) || c >= 0x80; }
 
+/* Index of the next non-space/tab byte at or after i. */
 static size_t skip_ws(const char *s, size_t n, size_t i) {
     while (i < n && (s[i] == ' ' || s[i] == '\t')) i++;
     return i;

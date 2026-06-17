@@ -44,6 +44,8 @@ void editor_up(Editor *e);
 void editor_down(Editor *e);
 void editor_home(Editor *e);
 void editor_end(Editor *e);
+void editor_word_left(Editor *e);
+void editor_word_right(Editor *e);
 
 /* display column of the cursor within its line (rune-count approximation) */
 int editor_cursor_col(const Editor *e);

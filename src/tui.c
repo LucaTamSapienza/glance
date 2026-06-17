@@ -22,6 +22,7 @@
 #include "progress.h"
 #include "theme.h"
 #include "util.h"
+#include "image_size.h"
 
 #include <notcurses/notcurses.h>
 #include <stdlib.h>
@@ -30,6 +31,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <poll.h>
+#include <time.h>
 #include <libgen.h>
 #include <dirent.h>
 #include <unistd.h>
@@ -70,6 +72,7 @@ typedef struct {
     int    dirty;                /* unsaved changes since the last write */
     char   msg[160];             /* transient status message (one keypress) */
     Doc   *preview;              /* Split mode: live render of the editor text */
+    int    preview_top;          /* Split mode: preview's first visible line (scroll) */
     int    helpmode;             /* help overlay open (narrow-terminal fallback) */
     int    legend;               /* Reader keybinding sidebar open (reflows text) */
     int       spin_frame;        /* dots-ring spinner frame (scroll-progress HUD) */
@@ -78,8 +81,10 @@ typedef struct {
     int    themepick;            /* theme picker panel open */
     int    theme_sel;            /* highlighted theme index in the picker */
     const Theme *theme_saved;    /* theme to restore if the picker is cancelled */
-    int    visualmode;           /* vi visual-line selection active */
+    int    visualmode;           /* vi visual selection active */
+    int    visual_char;          /* 1 = charwise (v), 0 = linewise (V) */
     int    visual_anchor;        /* line where the selection started */
+    int    visual_anchor_col;    /* column where a charwise selection started */
     int    blmode;               /* backlinks panel open */
     char  *bl[256];              /* file names that link here (owned) */
     int    nbl, bl_sel;
@@ -95,7 +100,8 @@ typedef struct {
 
 #define TOC_W 30                 /* table-of-contents panel width */
 
-static int content_rows(App *a) { return a->rows - 1; }   /* last row = status */
+/* Rows available for content: every terminal row except the bottom status bar. */
+static int content_rows(App *a) { return a->rows - 1; }
 
 /* Columns available to the document: full width, or width minus the legend
  * panel while it is open. The reader's Doc is rendered to this width. */
@@ -145,6 +151,24 @@ static void term_kbd_reset(void) {
     const char *seq = "\033[<u\033[=0u\033[>4;0m";
     ssize_t w = write(STDOUT_FILENO, seq, strlen(seq));
     (void)w;
+}
+
+/* Swallow terminal query responses (OSC colour reports and the like) that can
+ * land a few milliseconds after notcurses initialises. If they reach the input
+ * loop they are misread as a burst of keystrokes — e.g. the ':' in an
+ * "rgb:ffff/d7d7/8787" report opens the command line and the rest fills it. A
+ * brief drain at startup keeps the first frame clean; the user has not typed
+ * anything yet, so no real key is lost. */
+static void drain_startup_responses(struct notcurses *nc) {
+    struct timespec deadline;
+    if (clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) return;
+    deadline.tv_nsec += 50L * 1000000L;            /* ~50ms from now */
+    if (deadline.tv_nsec >= 1000000000L) { deadline.tv_sec++; deadline.tv_nsec -= 1000000000L; }
+    ncinput ni;
+    for (;;) {
+        uint32_t id = notcurses_get(nc, &deadline, &ni);
+        if (id == 0 || id == (uint32_t)-1) break;  /* 0 = deadline reached, nothing pending */
+    }
 }
 /* Decide dark vs light from the terminal's reported background colour. Falls
  * back to dark when the terminal doesn't tell us (the common, safe default). */
@@ -232,17 +256,38 @@ static void overlay_cell(struct ncplane *p, int y, int x, RGB fg, RGB bg) {
     free(egc);
 }
 
-/* Tint the visual-line selection (from the anchor to the cursor line). */
+/* Tint the visual selection: whole lines for linewise (V), or the inclusive
+ * character range between the anchor and the cursor for charwise (v). */
 static void draw_selection(App *a) {
     if (!a->visualmode) return;
-    int lo = a->visual_anchor, hi = a->rcur_line;
-    if (lo > hi) { int t = lo; lo = hi; hi = t; }
     RGB selfg = a->theme->sel_fg, selbg = a->theme->sel_bg;
     int body = content_rows(a);
-    for (int li = lo; li <= hi; li++) {
+
+    if (!a->visual_char) {                         /* linewise: tint full lines */
+        int lo = a->visual_anchor, hi = a->rcur_line;
+        if (lo > hi) { int t = lo; lo = hi; hi = t; }
+        for (int li = lo; li <= hi; li++) {
+            int y = li - a->top;
+            if (y < 0 || y >= body) continue;
+            for (int x = 0; x < content_cols(a); x++) overlay_cell(a->plane, y, x, selfg, selbg);
+        }
+        return;
+    }
+
+    /* charwise: order the two (line, col) endpoints, then tint the span */
+    int lol, loc, hil, hic;
+    if (a->visual_anchor < a->rcur_line ||
+        (a->visual_anchor == a->rcur_line && a->visual_anchor_col <= a->rcur_col)) {
+        lol = a->visual_anchor; loc = a->visual_anchor_col; hil = a->rcur_line; hic = a->rcur_col;
+    } else {
+        lol = a->rcur_line; loc = a->rcur_col; hil = a->visual_anchor; hic = a->visual_anchor_col;
+    }
+    for (int li = lol; li <= hil; li++) {
         int y = li - a->top;
         if (y < 0 || y >= body) continue;
-        for (int x = 0; x < content_cols(a); x++) overlay_cell(a->plane, y, x, selfg, selbg);
+        int xs = (li == lol) ? loc : 0;
+        int xe = (li == hil) ? hic : content_cols(a) - 1;   /* inclusive of the cursor cell */
+        for (int x = xs; x <= xe && x < content_cols(a); x++) overlay_cell(a->plane, y, x, selfg, selbg);
     }
 }
 
@@ -280,10 +325,14 @@ static void reader_bottom(App *a) {
     if (a->themepick)  { status_bar(a, " THEME  j/k move · Enter keep · Esc revert"); return; }
     if (a->msg[0])     { status_bar(a, a->msg); return; }
     if (a->visualmode) {
-        int n = abs(a->rcur_line - a->visual_anchor) + 1;
         char vs[160];
-        snprintf(vs, sizeof vs, " VISUAL  %d line%s  —  j/k extend   y yank   Esc cancel",
-                 n, n == 1 ? "" : "s");
+        if (a->visual_char) {
+            snprintf(vs, sizeof vs, " VISUAL  chars  —  h/j/k/l extend   y yank   Esc cancel");
+        } else {
+            int n = abs(a->rcur_line - a->visual_anchor) + 1;
+            snprintf(vs, sizeof vs, " VISUAL  %d line%s  —  j/k extend   y yank   Esc cancel",
+                     n, n == 1 ? "" : "s");
+        }
         status_bar(a, vs);
         return;
     }
@@ -350,8 +399,22 @@ static void draw_doc_line(struct ncplane *p, const Line *L, int row, int x0, int
     int x = 0;
     for (size_t j = 0; j < L->nrun && x < width; j++) {
         apply_style(p, &L->runs[j].st);
-        ncplane_putstr_yx(p, row, x0 + x, L->runs[j].text);
-        x += u8_width(L->runs[j].text, L->runs[j].len);
+        int rw = u8_width(L->runs[j].text, L->runs[j].len);
+        if (x + rw <= width) {                         /* whole run fits */
+            ncplane_putstr_yx(p, row, x0 + x, L->runs[j].text);
+            x += rw;
+        } else {                                       /* clip to the pane edge */
+            int remaining = width - x;
+            const char *t = L->runs[j].text;
+            size_t b = 0; int c = 0;
+            while (t[b] && c < remaining) {
+                int rl = u8_runelen((unsigned char)t[b]);
+                c += u8_width(t + b, (size_t)rl);
+                b += (size_t)rl;
+            }
+            ncplane_putnstr_yx(p, row, x0 + x, b, t);  /* at most b bytes */
+            x = width;
+        }
     }
 }
 
@@ -483,37 +546,50 @@ static void clear_images(App *a) {
  * decoded fresh each frame: reusing one ncvisual across frames confuses
  * notcurses' pixel-sprite bookkeeping and leaks escape sequences to the screen.
  * Anything that can't be drawn (a URL, a missing file, a terminal without image
- * support) silently leaves the ▦ placeholder text the renderer already drew. */
+ * support) silently leaves the ▦ placeholder text the renderer already drew.
+ *
+ * The plane is sized to the picture's own aspect ratio — width in cells derived
+ * from its pixel dimensions, given that a terminal cell is roughly twice as tall
+ * as it is wide — and the picture is STRETCHed to fill it exactly. That leaves no
+ * letterbox margin, which matters for NCBLIT_PIXEL: blank margin cells under a
+ * pixel sprixel get "annihilated" and would punch holes in the surrounding text.
+ * With a tight plane the crisp pixel blitter is safe on terminals that support
+ * it; elsewhere we fall back to the cell blitter (quadrants/sextants). */
 static void blit_image(App *a, const char *src, int row, int rows) {
     if (a->nimgpl >= (int)(sizeof a->imgpl / sizeof a->imgpl[0])) return;
     int body = content_rows(a);
     int h = rows; if (row + h > body) h = body - row;
-    int w = content_cols(a);
-    if (h < 1 || w < 2) return;
+    if (h < 1 || content_cols(a) < 2) return;
     char dirbuf[4096];
     char *path = path_resolve(doc_dir(a, dirbuf, sizeof dirbuf), src);
     if (!path) return;
+
+    int iw = 0, ih = 0, w = content_cols(a);
+    if (img_pixel_size(path, &iw, &ih) == 1 && iw > 0 && ih > 0) {
+        w = (int)((double)iw / ih * h * 2.0 + 0.5);   /* cells ≈ 2:1 tall:wide */
+        if (w > content_cols(a)) w = content_cols(a);
+        if (w < 2) w = 2;
+    }
+    int x = (content_cols(a) - w) / 2;                  /* centre horizontally */
+
     struct ncvisual *v = ncvisual_from_file(path);
     free(path);
     if (!v) return;
-    /* Wipe the placeholder text from the reserved rows so it can't show through
-     * the letterbox margins NCSCALE_SCALE leaves around the picture. */
+
+    /* Wipe the placeholder text from the reserved rows so nothing peeks beside
+     * the centred picture. (The base plane is redrawn every frame anyway.) */
     ncplane_set_fg_default(a->plane);
     ncplane_set_bg_default(a->plane);
     for (int ry = row; ry < row + h; ry++)
-        for (int rx = 0; rx < w; rx++) ncplane_putchar_yx(a->plane, ry, rx, ' ');
-    /* Cover the full row width (from column 0); NCSCALE_SCALE letterboxes the
-     * picture within the box. */
+        for (int rx = 0; rx < content_cols(a); rx++) ncplane_putchar_yx(a->plane, ry, rx, ' ');
+
     struct ncplane_options no; memset(&no, 0, sizeof no);
-    no.y = row; no.x = 0; no.rows = (unsigned)h; no.cols = (unsigned)w;
+    no.y = row; no.x = x; no.rows = (unsigned)h; no.cols = (unsigned)w;
     struct ncplane *ip = ncplane_create(a->plane, &no);
     if (!ip) { ncvisual_destroy(v); return; }
-    /* Cell-based blitter (quadrants/sextants/braille as the terminal allows).
-     * NCBLIT_PIXEL would be crisper but, recreated per frame over a full-width
-     * plane, it annihilated the surrounding text on some terminals — that needs
-     * the persistent-plane rework before it can be turned on. */
     struct ncvisual_options vo; memset(&vo, 0, sizeof vo);
-    vo.n = ip; vo.scaling = NCSCALE_SCALE; vo.blitter = NCBLIT_DEFAULT;
+    vo.n = ip; vo.scaling = NCSCALE_STRETCH;
+    vo.blitter = a->pixel ? NCBLIT_PIXEL : NCBLIT_DEFAULT;
     if (ncvisual_blit(a->nc, v, &vo) == NULL) ncplane_destroy(ip);
     else a->imgpl[a->nimgpl++] = ip;
     ncvisual_destroy(v);
@@ -651,6 +727,9 @@ static void draw_themepick(App *a) {
     ncplane_set_bg_default(p);
 }
 
+/* Draw the Reader screen: the visible Doc lines, selection and search overlays,
+ * the block cursor, any inline images, plus the TOC/backlinks panel and status
+ * bar. The whole frame is composed here and pushed with one notcurses_render. */
 static void draw_reader(App *a) {
     notcurses_cursor_disable(a->nc);
     reader_scroll(a);
@@ -696,39 +775,65 @@ static void draw_reader(App *a) {
 
 /* ---- Insert / Split editing ---------------------------------------------- */
 
-/* Keep the editor cursor visible within a pane `width` columns wide. */
+/* Visual rows a logical line occupies when soft-wrapped to `width` columns
+ * (always at least one, so an empty line still takes a row). */
+static int eline_rows(const ELine *L, int width) {
+    if (width < 1) width = 1;
+    return ed_byte_to_col(L->b ? L->b : "", L->len) / width + 1;
+}
+
+/* The cursor's visual position relative to the first visible line `top` in a
+ * pane `width` columns wide: how many wrapped rows down, and the column within. */
+static void editor_vcursor(Editor *e, int top, int width, int *vrow, int *vcol) {
+    if (width < 1) width = 1;
+    int r = 0;
+    for (int li = top; li < e->cy; li++) r += eline_rows(&e->lines[li], width);
+    int ccol = editor_cursor_col(e);
+    *vrow = r + ccol / width;
+    *vcol = ccol % width;
+}
+
+/* Keep the editor cursor visible in a pane `width` columns wide. Lines soft-wrap
+ * (no horizontal scroll), so scrolling counts wrapped visual rows: advance the
+ * top line until the cursor's visual row fits within the body. */
 static void editor_scroll(App *a, int width) {
     int body = content_rows(a);
     Editor *e = &a->ed;
+    e->xoff = 0;                       /* wrapping replaces horizontal scroll */
     if (e->cy < e->top) e->top = e->cy;
-    if (e->cy >= e->top + body) e->top = e->cy - body + 1;
     if (e->top < 0) e->top = 0;
-    int ccol = editor_cursor_col(e);
-    if (ccol < e->xoff) e->xoff = ccol;
-    if (ccol >= e->xoff + width) e->xoff = ccol - width + 1;
-    if (e->xoff < 0) e->xoff = 0;
+    for (;;) {
+        int vrow, vcol;
+        editor_vcursor(e, e->top, width, &vrow, &vcol);
+        if (vrow < body || e->top >= e->cy) break;
+        e->top++;
+    }
 }
 
-/* Draw the editor's visible lines into a pane at x0, clipped to `width`. */
+/* Draw the editor's visible lines into a pane at x0, soft-wrapped to `width`:
+ * each logical line is laid out across as many rows as it needs, so long lines
+ * stay within the pane instead of scrolling off the edge. */
 static void draw_editor_pane(App *a, int x0, int width) {
     struct ncplane *p = a->plane;
     Editor *e = &a->ed;
     int body = content_rows(a);
+    if (width < 1) width = 1;
     ncplane_set_styles(p, NCSTYLE_NONE);
     ncplane_set_fg_default(p);
     ncplane_set_bg_default(p);
-    for (int row = 0; row < body; row++) {
-        size_t li = (size_t)e->top + row;
-        if (li >= e->n) break;
+    int row = 0;
+    for (size_t li = (size_t)e->top; li < e->n && row < body; li++) {
         ELine *L = &e->lines[li];
-        if (!L->b || L->len == 0) continue;
-        size_t s = ed_col_to_byte(L->b, L->len, e->xoff);
-        size_t en = ed_col_to_byte(L->b, L->len, e->xoff + width);
-        if (en <= s) continue;
-        char save = L->b[en];           /* clip the visible window in place */
-        L->b[en] = '\0';
-        ncplane_putstr_yx(p, row, x0, L->b + s);
-        L->b[en] = save;
+        int nrows = eline_rows(L, width);
+        for (int sub = 0; sub < nrows && row < body; sub++, row++) {
+            if (!L->b || L->len == 0) continue;                 /* empty: blank row */
+            size_t s  = ed_col_to_byte(L->b, L->len, sub * width);
+            size_t en = ed_col_to_byte(L->b, L->len, (sub + 1) * width);
+            if (en <= s) continue;
+            char save = L->b[en]; L->b[en] = '\0';              /* clip one row in place */
+            ncplane_putstr_yx(p, row, x0, L->b + s);
+            L->b[en] = save;
+        }
     }
 }
 
@@ -747,7 +852,8 @@ static void draw_editor(App *a) {
                   e->cy + 1, editor_cursor_col(e) + 1);
     status_bar(a, status);
 
-    notcurses_cursor_enable(a->nc, e->cy - e->top, editor_cursor_col(e) - e->xoff);
+    int vrow, vcol; editor_vcursor(e, e->top, a->cols, &vrow, &vcol);
+    notcurses_cursor_enable(a->nc, vrow, vcol);
     notcurses_render(a->nc);
 }
 
@@ -787,13 +893,20 @@ static void draw_split(App *a) {
     ncplane_set_bg_default(p);
     for (int row = 0; row < body; row++) ncplane_putstr_yx(p, row, leftw, "\xe2\x94\x82");
 
-    /* preview, centred on the line that matches the editor cursor */
+    /* Preview as its own viewport: keep the line that matches the editor cursor
+     * visible, scrolling only when it would fall off the top or bottom edge — the
+     * same edge-triggered model the editor pane uses. Because the preview holds
+     * its own scroll position (a->preview_top) it stays put while the focus line
+     * is on screen, so it neither re-centres on every keystroke nor jitters when
+     * editor and preview lines don't line up one-to-one. */
     if (a->preview) {
         int focus = src_doc_line(a->preview, e->cy);
         if (focus < 0) focus = map_line(e->cy, (int)e->n, (int)a->preview->nline);
-        int ptop = focus - body / 2;
-        if (ptop > (int)a->preview->nline - body) ptop = (int)a->preview->nline - body;
-        if (ptop < 0) ptop = 0;
+        if (focus < a->preview_top)            a->preview_top = focus;
+        if (focus >= a->preview_top + body)    a->preview_top = focus - body + 1;
+        if (a->preview_top > (int)a->preview->nline - body) a->preview_top = (int)a->preview->nline - body;
+        if (a->preview_top < 0) a->preview_top = 0;
+        int ptop = a->preview_top;
         for (int row = 0; row < body; row++) {
             int pli = ptop + row;
             if (pli >= (int)a->preview->nline) break;
@@ -808,7 +921,8 @@ static void draw_split(App *a) {
                   a->title, e->dirty ? " *" : "");
     status_bar(a, status);
 
-    notcurses_cursor_enable(a->nc, e->cy - e->top, editor_cursor_col(e) - e->xoff);
+    int vrow, vcol; editor_vcursor(e, e->top, leftw, &vrow, &vcol);
+    notcurses_cursor_enable(a->nc, vrow, vcol);
     notcurses_render(a->nc);
 }
 
@@ -857,6 +971,9 @@ static int map_line(int from, int nfrom, int nto) {
  * above it), or -1 if the Doc carries no source tags. render.c fills the tags
  * by content matching; this turns them into an exact reader->editor map. */
 static int doc_src_line(const Doc *d, int line) {
+    if (d->nline == 0) return -1;                       /* empty doc (new file) */
+    if (line >= (int)d->nline) line = (int)d->nline - 1;
+    if (line < 0) line = 0;
     for (int i = line; i >= 0; i--) if (d->lines[i].source_line > 0) return d->lines[i].source_line - 1;
     for (int i = line + 1; i < (int)d->nline; i++) if (d->lines[i].source_line > 0) return d->lines[i].source_line - 1;
     return -1;
@@ -891,7 +1008,7 @@ static void seed_editor(App *a) {
 static void enter_insert(App *a) { seed_editor(a); a->mode = MODE_INSERT; }
 
 /* Enter Split mode (editor + live preview). */
-static void enter_split(App *a) { seed_editor(a); a->mode = MODE_SPLIT; render_preview(a); }
+static void enter_split(App *a) { seed_editor(a); a->mode = MODE_SPLIT; a->preview_top = 0; render_preview(a); }
 
 /* Copy the editor's buffer back into the app source (editor stays alive). */
 static void sync_source(App *a) {
@@ -931,6 +1048,7 @@ static void draw_help(App *a) {
         "    e                   split: editor + live preview",
         "    t                   table of contents",
         "    /                   search    (n / N next / prev)",
+        "    v / V               select chars / lines   (y yanks)",
         "    Ctrl-S              save",
         "    :w :wq :q :q!       write / quit",
         "    ?                   toggle this help",
@@ -944,6 +1062,9 @@ static void draw_help(App *a) {
         "  Insert / Split",
         "    Esc                 back to reader",
         "    Ctrl-S              save",
+        "    Ctrl-V              paste a clipboard image",
+        "    Alt/Ctrl + arrows   jump word left / right",
+        "    Cmd + arrows        line start / end  (also Ctrl-A / Ctrl-E)",
         "",
         "  press any key to close",
     };
@@ -1128,40 +1249,58 @@ static int handle_toc(App *a, uint32_t id, const ncinput *ni) {
     return 1;
 }
 
-/* Yank the selected visual lines (their plain text) to the system clipboard. */
-static void yank_selection(App *a) {
-    int lo = a->visual_anchor, hi = a->rcur_line;
-    if (lo > hi) { int t = lo; lo = hi; hi = t; }
-    /* gather the run text of each selected Doc line, joined by newlines */
+/* Yank the linewise selection (whole lines, joined by newlines) to the clipboard. */
+static void yank_lines(App *a, int lo, int hi) {
     size_t cap = 0;
     for (int li = lo; li <= hi; li++) {
         for (size_t j = 0; j < a->doc->lines[li].nrun; j++) cap += a->doc->lines[li].runs[j].len;
         cap += 1;
     }
     char *buf = malloc(cap + 1);
-    if (buf) {
-        size_t p = 0;
-        for (int li = lo; li <= hi; li++) {
-            Line *L = &a->doc->lines[li];
-            for (size_t j = 0; j < L->nrun; j++) {
-                memcpy(buf + p, L->runs[j].text, L->runs[j].len);
-                p += L->runs[j].len;
-            }
-            buf[p++] = '\n';
-        }
-        int ok = clip_copy(buf, p) == 0;
-        snprintf(a->msg, sizeof a->msg, ok ? "%d line%s yanked to clipboard" : "clipboard unavailable",
-                 hi - lo + 1, hi - lo ? "s" : "");
-        free(buf);
+    if (!buf) return;
+    size_t p = 0;
+    for (int li = lo; li <= hi; li++) {
+        Line *L = &a->doc->lines[li];
+        for (size_t j = 0; j < L->nrun; j++) { memcpy(buf + p, L->runs[j].text, L->runs[j].len); p += L->runs[j].len; }
+        buf[p++] = '\n';
+    }
+    int ok = clip_copy(buf, p) == 0;
+    snprintf(a->msg, sizeof a->msg, ok ? "%d line%s yanked to clipboard" : "clipboard unavailable",
+             hi - lo + 1, hi - lo ? "s" : "");
+    free(buf);
+}
+
+/* Yank the inclusive charwise selection (anchor..cursor) to the clipboard. */
+static void yank_chars(App *a) {
+    char *t = doc_range_text(a->doc, a->visual_anchor, a->visual_anchor_col,
+                             a->rcur_line, a->rcur_col);
+    if (!t) return;
+    int ok = clip_copy(t, strlen(t)) == 0;
+    snprintf(a->msg, sizeof a->msg, ok ? "selection yanked to clipboard" : "clipboard unavailable");
+    free(t);
+}
+
+/* Yank the active visual selection (charwise or linewise) to the system clipboard. */
+static void yank_selection(App *a) {
+    if (a->doc->nline == 0) { a->visualmode = 0; return; }   /* nothing to yank (empty doc) */
+    if (a->visual_char) {
+        yank_chars(a);
+    } else {
+        int lo = a->visual_anchor, hi = a->rcur_line;
+        if (lo > hi) { int t = lo; lo = hi; hi = t; }
+        yank_lines(a, lo, hi);
     }
     a->visualmode = 0;
 }
 
-/* Visual-line keys: extend the selection, y yanks, Esc/V cancel. */
+/* Visual-mode keys: extend the selection (h/j/k/l for charwise, j/k for
+ * linewise), y yanks, v/V/Esc cancel. */
 static int handle_visual(App *a, uint32_t id, const ncinput *ni) {
     int body = content_rows(a);
-    if (id == 'j' || id == NCKEY_DOWN)        a->rcur_line++;
-    else if (id == 'k' || id == NCKEY_UP)     a->rcur_line--;
+    if (id == 'j' || id == NCKEY_DOWN)        { a->rcur_line++; a->rcur_col = a->rcur_goal; }
+    else if (id == 'k' || id == NCKEY_UP)     { a->rcur_line--; a->rcur_col = a->rcur_goal; }
+    else if (id == 'h' || id == NCKEY_LEFT)   { a->rcur_col--; a->rcur_goal = a->rcur_col; }
+    else if (id == 'l' || id == NCKEY_RIGHT)  { a->rcur_col++; a->rcur_goal = a->rcur_col; }
     else if (id == 'g' || id == NCKEY_HOME)   a->rcur_line = 0;
     else if (id == 'G' || id == NCKEY_END)    a->rcur_line = (int)a->doc->nline - 1;
     else if (id == NCKEY_PGDOWN)              a->rcur_line += body;
@@ -1460,7 +1599,10 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     else if (id == NCKEY_ESC)                    { if (a->legend) toggle_legend(a); else clear_search(a); }
     else if (id == 'i')                          enter_insert(a);  /* vi-style */
     else if (id == 'e')                          enter_split(a);   /* editor + preview */
-    else if (id == 'v' || id == 'V')             { a->visualmode = 1; a->visual_anchor = a->rcur_line; }
+    else if (id == 'v') { a->visualmode = 1; a->visual_char = 1;   /* charwise from the cursor */
+                          a->visual_anchor = a->rcur_line; a->visual_anchor_col = a->rcur_col; }
+    else if (id == 'V') { a->visualmode = 1; a->visual_char = 0;   /* linewise */
+                          a->visual_anchor = a->rcur_line; }
     else if (id == NCKEY_ENTER || id == '\r' || id == '\n') {
         const char *u = link_at_cursor(a);
         if (u) open_link_target(a, u);
@@ -1502,8 +1644,33 @@ static void insert_with_pairing(Editor *e, uint32_t id, const ncinput *ni) {
     if (close) { editor_insert(e, &close, 1); editor_left(e); }
 }
 
+/* Fast cursor motion from modifier chords, mapping the several encodings macOS
+ * terminals use. Returns 1 if it handled the key.
+ *   - Ctrl-A / Ctrl-E  -> line start / end. This is the readline convention, and
+ *     several terminals (incl. the default macOS one) send exactly these for
+ *     Cmd+Left / Cmd+Right, so this is what makes Cmd+arrows work.
+ *   - Cmd (super) + Left/Right -> line start / end, for terminals that report the
+ *     super modifier directly.
+ *   - Alt/Meta/Ctrl + Left/Right, and Meta-b / Meta-f -> previous / next word.
+ * Caveat: some terminals send Option+Left/Right as a *bare* 'b'/'f' with no
+ * modifier bit (verified with `glance --keys`), which is indistinguishable from
+ * typing those letters — so word-jump on Option+arrows can't be done here and
+ * needs a terminal-side key binding instead. */
+static int try_nav_key(Editor *e, uint32_t id, const ncinput *ni) {
+    int meta = ncinput_alt_p(ni) || ncinput_meta_p(ni);   /* Option, either bit */
+    int word = meta || ncinput_ctrl_p(ni);
+    if (ctrl_is(id, ni, 'a')) { editor_home(e); return 1; }
+    if (ctrl_is(id, ni, 'e')) { editor_end(e);  return 1; }
+    if (id == NCKEY_LEFT  && ncinput_super_p(ni)) { editor_home(e); return 1; }
+    if (id == NCKEY_RIGHT && ncinput_super_p(ni)) { editor_end(e);  return 1; }
+    if ((id == NCKEY_LEFT  && word) || (meta && (id == 'b' || id == 'B'))) { editor_word_left(e);  return 1; }
+    if ((id == NCKEY_RIGHT && word) || (meta && (id == 'f' || id == 'F'))) { editor_word_right(e); return 1; }
+    return 0;
+}
+
 /* Apply one editing key (motion, structural edit, or text entry) to e. */
 static void apply_edit_key(Editor *e, uint32_t id, const ncinput *ni) {
+    if (try_nav_key(e, id, ni)) return;
     if (id == NCKEY_ENTER || id == '\r' || id == '\n') editor_newline(e);
     else if (id == NCKEY_BACKSPACE || id == 0x08 || id == 0x7f) editor_backspace(e);
     else if (id == NCKEY_DEL)   editor_delete(e);
@@ -1617,9 +1784,10 @@ int tui_keyprobe(void) {
 
         char buf[256];
         snprintf(buf, sizeof buf,
-                 "id=0x%06X  utf8=\"%s\"  hex=[%s]  eff=[%s]  alt=%d shift=%d ctrl=%d",
+                 "id=0x%06X  utf8=\"%s\"  hex=[%s]  eff=[%s]  alt=%d meta=%d super=%d shift=%d ctrl=%d",
                  id, ni.utf8, hex, eff,
-                 ncinput_alt_p(&ni) ? 1 : 0, ncinput_shift_p(&ni) ? 1 : 0,
+                 ncinput_alt_p(&ni) ? 1 : 0, ncinput_meta_p(&ni) ? 1 : 0,
+                 ncinput_super_p(&ni) ? 1 : 0, ncinput_shift_p(&ni) ? 1 : 0,
                  ncinput_ctrl_p(&ni) ? 1 : 0);
 
         if (line >= (int)rows - 1) {
@@ -1739,6 +1907,7 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
 
     if (rerender(&a) != 0) { shutdown_tui(); free(a.src); return 1; }
     redraw(&a);
+    drain_startup_responses(a.nc);   /* discard stray terminal query replies */
 
     /* Watch the file for external edits, and poll it alongside terminal input.
      * The watcher fd lives in the App so cross-file navigation can re-point it. */

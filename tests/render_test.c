@@ -136,6 +136,49 @@ int main(void) {
     expect(srcline_of(d, "func main") == 11,"code line maps to its source line");
     doc_free(d);
 
+    /* Heading chip: H1/H2 lines wrap their text in a one-cell coloured pad on
+     * each side (every run carries a bg), but get NO full-width fill; H3+ plain. */
+    const char *hmd = "# One\n\n## Two\n\n### Three\n";
+    Doc *hd = render_doc(hmd, strlen(hmd), 60, 1);
+    int h1 = -1, h2 = -1, h3 = -1;
+    for (size_t i = 0; i < hd->nline; i++) {
+        if (hd->lines[i].heading == 1) h1 = (int)i;
+        if (hd->lines[i].heading == 2) h2 = (int)i;
+        if (hd->lines[i].heading == 3) h3 = (int)i;
+    }
+    /* every run on a chip heading line has a background (pads + text + seps). */
+    int h1_chip = h1 >= 0 && hd->lines[h1].nrun >= 3 && hd->lines[h1].fill == 0;
+    for (size_t r = 0; h1 >= 0 && r < hd->lines[h1].nrun; r++)
+        if (!hd->lines[h1].runs[r].st.has_bg) h1_chip = 0;
+    expect(h1_chip, "H1 line is a coloured chip (every run has a bg, no full-width fill)");
+    expect(h1 >= 0 && hd->lines[h1].runs[0].len == 1 &&
+           hd->lines[h1].runs[0].text[0] == ' ', "H1 chip starts with a pad space");
+    int h2_bg = h2 >= 0 && hd->lines[h2].nrun > 0 && hd->lines[h2].runs[0].st.has_bg
+                && hd->lines[h2].fill == 0;
+    expect(h2_bg, "H2 line is a coloured chip");
+    int h3_plain = h3 >= 0 && hd->lines[h3].fill == 0;
+    for (size_t r = 0; h3 >= 0 && r < hd->lines[h3].nrun; r++)
+        if (hd->lines[h3].runs[r].st.has_bg) h3_plain = 0;
+    expect(h3_plain, "H3 line has no background chip");
+    doc_free(hd);
+
+    /* Exactness the old content-matching couldn't guarantee: a first word that
+     * repeats far apart must map to its OWN source line (offset-based), and a
+     * soft-wrapped paragraph's lines share the first source line. */
+    const char *md2 =
+        "alpha first\n"      /* 1 */
+        "\n"                 /* 2 */
+        "wrapped line one\n" /* 3 */
+        "wrapped line two\n" /* 4  (soft break: same paragraph as line 3) */
+        "\n"                 /* 5 */
+        "alpha second\n";    /* 6 */
+    Doc *d2 = render_doc(md2, strlen(md2), 80, 1);
+    expect(srcline_of(d2, "alpha first")  == 1, "first 'alpha' maps to line 1");
+    expect(srcline_of(d2, "alpha second") == 6, "repeated 'alpha' maps to line 6, not line 1");
+    /* lines 3 and 4 render as one line (soft break), tagged with the first: 3 */
+    expect(srcline_of(d2, "wrapped line one") == 3, "soft-wrapped paragraph keeps the first source line");
+    doc_free(d2);
+
     /* Inline image: a placeholder line carries the src, reserves rows, and is
      * linked so the reader can open it. */
     Doc *im = render_doc("![a cat](cat.png)\n", 18, 60, 1);
@@ -155,6 +198,40 @@ int main(void) {
         expect(alt, "placeholder shows the alt text");
     }
     doc_free(im);
+
+    /* line_text concatenates a line's run text (used by search and the TOC). */
+    Doc *lt = render_doc("hello **bold** world\n", 21, 60, 1);
+    expect(lt->nline > 0, "line_text fixture renders a line");
+    if (lt->nline > 0) {
+        char *t = line_text(&lt->lines[0]);
+        expect(t && strcmp(t, "hello bold world") == 0, "line_text joins runs into plain text");
+        free(t);
+    }
+    doc_free(lt);
+
+    /* doc_range_text: the charwise visual yank's text extraction. Two paragraphs
+     * render to lines [0]="alpha world", [1]="", [2]="beta". */
+    Doc *rt = render_doc("alpha world\n\nbeta\n", 18, 60, 1);
+    if (rt->nline >= 3) {
+        char *a = doc_range_text(rt, 0, 0, 0, 4);          /* "alpha" (cols 0..4 inclusive) */
+        expect(a && strcmp(a, "alpha") == 0, "range: single-line inclusive slice");
+        free(a);
+        char *b = doc_range_text(rt, 0, 6, 0, 10);         /* "world" */
+        expect(b && strcmp(b, "world") == 0, "range: mid-line slice");
+        free(b);
+        char *c = doc_range_text(rt, 0, 4, 0, 0);          /* reversed endpoints -> same as forward */
+        expect(c && strcmp(c, "alpha") == 0, "range: endpoints order-independent");
+        free(c);
+        char *m = doc_range_text(rt, 0, 6, 2, 3);          /* "world" .. "beta" across lines */
+        expect(m && strcmp(m, "world\n\nbeta") == 0, "range: multi-line spans joined by newline");
+        free(m);
+        char *e = doc_range_text(rt, 2, 0, 2, 999);        /* col past end clamps to line end */
+        expect(e && strcmp(e, "beta") == 0, "range: high col clamps to line end");
+        free(e);
+    } else {
+        expect(0, "doc_range_text fixture has >= 3 lines");
+    }
+    doc_free(rt);
 
     if (fails) { printf("%d render test(s) FAILED\n", fails); return 1; }
     printf("all render tests passed\n");

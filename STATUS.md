@@ -61,13 +61,15 @@ The renderer emits a **structured Doc**; two sinks consume it — `doc_ansi.c`
 Full parity with the original Go app, plus the vault/agent features:
 
 - **Three modes:** Reader (rendered, block cursor), Insert (full-screen editor),
-  Split (editor + live preview).
+  Split (editor + live preview). The editor soft-wraps long lines to the pane
+  width; the cursor and scrolling count wrapped visual rows.
 - **Search** `/` with highlight, `n`/`N` next/prev.
 - **TOC** panel `t`, jump on Enter.
 - **Save** atomic: `:w` `:wq` `:x`, `Ctrl-S`; `:q` refuses on unsaved, `:q!`
   discards; dirty flag.
 - **Live reload** on external change (kqueue), only when clean.
-- **Clipboard:** `v`/`V` visual-line select, `y` yank to system clipboard.
+- **Clipboard:** visual select — `v` charwise (h/j/k/l), `V` linewise — `y` yanks
+  to the system clipboard.
 - **Open links** under the cursor with Enter.
 - **Tolerant Markdown** preprocessing.
 - **Key legend sidebar** `?`: a rounded right-side panel of the reader's
@@ -95,56 +97,98 @@ Full parity with the original Go app, plus the vault/agent features:
 - **Syntax highlighting** in fenced code blocks, per language (`highlight.c`):
   C/C++, Go, Python, JS/TS, Rust, bash, YAML, JSON — keywords, strings, numbers,
   comments, function calls, shell `$vars`, and YAML/JSON keys.
+- **Headings** are coloured per level; `#`/`##` (title/subtitle) also sit in a
+  coloured chip — a one-cell padded background around the text (`[ text ]`),
+  tinted to their hue — rather than a bar spanning the whole line.
 - **Tables** are bordered and column-aligned, honouring the `:---:` markers
   (left/center/right); the table is buffered, then emitted once widths are known.
-- **Inline images:** drawn in the reader via notcurses (pixel graphics or
-  Unicode half-blocks), with a `▦ alt` placeholder + Enter-to-open fallback.
+- **Inline images:** drawn in the reader via notcurses on a plane sized to the
+  picture's aspect ratio, so it fills its cells with no letterbox margin — crisp
+  pixel graphics (`NCBLIT_PIXEL`) where the terminal supports them, Unicode
+  half-blocks otherwise — with a `▦ alt` placeholder + Enter-to-open fallback.
   `Ctrl-V` in the editor pastes a clipboard image: it saves the bytes as a PNG
   in a `<name>_media/` folder beside the document (osascript / sips) and inserts
   a `![](…)` reference.
-- **Cursor sync** maps reader↔editor by content-attributed source lines
-  (`Line.source_line`), exact at structural lines, with a proportional fallback.
+- **Cursor sync** maps reader↔editor by exact source lines: md4c text pointers
+  index the preprocessed source, so each visual line records its source line
+  during the parse (`Line.source_line`); `preprocess_map` recovers the original
+  line across any blank lines preprocessing inserts.
 
 ## Keys
 
 Reader: `hjkl`/arrows move · `g`/`G` top/bottom · `Ctrl-D/U` half page · `i`
-insert · `e` split · `V` visual select (`y` yank) · `/` search (`n`/`N`) · `t`
-toc · `?` key legend (sidebar) · Enter open link · `:w`/`:q`/`:wq`/`:q!` · `Ctrl-S` save ·
-`Ctrl-C` quit · trackpad/wheel to scroll · `T` theme picker. Insert/Split: type to
-edit, `Esc` back, `Ctrl-S` save, `Ctrl-V` paste a clipboard image.
+insert · `e` split · `v`/`V` char/line select (`y` yank) · `/` search (`n`/`N`) · `t`
+toc · `?` key legend (sidebar) · `T` theme picker · Enter open link ·
+`:w`/`:q`/`:wq`/`:q!` · `Ctrl-S` save · `Ctrl-C` quit · trackpad/wheel to scroll.
+Insert/Split: type to edit, `Esc` back, `Ctrl-S` save, `Ctrl-V` paste a clipboard
+image, `Alt`/`Ctrl`+`←`/`→` jump a word, `Ctrl-A`/`Ctrl-E` (and `Cmd`+`←`/`→`,
+which many terminals send as those) go to line start/end. Some terminals send
+`Option`+`←`/`→` as a bare `b`/`f` with no modifier — those can't be
+distinguished from typed letters, so word-jump on Option+arrows needs a
+terminal-side key binding (`glance --keys` shows what your terminal sends).
+
+Opening a path that doesn't exist starts an empty buffer and creates the file on
+the first `:w` / `Ctrl-S` (vim-style).
 
 ## Build & run
 
 ```sh
 make                  # glance (TUI) + glance-render (CLI)
 make test             # all module unit tests, ASan/UBSan
+make install          # -> $(PREFIX)/bin (default /usr/local; honours PREFIX/DESTDIR)
+./glance --help       # full usage + every key binding
 ./glance file.md
 ./glance-render -w 80 file.md   # -l light theme; stdin ok; --keys diagnostic
 ```
 
 ## Tests
 
-Pure modules are unit-tested under ASan/UBSan (`make test`) — eleven suites:
-editor, preprocess, search, toc, fs_save, completion, highlight, render, vault,
-agent, graph. `render_test` covers table alignment, source-line attribution, and
+Pure modules are unit-tested under ASan/UBSan (`make test`) — twelve suites:
+editor, preprocess, search, toc, fs_save, completion, highlight, image_size,
+render, vault, agent, graph. `editor_test` covers word-wise motion; `render_test`
+covers table alignment, source-line attribution, and
 the image placeholder model. The renderer is also exercised through the
 `glance-render` CLI. The notcurses front-end (including image blitting) needs a
 real terminal and is verified interactively.
 
 ## Known limitations / future
 
-- **Cursor sync** is exact at structural lines (headings, code, list items,
-  table rows, single-line paragraphs) via content attribution, but md4c 0.5.2
-  exposes no source byte-offsets, so a soft-wrapped multi-line paragraph is still
-  approximate (it maps to the block, not the exact wrapped sub-line).
+- **Cursor sync** is exact per source line (offset-based). The only residual is
+  inherent to a rendered preview: consecutive source lines md4c folds into one
+  paragraph (a soft break) render as a single visual line, so they share the
+  first line's number rather than each getting their own.
 - Display width counts one column per codepoint (wide/zero-width chars TBD).
 - Syntax highlighting is line-by-line and best-effort (no full grammar): it
   covers common languages and may mis-tokenise exotic constructs; unknown
   languages fall back to a plain styled background.
-- Inline images are sized to the picture's aspect ratio (via `image_size.c`) but
-  decoded once per frame (a decode cache reused one `ncvisual` across frames,
-  which corrupted notcurses' pixel-sprite state and leaked escapes — so it was
-  removed; a persistent-plane cache is the correct future optimisation). They only
-  blit when the image's top row is on screen, and remote (`http`) images aren't
-  fetched. The cell-aspect factor is an approximation, not read from the terminal.
+- Inline images are sized to the picture's aspect ratio (via `image_size.c`) and
+  STRETCHed to fill the plane, then blitted with `NCBLIT_PIXEL` when the terminal
+  supports it (else the cell blitter). They are decoded once per frame (a decode
+  cache reused one `ncvisual` across frames, which corrupted notcurses' pixel-sprite
+  state and leaked escapes — so it was removed; a persistent-plane cache that moves
+  planes on scroll is the correct future optimisation). They only blit when the
+  image's top row is on screen, and remote (`http`) images aren't fetched. The
+  cell-aspect factor is an approximation, not read from the terminal.
 - Very wide tables overflow the width rather than wrapping/truncating.
+
+## Robustness & security
+
+Audited (static review + AddressSanitizer/UBSan fuzzing of the headless paths)
+for crashes and injection. Hardened:
+
+- **Clipboard paste** passes the file path to `osascript` as an `on run argv`
+  parameter, never interpolated into the script text — a document folder named
+  with a `"` or newline can no longer inject AppleScript (was a real RCE vector).
+- **Vault scan** (`--graph`, `--outline`, backlinks, Ctrl-G) uses `lstat` and
+  skips symlinks, plus a recursion depth cap, so a symlink cycle (`loop -> ..`)
+  or a very deep tree can't drive infinite recursion / stack overflow. Regression-
+  tested under ASan in `vault_test`.
+- **Empty/degenerate documents**: yank, the empty-line newline split, and the
+  reader↔editor cursor map all guard the zero-line / empty-buffer cases.
+- **JSON exports** escape quotes/backslashes/control chars, so odd filenames
+  can't break the output. Renderer run-builders no longer write `arr[n-1]` after
+  a failed (OOM) push. Graph edges grow geometrically.
+
+Residual notes: relative `../` image/link targets are not confined to the vault
+(they can reference any file the user can already read); display width is one
+column per codepoint.

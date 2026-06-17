@@ -23,8 +23,10 @@ notcurses cell blitter. No glamour, no black box.
 ```sh
 make                 # build ./glance (TUI) and ./glance-render (CLI)
 make test            # all unit tests under AddressSanitizer + UBSan
+make install         # copy both binaries to $(PREFIX)/bin (default /usr/local)
 make clean           # remove binaries and build artifacts
 
+./glance --help                         # full usage + every key binding
 ./glance testdata/sample.md             # open in the TUI
 ./glance-render -w 80 testdata/sample.md   # render to ANSI on stdout (-l = light)
 cat note.md | ./glance                  # read from stdin
@@ -68,9 +70,13 @@ testdata/        sample.md showcase + an example vault/
 - **The vault is a folder.** No `--init`, no index. `vault.c` finds the root by
   walking up to a `.git`/`.obsidian` marker and scans it recursively; bare
   `[[names]]` resolve by stem across the whole tree.
-- **Cursor sync is proportional.** md4c exposes no source byte-offsets, so the
-  reader↔editor cursor mapping is approximate by design. Exact 1:1 needs a
-  source-tracking pass — it is a known gap, not a bug to patch naively.
+- **Cursor sync is offset-based and exact.** md4c hands text pointers that index
+  into the (preprocessed) source, so `render.c` records each visual line's source
+  line during the parse (`src_line_at` → `Line.source_line`); `preprocess_map`
+  recovers the original line across the blank lines preprocessing may insert. It
+  is exact wherever a source line maps to its own visual line; consecutive lines
+  md4c merges into one paragraph (soft break) share the first line's number — the
+  inherent limit of a *rendered* preview, not a fixable bug.
 - **File watcher watches the parent directory**, not the file, because atomic
   saves use `rename`, which would break an inode-level watch.
 - **Legacy keyboard mode is intentional.** `tui.c` disables the kitty keyboard

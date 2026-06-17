@@ -11,9 +11,9 @@ NC_LIBS   := $(shell pkg-config --libs notcurses)
 
 SRC := src
 
-# install location (override with `make install PREFIX=~/.local`)
+# Where `make install` puts the two binaries (override: make install PREFIX=~/.local).
 PREFIX ?= /usr/local
-BINDIR := $(PREFIX)/bin
+BINDIR := $(DESTDIR)$(PREFIX)/bin
 
 # renderer + shared helpers, linked into both binaries
 CORE := $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/preprocess.c $(SRC)/theme.c $(SRC)/search.c \
@@ -24,17 +24,6 @@ HDRS := $(wildcard $(SRC)/*.h)   # rebuild on any header change
 .PHONY: all test clean install uninstall
 
 all: glance glance-render
-
-# Copy both binaries onto PATH so `glance file.md` works from anywhere.
-install: all
-	install -d "$(BINDIR)"
-	install -m 755 glance "$(BINDIR)/glance"
-	install -m 755 glance-render "$(BINDIR)/glance-render"
-	@echo "installed glance and glance-render to $(BINDIR)"
-
-uninstall:
-	rm -f "$(BINDIR)/glance" "$(BINDIR)/glance-render"
-	@echo "removed glance and glance-render from $(BINDIR)"
 
 GUI := $(SRC)/main.c $(SRC)/tui.c $(SRC)/editor.c $(SRC)/fswatch.c \
        $(SRC)/clipboard.c $(SRC)/completion.c $(SRC)/agent.c $(SRC)/legend.c \
@@ -72,6 +61,16 @@ test:
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-graph tests/graph_test.c \
 	  $(SRC)/graph.c $(SRC)/vault.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-graph; \
 	rm -rf build-t-*
+
+# Install both binaries onto PATH (default /usr/local/bin; may need sudo).
+install: all
+	install -d $(BINDIR)
+	install -m 755 glance $(BINDIR)/glance
+	install -m 755 glance-render $(BINDIR)/glance-render
+	@echo "installed glance and glance-render to $(BINDIR)"
+
+uninstall:
+	rm -f $(BINDIR)/glance $(BINDIR)/glance-render
 
 clean:
 	rm -f glance glance-render build-t-*

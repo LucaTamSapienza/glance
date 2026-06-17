@@ -16,27 +16,18 @@ static void toc_push(TOC *t, int level, int line, char *title) {
     t->n++;
 }
 
-/* Concatenate a line's run text into a newly malloc'd string. */
-static char *line_text(const Line *L) {
-    size_t len = 0;
-    for (size_t j = 0; j < L->nrun; j++) len += L->runs[j].len;
-    char *s = malloc(len + 1);
-    if (!s) return NULL;
-    size_t p = 0;
-    for (size_t j = 0; j < L->nrun; j++) {
-        memcpy(s + p, L->runs[j].text, L->runs[j].len);
-        p += L->runs[j].len;
-    }
-    s[p] = '\0';
-    return s;
-}
-
 void toc_build(const Doc *d, TOC *out) {
     out->n = 0;
     for (size_t i = 0; i < d->nline; i++) {
         if (d->lines[i].heading <= 0) continue;
         char *title = line_text(&d->lines[i]);
-        if (title) toc_push(out, d->lines[i].heading, (int)i, title);
+        if (!title) continue;
+        size_t s = 0, e = strlen(title);     /* drop the heading chip's pad spaces */
+        while (title[s] == ' ') s++;
+        while (e > s && title[e-1] == ' ') e--;
+        if (s) memmove(title, title + s, e - s);
+        title[e - s] = '\0';
+        toc_push(out, d->lines[i].heading, (int)i, title);
     }
 }
 

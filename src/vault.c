@@ -45,6 +45,8 @@ static int on_enter_span(MD_SPANTYPE type, void *detail, void *ud) {
     return 0;
 }
 
+/* No-op md4c callbacks: scanning for wikilinks only cares about span-enter
+ * events, so block, span-leave, and text events are intentionally discarded. */
 static int ignore_block(MD_BLOCKTYPE t, void *d, void *u) { (void)t; (void)d; (void)u; return 0; }
 static int ignore_span(MD_SPANTYPE t, void *d, void *u)   { (void)t; (void)d; (void)u; return 0; }
 static int ignore_text(MD_TEXTTYPE t, const MD_CHAR *x, MD_SIZE s, void *u) {
@@ -79,12 +81,18 @@ static void vfiles_push(VFiles *f, const char *rel) {
         if (!p) return;
         f->v = p; f->cap = nc;
     }
-    f->v[f->n++] = strdup(rel);
+    char *dup = strdup(rel);
+    if (dup) f->v[f->n++] = dup;                  /* drop on OOM, never store NULL */
 }
 
-/* Recurse into root/rel, appending the .md files found (relative to root). */
-static void scan_rec(const char *root, const char *rel, VFiles *out) {
-    if (out->n > 100000) return;                 /* runaway guard */
+#define VAULT_MAX_DEPTH 64    /* deep enough for any real notes tree */
+
+/* Recurse into root/rel, appending the .md files found (relative to root).
+ * Uses lstat and skips symlinks, so a symlink cycle (e.g. loop -> ..) cannot
+ * drive infinite recursion; an explicit depth cap bounds a genuinely deep real
+ * tree, keeping the scan crash-free on arbitrary/hostile directories. */
+static void scan_rec(const char *root, const char *rel, VFiles *out, int depth) {
+    if (out->n > 100000 || depth > VAULT_MAX_DEPTH) return;   /* runaway guards */
     char dir[4096];
     if (rel[0]) snprintf(dir, sizeof dir, "%s/%s", root, rel);
     else        snprintf(dir, sizeof dir, "%s", root);
@@ -98,10 +106,10 @@ static void scan_rec(const char *root, const char *rel, VFiles *out) {
         else        snprintf(childrel, sizeof childrel, "%s", e->d_name);
         snprintf(childpath, sizeof childpath, "%s/%s", root, childrel);
         struct stat st;
-        if (stat(childpath, &st) != 0) continue;
+        if (lstat(childpath, &st) != 0) continue; /* lstat: a symlink is S_ISLNK */
         if (S_ISDIR(st.st_mode)) {
-            scan_rec(root, childrel, out);
-        } else {
+            scan_rec(root, childrel, out, depth + 1);
+        } else if (S_ISREG(st.st_mode)) {
             size_t l = strlen(e->d_name);
             if (l > 3 && strcasecmp(e->d_name + l - 3, ".md") == 0)
                 vfiles_push(out, childrel);
@@ -112,7 +120,7 @@ static void scan_rec(const char *root, const char *rel, VFiles *out) {
 
 void vault_scan(const char *root, VFiles *out) {
     out->n = 0;
-    scan_rec(root, "", out);
+    scan_rec(root, "", out, 0);
 }
 
 void vfiles_free(VFiles *out) {
