@@ -51,6 +51,8 @@ section.c      heading anchor -> subtree + abstract projection (bounded reads)
 receipt.c      token-cost estimate + saved-% receipt (used vs raw-read)
 bm25.c         Okapi BM25 lexical ranking index (the retrieval core)
 context.c      budget planner: score order, diversity, coarse-to-fine, manifest
+json.c         a small dependency-free JSON parser (for the MCP server)
+mcp.c          MCP server over stdio (JSON-RPC 2.0): the agent-memory tools
 agent.c        JSON exports: --outline/--section/--context/--neighbors/
                --backlinks/--since/--links/--graph (the agent-memory layer)
 util.c         shared UTF-8 + whole-file helpers
@@ -106,6 +108,12 @@ Full parity with the original Go app, plus the vault/agent features:
   (graph neighbourhood to N hops), `--backlinks … --context` (who links here, and
   the citing line), `--since TS` (what changed). Plus the original `--links` and
   `--graph`. Each carries a token receipt where it saves tokens.
+- **MCP server (M2)** — `glance mcp` serves the agent-memory reads as native
+  [MCP](https://modelcontextprotocol.io) tools over stdio JSON-RPC 2.0, so Claude
+  Desktop / Cursor / the Agent SDK can use a vault directly (`vault_context`,
+  `vault_section`, `vault_outline`, `vault_neighbors`, `vault_backlinks`,
+  `vault_since`, `vault_links`, `vault_graph`). The tool bodies reuse the exact
+  CLI exports. Wiring + tool reference in `docs/MCP.md`.
 - **Syntax highlighting** in fenced code blocks, per language (`highlight.c`):
   C/C++, Go, Python, JS/TS, Rust, bash, YAML, JSON — keywords, strings, numbers,
   comments, function calls, shell `$vars`, and YAML/JSON keys.

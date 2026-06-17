@@ -64,8 +64,16 @@ plus the `agent.c` exports `--section`, `--context "Q" DIR --budget N`,
 `--neighbors`, `--backlinks --context`, `--since`, and `--outline --depth
 --abstract`. `glance --context "…" DIR --budget N` is the wedge: it returns
 `{query,budget_tokens,chunks,truncated,receipt}` with a token receipt (on the
-test vault, ~78% saved vs reading everything). Next: M2 (`glance mcp`), M3
-(semantic, behind a flag), M4 (surgical write API).
+test vault, ~78% saved vs reading everything).
+
+**MCP server — M2 shipped (branch `feat/m2-mcp-server`).** `glance mcp` serves
+the M1 reads as native MCP tools over stdio JSON-RPC 2.0 (Claude Desktop /
+Cursor / SDK). New modules: `json.c` (a small dependency-free JSON parser) and
+`mcp.c` (the server — `initialize`/`tools/list`/`tools/call`, eight `vault_*`
+tools whose bodies reuse the exact `agent.c` exports, captured via a stdout
+redirect). Unit-tested (`json_test`, `mcp_test`); wiring + tool reference in
+[`docs/MCP.md`](docs/MCP.md). Next: M3 (semantic, behind a flag), M4 (surgical
+write API).
 
 **Post-merge fixes (theme discoverability + selection bar).** Two follow-ups
 after `feature/legend` landed. (1) The `T` theme picker existed but was
