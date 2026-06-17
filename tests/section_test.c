@@ -55,6 +55,23 @@ int main(void) {
     assert(whole.found && whole.start == 0 && whole.end == (int)d->nline);
 
     doc_free(d);
+
+    /* abstract: heading + first paragraph only */
+    {
+        const char *m2 =
+            "## Topic\n\nfirst para line one\nfirst para line two\n\n"
+            "second para should be excluded\n";
+        Doc *d2 = mk(m2);
+        Section s = section_find(d2, "Topic");
+        assert(s.found);
+        char *ab = section_abstract(d2, s.start, s.end);
+        assert(strstr(ab, "first para line one"));
+        assert(strstr(ab, "first para line two"));
+        assert(!strstr(ab, "second para"));
+        free(ab);
+        doc_free(d2);
+    }
+
     printf("all section tests passed\n");
     return 0;
 }

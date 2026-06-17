@@ -28,4 +28,10 @@ Section section_find(const Doc *d, const char *anchor);
  * range is clamped to the document bounds. */
 char *section_text(const Doc *d, int start, int end);
 
+/* The "abstract" of a section [start,end): its heading line plus the first
+ * non-empty paragraph beneath it (or just the heading if there is no body).
+ * This is the cheap, low-resolution projection the budget planner falls back to
+ * when the full section will not fit. Same ownership as section_text. */
+char *section_abstract(const Doc *d, int start, int end);
+
 #endif /* GLANCE_SECTION_H */

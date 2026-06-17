@@ -31,6 +31,8 @@ static void print_help(void) {
 "  glance --keys            diagnostic: print raw key events, Esc to quit\n"
 "  glance --outline FILE    print the heading tree as JSON (for agents)\n"
 "  glance --section F#H     print the section under heading H as JSON (+ token receipt)\n"
+"  glance --context \"Q\" DIR  retrieve a token-cheap context bundle for query Q\n"
+"                           over vault DIR as JSON (--budget N caps the tokens)\n"
 "  glance --links FILE      print the file's outbound links as JSON\n"
 "  glance --graph DIR       print the vault's link graph as JSON\n"
 "  glance --theme NAME      open using colour theme NAME (see --list-themes)\n"
@@ -134,6 +136,16 @@ int main(int argc, char **argv) {
         agent_section(s, l, anchor);
         free(s);
         return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "--context")) {
+        /* glance --context "QUERY" [DIR] [--budget N]; DIR defaults to ".". */
+        const char *query = argv[2], *dir = ".";
+        size_t budget = 0;
+        for (int i = 3; i < argc; i++) {
+            if (!strcmp(argv[i], "--budget") && i + 1 < argc) budget = (size_t)strtoul(argv[++i], NULL, 10);
+            else dir = argv[i];
+        }
+        return agent_context(dir, query, budget);
     }
 
     FILE *f = stdin;

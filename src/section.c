@@ -76,6 +76,35 @@ Section section_find(const Doc *d, const char *anchor) {
     return r;
 }
 
+/* Does Doc line `i` carry no non-whitespace text? */
+static int line_blank(const Doc *d, int i) {
+    char *t = line_text(&d->lines[i]);
+    int blank = 1;
+    if (t) {
+        for (char *p = t; *p; p++)
+            if (!isspace((unsigned char)*p)) { blank = 0; break; }
+        free(t);
+    }
+    return blank;
+}
+
+char *section_abstract(const Doc *d, int start, int end) {
+    if (start < 0) start = 0;
+    if (end > (int)d->nline) end = (int)d->nline;
+    if (start >= end) return section_text(d, start, end);
+
+    int i = start;
+    if (d->lines[start].heading > 0) i++;          /* keep the heading line */
+    while (i < end && line_blank(d, i)) i++;        /* skip blanks before the body */
+    int para_start = i;
+    while (i < end && !line_blank(d, i)) i++;        /* consume the first paragraph */
+
+    int aend = (para_start < end) ? i : start + 1;   /* heading-only if no body */
+    if (aend <= start) aend = start + 1;
+    if (aend > end) aend = end;
+    return section_text(d, start, aend);
+}
+
 char *section_text(const Doc *d, int start, int end) {
     if (start < 0) start = 0;
     if (end > (int)d->nline) end = (int)d->nline;
