@@ -19,12 +19,21 @@ glance is the user's markdown viewer. When markdown is worth looking at,
 
 glance has two sinks; pick by what the user needs:
 
-1. **Inline preview (default offer)** — render it right in the session:
+1. **Inline preview (default offer)** — render it right in the session, framed
+   so it's obviously a rendered document:
    ```bash
-   glance-render "FILE"        # add --theme NAME, -w COLS, or -l for light
+   f="FILE"
+   printf '\n───── 📄 %s · rendered by glance ─────\n\n' "$(basename "$f")"
+   glance-render "$f"          # add --theme NAME, -w COLS, or -l for light
+   printf '\n─────────────────────── end ───────────────────────\n'
    ```
    Themed ANSI to stdout: headings, syntax-highlighted code, aligned tables.
    You can run this yourself; no terminal takeover needed.
+
+   **Then signpost it.** Claude Code collapses long tool output, so the user can
+   miss that a render is there. Begin your reply with a clear line such as:
+   *"📄 Rendered `FILE` with glance below — expand the output (Ctrl+O) to read
+   it."* Don't leave the user to discover it.
 
 2. **Interactive read** — for scrolling, the table of contents, the theme
    picker, or following `[[wikilinks]]`, the user runs the full TUI themselves:
@@ -39,6 +48,7 @@ the inline preview once it's available.
 
 ## The offer, in practice
 
-After saving a doc: *"Want me to preview that with glance?"* — then run
-`glance-render` on a yes, and mention the interactive `glance FILE` option for a
+After saving a doc: *"Want me to preview that with glance?"* — then on a yes run
+the framed `glance-render` above, open your reply with the "📄 Rendered … —
+expand (Ctrl+O)" signpost, and mention the interactive `glance FILE` option for a
 longer read.
