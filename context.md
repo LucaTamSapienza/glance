@@ -1,7 +1,7 @@
 # glance — Project Context
 
 > Orientation for anyone (including Claude) picking up the work.
-> Last updated: 2026-06-16 (C-at-root migration; highlighting, tables, images, cursor sync).
+> Last updated: 2026-06-17 (hidable key-legend sidebar; C-at-root migration; highlighting, tables, images, cursor sync).
 
 ## What it is
 
@@ -43,15 +43,65 @@ lines, each a sequence of styled runs — and two sinks consume it: `doc_ansi.c`
 (ANSI string, for the CLI and tests) and `tui.c` (notcurses cells). See
 `STATUS.md` for the full module map and `CLAUDE.md` for the invariants.
 
-## Current status (2026-06-16)
+## Current status (2026-06-17)
+
+**Claude Code plugin (the repo is the plugin).** `.claude-plugin/plugin.json` +
+`marketplace.json`, four `commands/*.md` (`/glance-outline|links|graph` wrap the
+JSON exports, `/glance-preview` runs `glance-render` inline), and two skills:
+`navigating-markdown-vaults` (Claude uses glance's exports) and
+`previewing-markdown-with-glance` (Claude proactively offers to render markdown
+for the user — inline `glance-render` or the `glance` TUI). Skill-driven, no
+settings.json changes; commands shell out to the installed `glance` (hence
+`make install`). Manifests validated as JSON; each wrapped command verified
+against `testdata/vault/`. Not yet live-installed in a Claude session (needs
+`marketplace add`). Plan: `docs/superpowers/specs/2026-06-17-claude-plugin-plan.md`.
+
+**Color themes.** A new `src/theme.c` owns a flat `Theme` palette: 8 built-ins
+(`auto-dark`, `auto-light`, `dracula`, `nord`, `gruvbox-dark`, `solarized-dark`,
+`solarized-light`, `github-light`) whose document colors are authored and whose
+chrome is derived from polarity + accents. `render.c` reads the palette via a new
+`render_doc_themed(...)` entry; `render_doc`/`render_doc_at` are thin shims
+mapping their `dark` flag to `theme_auto()`, so `agent.c` and all tests are
+untouched. The TUI resolves a theme from `--theme <name>`, then `~/.config/glance/
+config` (`theme = NAME`, plus `[theme:NAME]` / `base =` / `key = #RRGGBB`
+overrides), else `auto` (terminal-detected). **`T`** opens a live picker
+(preview-as-you-browse; `Enter` keeps and persists the choice to the config via
+the pure `theme_config_set_default` + `atomic_write`, `Esc` reverts);
+`--list-themes` prints the names. Reader
+chrome (status bar, legend, TOC, backlinks, selection, hits, divider, progress,
+cursor) reads the theme. Page background stays the terminal default by design.
+Pure logic is unit-tested (`theme_test.c`); `auto-dark`/`auto-light` reproduce
+the previous hardcoded palettes exactly (no visual regression).
+
+**Trackpad scrolling + reading-progress HUD (Reader).** Mouse/trackpad wheel
+events now scroll the reader (`notcurses_mice_enable(NCMICE_BUTTON_EVENT)`,
+disabled again in `shutdown_tui`); the block cursor rides along so it stays
+on-screen (`progress_scroll`). A thin top-right HUD shows a `NN%` reading
+percentage plus a dots-ring spinner (`◜◠◝◞◡◟`) that animates while scrolling and
+does a subtle ~320 ms spin-down (an ~80 ms-tick poll timeout in the event loop)
+before resting on `◌`. Pure logic (percent, ride-along step, spinner frames) is
+in `src/progress.c` (`progress_test.c`); `tui.c::draw_progress` draws the HUD.
+Scope is Reader-only for v1.
+
+**Hidable key-legend sidebar (Reader).** `?` toggles a rounded panel on the right
+listing the reader's bindings; the document **reflows** into the narrower column
+(it does not overlay), and the frame carries a persistent `Esc · ? close` hint.
+`Esc` or `?` closes it. The pure layout logic — the content/panel width split,
+the too-narrow→overlay fallback, and aligned `key → action` row formatting —
+lives in `src/legend.c` (unit-tested in `legend_test.c`); `tui.c::draw_legend`
+does the notcurses drawing, and `content_cols()` feeds the reduced width to
+`rerender()` and the reader draw paths. On a window narrower than
+`LEGEND_W + LEGEND_MIN_CONTENT` columns, `?` falls back to the old centered
+overlay. Scope is Reader-only by design: `?` is literal text in Insert/Split.
 
 **Go→C migration complete.** The C app is the repository's only source, at the
 **root** (`src/`, `tests/`, `Makefile`). The original Go program was tagged
 **`go-final`** (recoverable with `git checkout go-final`) and then removed from
 the working tree once the C version had been tested in daily use — there is no Go
 code left in the repo. All docs (README, CLAUDE.md, STATUS.md, AGENT_FEATURES.md,
-AGENTS.md) describe the C app. Build is clean and **all twelve unit-test suites
-pass** under ASan/UBSan.
+AGENTS.md) describe the C app. Build is clean and **all fifteen unit-test
+suites pass** under ASan/UBSan (the latest are `legend_test.c`,
+`progress_test.c`, and `theme_test.c`).
 
 **All four renderer gaps closed.**
 

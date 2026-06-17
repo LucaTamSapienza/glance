@@ -37,6 +37,9 @@ search.c       case-insensitive full-text search over a Doc
 toc.c          table of contents from tagged heading lines
 editor.c       line-array text buffer with a rune-aware cursor
 completion.c   bracket auto-pairing (no backtick/fence)
+legend.c       Reader key-sidebar layout (width split, aligned row formatting)
+progress.c     Reader scroll/progress HUD logic (percent, ride-along, spinner)
+theme.c        color themes: built-in palettes, chrome derivation, config parser
 highlight.c    spec-driven per-language code highlighter (token classes)
 image_size.c   pixel dimensions from an image header (for aspect-ratio sizing)
 fs_save.c      atomic write (temp + rename, preserve mode)
@@ -67,7 +70,23 @@ Full parity with the original Go app, plus the vault/agent features:
 - **Clipboard:** `v`/`V` visual-line select, `y` yank to system clipboard.
 - **Open links** under the cursor with Enter.
 - **Tolerant Markdown** preprocessing.
-- **Help** overlay `?`.
+- **Key legend sidebar** `?`: a rounded right-side panel of the reader's
+  bindings; the document reflows beside it (no overlay) and the frame shows a
+  persistent `Esc · ? close` hint. Falls back to a centered overlay when the
+  window is too narrow to reflow.
+- **Trackpad/wheel scrolling** in the reader (cursor rides along), with a thin
+  top-right reading-progress HUD: a `NN%` percentage and a dots-ring spinner
+  that animates while scrolling and spins down subtly when it stops.
+- **Color themes**: 8 built-ins (`auto`, `dracula`, `nord`, `gruvbox-dark`,
+  `solarized-dark`/`-light`, `github-light`), `--theme <name>`,
+  `--list-themes`, a live **`T`** picker (preview-as-you-browse, `Enter` keeps &
+  persists to config, `Esc` reverts), and `~/.config/glance/config` for the
+  default + custom palettes. Drives both the document and the UI chrome.
+- **Claude Code plugin**: the repo doubles as a plugin (`.claude-plugin/`,
+  `commands/`, `skills/`). Slash commands wrap the JSON exports
+  (`/glance-outline|links|graph`) and the renderer (`/glance-preview`); two
+  skills let Claude *use* glance to navigate a vault and *proactively offer* to
+  render markdown for the user in-session.
 - **Auto dark/light** from the terminal background.
 - **Bracket auto-pairing** in the editor.
 - **Vault navigation:** `[[wikilinks]]` resolve and follow across subfolders;
@@ -90,9 +109,9 @@ Full parity with the original Go app, plus the vault/agent features:
 
 Reader: `hjkl`/arrows move · `g`/`G` top/bottom · `Ctrl-D/U` half page · `i`
 insert · `e` split · `V` visual select (`y` yank) · `/` search (`n`/`N`) · `t`
-toc · `?` help · Enter open link · `:w`/`:q`/`:wq`/`:q!` · `Ctrl-S` save ·
-`Ctrl-C` quit. Insert/Split: type to edit, `Esc` back, `Ctrl-S` save, `Ctrl-V`
-paste a clipboard image.
+toc · `?` key legend (sidebar) · Enter open link · `:w`/`:q`/`:wq`/`:q!` · `Ctrl-S` save ·
+`Ctrl-C` quit · trackpad/wheel to scroll · `T` theme picker. Insert/Split: type to
+edit, `Esc` back, `Ctrl-S` save, `Ctrl-V` paste a clipboard image.
 
 ## Build & run
 

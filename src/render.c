@@ -7,6 +7,7 @@
  * that was active before it (including a heading's colour).
  */
 #include "render.h"
+#include "theme.h"
 #include "preprocess.h"
 #include "highlight.h"
 #include "image_size.h"
@@ -18,49 +19,27 @@
 #include <stdio.h>
 
 /* ---- palette -------------------------------------------------------------- */
-/* Theme colours, chosen per element for dark vs light terminals. */
+/* Element colours now come from the active Theme (see theme.h); these thin
+ * accessors keep the call sites in this file readable. */
 
 static RGB rgb(uint8_t r, uint8_t g, uint8_t b) { RGB c = {r, g, b}; return c; }
 
-/* Heading colour by level (1..6), brighter on dark backgrounds. */
-static RGB heading_fg(int dark, int level) {
-    if (dark) switch (level) {
-        case 1:  return rgb(255, 135, 255);
-        case 2:  return rgb(95, 215, 255);
-        case 3:  return rgb(135, 215, 135);
-        case 4:  return rgb(255, 215, 135);
-        default: return rgb(160, 160, 160);
-    } else switch (level) {
-        case 1:  return rgb(175, 0, 175);
-        case 2:  return rgb(0, 135, 175);
-        case 3:  return rgb(0, 135, 0);
-        case 4:  return rgb(175, 95, 0);
-        default: return rgb(96, 96, 96);
-    }
+/* Heading colour by level (1..6). */
+static RGB heading_fg(const Theme *t, int level) {
+    if (level < 1) level = 1;
+    if (level > 6) level = 6;
+    return t->heading[level - 1];
 }
-static RGB code_bg(int dark)  { return dark ? rgb(48, 48, 48)   : rgb(228, 228, 228); }
-static RGB code_fg(int dark)  { return dark ? rgb(208, 208, 208): rgb(135, 0, 0); }
-static RGB link_fg(int dark)  { return dark ? rgb(95, 175, 255) : rgb(0, 95, 215); }
-static RGB accent_fg(int dark){ return dark ? rgb(95, 215, 255) : rgb(0, 135, 175); }
-static RGB quote_fg(int dark) { return dark ? rgb(120, 120, 120): rgb(140, 140, 140); }
-static RGB rule_fg(int dark)  { return dark ? rgb(88, 88, 88)   : rgb(170, 170, 170); }
+static RGB code_bg(const Theme *t)   { return t->code_bg; }
+static RGB code_fg(const Theme *t)   { return t->code_fg; }
+static RGB link_fg(const Theme *t)   { return t->link; }
+static RGB accent_fg(const Theme *t) { return t->accent; }
+static RGB quote_fg(const Theme *t)  { return t->quote; }
+static RGB rule_fg(const Theme *t)   { return t->rule; }
 
-/* Foreground for a syntax-highlight token kind, dark vs light. HL_TEXT falls
- * back to the plain code colour so un-tokenised code keeps the box's look. */
-static RGB hl_fg(HLKind k, int dark) {
-    switch (k) {
-        case HL_KEYWORD:  return dark ? rgb(197, 134, 192) : rgb(175, 0, 175);
-        case HL_TYPE:     return dark ? rgb(78, 201, 176)  : rgb(0, 135, 135);
-        case HL_STRING:   return dark ? rgb(152, 195, 121) : rgb(0, 128, 0);
-        case HL_NUMBER:   return dark ? rgb(209, 154, 102) : rgb(170, 85, 0);
-        case HL_COMMENT:  return dark ? rgb(128, 128, 128) : rgb(128, 128, 128);
-        case HL_FUNCTION: return dark ? rgb(220, 220, 170) : rgb(120, 90, 0);
-        case HL_VARIABLE: return dark ? rgb(224, 108, 117) : rgb(170, 0, 0);
-        case HL_PROPERTY: return dark ? rgb(95, 175, 255)  : rgb(0, 95, 215);
-        case HL_OPERATOR: return dark ? rgb(180, 180, 180) : rgb(90, 90, 90);
-        default:          return code_fg(dark);
-    }
-}
+/* Foreground for a syntax-highlight token kind. HL_TEXT maps to the plain code
+ * colour (set up in theme.c) so un-tokenised code keeps the box's look. */
+static RGB hl_fg(HLKind k, const Theme *t) { return t->syntax[k]; }
 
 /* ---- renderer state ------------------------------------------------------- */
 
@@ -75,7 +54,8 @@ typedef struct { Cell cells[MAX_COLS]; int ncell, header; } TRow;
 
 typedef struct {
     Doc  *doc;
-    int   width, dark;
+    int   width;
+    const Theme *theme;
     const char *basedir;   /* document directory, for sizing local images */
 
     /* pending visual line being assembled */
@@ -177,7 +157,7 @@ static void line_start_indent(R *r) {
     }
     if (r->quote_depth > 0) {
         Style q; memset(&q, 0, sizeof q);
-        q.has_fg = 1; q.fg = quote_fg(r->dark); q.dim = 1;
+        q.has_fg = 1; q.fg = quote_fg(r->theme); q.dim = 1;
         runs_push(&r->line, &r->line_n, &r->line_cap, "\xe2\x94\x82 ", 4, q); /* "│ " */
         r->line_cols += 2;
     }
@@ -249,8 +229,8 @@ static void hl_emit_run(void *ud, HLKind kind, const char *s, size_t len) {
     R *r = ud;
     if (len == 0) return;
     Style cs; memset(&cs, 0, sizeof cs);
-    cs.has_fg = 1; cs.fg = hl_fg(kind, r->dark);
-    cs.has_bg = 1; cs.bg = code_bg(r->dark);
+    cs.has_fg = 1; cs.fg = hl_fg(kind, r->theme);
+    cs.has_bg = 1; cs.bg = code_bg(r->theme);
     if (kind == HL_COMMENT) cs.dim = 1;
     runs_push(&r->line, &r->line_n, &r->line_cap, s, len, cs);
     r->line_cols += u8_width(s, len);
@@ -260,8 +240,8 @@ static void hl_emit_run(void *ud, HLKind kind, const char *s, size_t len) {
 static void code_line(R *r, const char *s, size_t n) {
     line_start_indent(r);
     Style cs; memset(&cs, 0, sizeof cs);
-    cs.has_fg = 1; cs.fg = code_fg(r->dark);
-    cs.has_bg = 1; cs.bg = code_bg(r->dark);
+    cs.has_fg = 1; cs.fg = code_fg(r->theme);
+    cs.has_bg = 1; cs.bg = code_bg(r->theme);
     /* leading space inside the box */
     runs_push(&r->line, &r->line_n, &r->line_cap, " ", 1, cs);
     r->line_cols += 1;
@@ -275,7 +255,7 @@ static void code_line(R *r, const char *s, size_t n) {
     r->line_has = 1;
     line_commit(r);
     Line *L = &r->doc->lines[r->doc->nline - 1];
-    L->fill = 1; L->fill_bg = code_bg(r->dark);
+    L->fill = 1; L->fill_bg = code_bg(r->theme);
 }
 
 /* ---- tables --------------------------------------------------------------- */
@@ -295,9 +275,9 @@ static void code_line(R *r, const char *s, size_t n) {
 #define BOX_BR "\xe2\x94\x98"  /* ┘ */
 
 /* Style for the table's box-drawing rules. */
-static Style border_style(int dark) {
+static Style border_style(const Theme *t) {
     Style bs; memset(&bs, 0, sizeof bs);
-    bs.has_fg = 1; bs.fg = rule_fg(dark); bs.dim = 1;
+    bs.has_fg = 1; bs.fg = rule_fg(t); bs.dim = 1;
     return bs;
 }
 
@@ -346,7 +326,7 @@ static void emit_border(R *r, const char *L, const char *M, const char *Rt,
         const char *j = (c == ncol - 1) ? Rt : M;
         memcpy(buf + p, j, 3); p += 3;
     }
-    runs_push(&r->line, &r->line_n, &r->line_cap, buf, p, border_style(r->dark));
+    runs_push(&r->line, &r->line_n, &r->line_cap, buf, p, border_style(r->theme));
     r->line_cols += vis;
     free(buf);
     r->line_has = 1;
@@ -356,7 +336,7 @@ static void emit_border(R *r, const char *L, const char *M, const char *Rt,
 /* Emit one content row: vertical rules around each cell, padded per alignment. */
 static void emit_row(R *r, TRow *row, const int *colw, int ncol) {
     line_start_indent(r);
-    Style bs = border_style(r->dark);
+    Style bs = border_style(r->theme);
     runs_push(&r->line, &r->line_n, &r->line_cap, BOX_V, 3, bs);
     r->line_cols += 1;
     for (int c = 0; c < ncol; c++) {
@@ -459,7 +439,7 @@ static void emit_image(R *r) {
     if (r->line_has) line_commit(r);
     line_start_indent(r);
     Style is; memset(&is, 0, sizeof is);
-    is.has_fg = 1; is.fg = link_fg(r->dark); is.underline = 1;
+    is.has_fg = 1; is.fg = link_fg(r->theme); is.underline = 1;
     runs_push(&r->line, &r->line_n, &r->line_cap, "\xe2\x96\xa6 ", 4, is);   /* ▦ */
     const char *label = r->img_alt_len ? r->img_alt : (r->img_src ? r->img_src : "image");
     size_t ll = r->img_alt_len ? r->img_alt_len : strlen(label);
@@ -490,7 +470,7 @@ static void li_marker(R *r) {
     int d = r->list_depth - 1;
     char buf[32];
     Style ms; memset(&ms, 0, sizeof ms);
-    ms.has_fg = 1; ms.fg = accent_fg(r->dark);
+    ms.has_fg = 1; ms.fg = accent_fg(r->theme);
     if (d >= 0 && d < MAX_LIST && r->list_mark[d]) {
         snprintf(buf, sizeof buf, "%d.", r->ol_next[d]++);
         word_run(r, buf, strlen(buf), ms);
@@ -512,7 +492,7 @@ static int cb_enter_block(MD_BLOCKTYPE type, void *detail, void *ud) {
             r->heading_start = (int)r->doc->nline;  /* first heading line index */
             style_push(r);
             r->cur.bold = 1; r->cur.has_fg = 1;
-            r->cur.fg = heading_fg(r->dark, r->heading);
+            r->cur.fg = heading_fg(r->theme, r->heading);
             break;
         }
         case MD_BLOCK_P: break;
@@ -537,7 +517,7 @@ static int cb_enter_block(MD_BLOCKTYPE type, void *detail, void *ud) {
         case MD_BLOCK_LI: r->li_pending = 1; break;
         case MD_BLOCK_HR: {
             Style rs; memset(&rs, 0, sizeof rs);
-            rs.has_fg = 1; rs.fg = rule_fg(r->dark); rs.dim = 1;
+            rs.has_fg = 1; rs.fg = rule_fg(r->theme); rs.dim = 1;
             char bar[3 * 256]; int w = r->width; if (w > 256) w = 256;
             int p = 0;
             for (int i = 0; i < w; i++) { memcpy(bar + p, "\xe2\x94\x80", 3); p += 3; }
@@ -667,21 +647,21 @@ static int cb_enter_span(MD_SPANTYPE type, void *detail, void *ud) {
         case MD_SPAN_DEL:    r->cur.strike = 1; break;
         case MD_SPAN_U:      r->cur.underline = 1; break;
         case MD_SPAN_CODE:
-            r->cur.has_fg = 1; r->cur.fg = code_fg(r->dark);
-            r->cur.has_bg = 1; r->cur.bg = code_bg(r->dark);
+            r->cur.has_fg = 1; r->cur.fg = code_fg(r->theme);
+            r->cur.has_bg = 1; r->cur.bg = code_bg(r->theme);
             break;
         case MD_SPAN_A: {
             MD_SPAN_A_DETAIL *d = detail;
             free(r->cur_link);
             r->cur_link = d->href.size ? strndup(d->href.text, d->href.size) : NULL;
-            r->cur.underline = 1; r->cur.has_fg = 1; r->cur.fg = link_fg(r->dark);
+            r->cur.underline = 1; r->cur.has_fg = 1; r->cur.fg = link_fg(r->theme);
             break;
         }
         case MD_SPAN_WIKILINK: {
             MD_SPAN_WIKILINK_DETAIL *d = detail;
             free(r->cur_link);
             r->cur_link = d->target.size ? strndup(d->target.text, d->target.size) : NULL;
-            r->cur.underline = 1; r->cur.has_fg = 1; r->cur.fg = link_fg(r->dark);
+            r->cur.underline = 1; r->cur.has_fg = 1; r->cur.fg = link_fg(r->theme);
             break;
         }
         case MD_SPAN_IMG: {
@@ -818,8 +798,15 @@ Doc *render_doc(const char *src, size_t len, int width, int dark) {
     return render_doc_at(src, len, width, dark, NULL);
 }
 
-/* Parse src with md4c (GFM dialect) and build the Doc; see render.h. */
+/* Shim: map the dark flag to the matching auto theme. See render.h. */
 Doc *render_doc_at(const char *src, size_t len, int width, int dark, const char *basedir) {
+    return render_doc_themed(src, len, width, theme_auto(dark), basedir);
+}
+
+/* Parse src with md4c (GFM dialect) and build the Doc with `theme`; see render.h. */
+Doc *render_doc_themed(const char *src, size_t len, int width,
+                       const Theme *theme, const char *basedir) {
+    if (!theme) theme = theme_auto(1);
     Doc *doc = calloc(1, sizeof *doc);
     if (!doc) return NULL;
     doc->width = width > 4 ? width : 80;
@@ -828,7 +815,7 @@ Doc *render_doc_at(const char *src, size_t len, int width, int dark, const char 
     memset(&r, 0, sizeof r);
     r.doc = doc;
     r.width = doc->width;
-    r.dark = dark;
+    r.theme = theme;
     r.basedir = basedir;
 
     MD_PARSER parser;

@@ -43,15 +43,20 @@ and fully under our control.
 
 Requires a C11 compiler and two libraries — [md4c](https://github.com/mity/md4c)
 (Markdown parser) and [notcurses](https://github.com/dankamongmen/notcurses)
-(TUI runtime):
+(TUI runtime). `pkg-config` is needed at build time to locate them:
 
 ```sh
-brew install md4c notcurses
+brew install md4c notcurses pkg-config
 git clone https://github.com/LucaTamSapienza/glance
 cd glance
 make                 # builds ./glance (TUI) and ./glance-render (CLI)
 make test            # runs the unit tests under AddressSanitizer/UBSan
+make install         # copies both onto your PATH so `glance file.md` works anywhere
 ```
+
+`make install` puts the binaries in `/usr/local/bin` by default; override with
+`make install PREFIX=~/.local` (use a `PREFIX` whose `bin` is on your `PATH`).
+`make uninstall` removes them.
 
 ## Usage
 
@@ -75,8 +80,49 @@ glance --keys                  # diagnostic: print raw key events
 | `n` / `N` | next / prev match | `t` | table of contents |
 | `Enter` | follow link / `[[wikilink]]` | `b` | backlinks panel |
 | `-` / `Ctrl-O` | back to previous file | `Ctrl-G` | graph explorer |
-| `?` | help | `Ctrl-S` | save |
+| `?` | key legend (sidebar) | `Ctrl-S` | save |
 | `:w` `:wq` `:x` `:q` `:q!` | write / quit (vi-style) | | |
+
+Press `?` to slide out a **key legend** on the right: a rounded panel listing the
+reader's bindings. It doesn't cover the text — the document reflows into the
+space beside it — and it shows its own `Esc · ? close` hint. Press `?` again or
+`Esc` to dismiss it. (On a window too narrow to reflow, `?` shows a centered
+overlay instead.)
+
+**Trackpad / mouse-wheel scrolling** works in the reader (the cursor rides along
+so it stays put on screen). A thin reading-progress readout sits in the top-right
+corner — a percentage with a small dots-ring spinner (`◜◠◝◞◡◟`) that comes alive
+while you scroll and settles to `◌` when you stop.
+
+### Themes
+
+glance ships several color themes — `auto` (the default: follows your terminal's
+dark/light background), `dracula`, `nord`, `gruvbox-dark`, `solarized-dark`,
+`solarized-light`, `github-light`. List them, pick one with the flag, or press
+**`T`** in the reader to open a **live picker** — move with `j`/`k` and the page
+recolors as you browse, `Enter` keeps the choice (and saves it as your default),
+`Esc` reverts:
+
+```sh
+glance --list-themes            # print the available theme names
+glance --theme dracula file.md
+glance-render --theme nord file.md
+```
+
+Set a default — and define or override your own — in `~/.config/glance/config`:
+
+```ini
+theme = nord
+
+[theme:mine]
+base = dracula
+heading1 = #ff00aa
+syntax_string = #a6e22e
+```
+
+Themes recolor the document (headings, code, links, syntax) and the UI chrome
+(status bar, panels, selection, progress); they ride on your terminal's own
+background rather than painting a full-screen color.
 
 **Insert / Split** — type to edit, `Esc` returns to the reader, `Ctrl-S` saves,
 `Ctrl-V` pastes an image from the clipboard (saves it in a `<name>_media/` folder
@@ -111,6 +157,24 @@ An agent can call `glance --graph .` to learn how a document set connects, then
 `glance --outline x.md` to navigate one file. See [AGENT_FEATURES.md](AGENT_FEATURES.md)
 for the design rationale, and [AGENTS.md](AGENTS.md) if you are running this repo
 with a coding agent.
+
+## Use with Claude Code (plugin)
+
+This repo is also a **Claude Code plugin**. Install it from the marketplace:
+
+```sh
+claude plugin marketplace add LucaTamSapienza/glance
+claude plugin install glance
+```
+
+It gives Claude two things (it shells out to your installed `glance`, so run
+`make install` first):
+
+- **Slash commands** — `/glance-outline`, `/glance-links`, `/glance-graph`, and
+  `/glance-preview` (renders a doc inline in your session).
+- **Two skills** — one lets Claude *use* glance to navigate a vault's structure;
+  the other has Claude *proactively offer* to render markdown with glance when it
+  writes a doc or you ask to read one.
 
 ## Repository layout
 

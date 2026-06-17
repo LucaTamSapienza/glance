@@ -14,6 +14,10 @@
 
 typedef struct { uint8_t r, g, b; } RGB;
 
+/* A color palette; defined in theme.h. Forward-declared here (rather than
+ * including theme.h) so theme.h can include render.h for RGB without a cycle. */
+typedef struct Theme Theme;
+
 typedef struct {
     unsigned bold      : 1;
     unsigned italic    : 1;
@@ -60,6 +64,12 @@ Doc *render_doc(const char *src, size_t len, int width, int dark);
  * local images so an image block can be sized to the picture's aspect ratio.
  * render_doc is this with basedir = NULL. */
 Doc *render_doc_at(const char *src, size_t len, int width, int dark, const char *basedir);
+
+/* The full-control entry: render with an explicit `theme`. render_doc and
+ * render_doc_at are thin shims over this, mapping their `dark` flag to the
+ * matching auto theme. */
+Doc *render_doc_themed(const char *src, size_t len, int width,
+                       const Theme *theme, const char *basedir);
 
 void doc_free(Doc *d);
 

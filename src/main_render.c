@@ -2,15 +2,18 @@
  * stdout. This is the C equivalent of `glance --render`, and proves the
  * renderer in isolation before any TUI exists.
  *
- *   glance-render [-w WIDTH] [-l] [file.md]
- *     -w WIDTH  wrap width (default: terminal width, or 80)
- *     -l        light theme (default: dark)
+ *   glance-render [-w WIDTH] [-l] [--theme NAME] [file.md]
+ *     -w WIDTH      wrap width (default: terminal width, or 80)
+ *     -l            light theme (shortcut for --theme auto-light)
+ *     --theme NAME  named colour theme (dracula, nord, …); default auto
  */
 #include "render.h"
+#include "theme.h"
 #include "util.h"
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <libgen.h>
 #include <sys/ioctl.h>
@@ -23,19 +26,36 @@ static int term_width(void) {
     return 80;
 }
 
+/* Remove "--theme NAME" from argv (returns NAME or NULL) so getopt sees only its
+ * own short flags. */
+static const char *pull_theme(int *argc, char **argv) {
+    for (int i = 1; i + 1 < *argc; i++) {
+        if (!strcmp(argv[i], "--theme")) {
+            const char *val = argv[i + 1];
+            for (int j = i; j + 2 < *argc; j++) argv[j] = argv[j + 2];
+            *argc -= 2;
+            return val;
+        }
+    }
+    return NULL;
+}
+
 /* Parse flags, render the input Markdown, and print the ANSI to stdout. */
 int main(int argc, char **argv) {
+    const char *theme_name = pull_theme(&argc, argv);
     int width = 0, dark = 1, opt;
     while ((opt = getopt(argc, argv, "w:l")) != -1) {
         switch (opt) {
             case 'w': width = atoi(optarg); break;
             case 'l': dark = 0; break;
             default:
-                fprintf(stderr, "usage: %s [-w width] [-l] [file.md]\n", argv[0]);
+                fprintf(stderr, "usage: %s [-w width] [-l] [--theme name] [file.md]\n", argv[0]);
                 return 2;
         }
     }
     if (width <= 0) width = term_width();
+    const Theme *theme = theme_name ? theme_by_name(theme_name) : NULL;
+    if (!theme) theme = theme_auto(dark);   /* -l → auto-light; unknown → auto */
 
     FILE *f = stdin;
     char dirbuf[4096]; const char *base = NULL;
@@ -51,7 +71,7 @@ int main(int argc, char **argv) {
     if (f != stdin) fclose(f);
     if (!src) { fprintf(stderr, "read failed\n"); return 1; }
 
-    Doc *doc = render_doc_at(src, len, width, dark, base);
+    Doc *doc = render_doc_themed(src, len, width, theme, base);
     free(src);
     if (!doc) { fprintf(stderr, "render failed\n"); return 1; }
 

@@ -18,6 +18,9 @@
 #include "completion.h"
 #include "vault.h"
 #include "graph.h"
+#include "legend.h"
+#include "progress.h"
+#include "theme.h"
 #include "util.h"
 
 #include <notcurses/notcurses.h>
@@ -31,6 +34,7 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <time.h>
 
 enum { MODE_READER, MODE_INSERT, MODE_SPLIT };
 
@@ -66,7 +70,14 @@ typedef struct {
     int    dirty;                /* unsaved changes since the last write */
     char   msg[160];             /* transient status message (one keypress) */
     Doc   *preview;              /* Split mode: live render of the editor text */
-    int    helpmode;             /* help overlay open */
+    int    helpmode;             /* help overlay open (narrow-terminal fallback) */
+    int    legend;               /* Reader keybinding sidebar open (reflows text) */
+    int       spin_frame;        /* dots-ring spinner frame (scroll-progress HUD) */
+    long long spin_until_ms;     /* monotonic ms until the scroll spin-down ends */
+    const Theme *theme;          /* active colour theme (chrome + document) */
+    int    themepick;            /* theme picker panel open */
+    int    theme_sel;            /* highlighted theme index in the picker */
+    const Theme *theme_saved;    /* theme to restore if the picker is cancelled */
     int    visualmode;           /* vi visual-line selection active */
     int    visual_anchor;        /* line where the selection started */
     int    blmode;               /* backlinks panel open */
@@ -85,6 +96,23 @@ typedef struct {
 #define TOC_W 30                 /* table-of-contents panel width */
 
 static int content_rows(App *a) { return a->rows - 1; }   /* last row = status */
+
+/* Columns available to the document: full width, or width minus the legend
+ * panel while it is open. The reader's Doc is rendered to this width. */
+static int content_cols(App *a) {
+    return legend_content_cols(a->cols, a->legend, LEGEND_W);
+}
+
+#define SCROLL_STEP     1     /* lines moved per trackpad/wheel scroll event */
+#define SPIN_FRAME_MS  80     /* spin-down frame interval */
+#define SPIN_SETTLE_MS 320    /* how long the spinner keeps spinning after a scroll */
+
+/* Monotonic milliseconds, for the scroll spin-down timing. */
+static long long now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
 
 /* True if the event is Ctrl-<c> (c a lowercase letter). Terminals encode such a
  * chord in three ways and we accept all: the raw control code (Ctrl-V = 0x16),
@@ -130,7 +158,7 @@ static int detect_dark(struct notcurses *nc) {
 
 /* Tear down notcurses and restore the terminal's keyboard state. */
 static void shutdown_tui(void) {
-    if (g_nc) { notcurses_stop(g_nc); g_nc = NULL; }
+    if (g_nc) { notcurses_mice_disable(g_nc); notcurses_stop(g_nc); g_nc = NULL; }
     term_kbd_reset();
 }
 
@@ -153,10 +181,10 @@ static void apply_style(struct ncplane *p, const Style *st) {
 /* Draw `text` on the bottom row as a highlighted status bar. */
 static void status_bar(App *a, const char *text) {
     struct ncplane *p = a->plane;
+    RGB fg = a->theme->status_fg, bg = a->theme->status_bg;
     ncplane_set_styles(p, NCSTYLE_BOLD);
-    ncplane_set_fg_rgb8(p, 20, 20, 20);
-    int g = a->dark ? 150 : 80;
-    ncplane_set_bg_rgb8(p, g, g, g);
+    ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b);
+    ncplane_set_bg_rgb8(p, bg.r, bg.g, bg.b);
     for (int x = 0; x < a->cols; x++) ncplane_putchar_yx(p, a->rows - 1, x, ' ');
     ncplane_putstr_yx(p, a->rows - 1, 0, text);
     ncplane_set_styles(p, NCSTYLE_NONE);
@@ -209,25 +237,25 @@ static void draw_selection(App *a) {
     if (!a->visualmode) return;
     int lo = a->visual_anchor, hi = a->rcur_line;
     if (lo > hi) { int t = lo; lo = hi; hi = t; }
-    RGB selfg = {235, 235, 235}, selbg = a->dark ? (RGB){50, 60, 90} : (RGB){190, 205, 235};
+    RGB selfg = a->theme->sel_fg, selbg = a->theme->sel_bg;
     int body = content_rows(a);
     for (int li = lo; li <= hi; li++) {
         int y = li - a->top;
         if (y < 0 || y >= body) continue;
-        for (int x = 0; x < a->cols; x++) overlay_cell(a->plane, y, x, selfg, selbg);
+        for (int x = 0; x < content_cols(a); x++) overlay_cell(a->plane, y, x, selfg, selbg);
     }
 }
 
 /* Highlight every visible search hit (yellow), brighter for the focused one. */
 static void draw_hits(App *a) {
     int body = content_rows(a);
-    RGB black = {0, 0, 0}, yellow = {220, 200, 60}, amber = {255, 170, 40};
+    RGB black = a->theme->hit_fg, yellow = a->theme->hit_bg, amber = a->theme->hit_focus;
     for (int i = 0; i < a->hits.n; i++) {
         Hit *h = &a->hits.v[i];
         int y = h->line - a->top;
         if (y < 0 || y >= body) continue;
         RGB bg = (i == a->cur_hit) ? amber : yellow;
-        for (int c = 0; c < h->width && h->col + c < a->cols; c++)
+        for (int c = 0; c < h->width && h->col + c < content_cols(a); c++)
             overlay_cell(a->plane, y, h->col + c, black, bg);
     }
 }
@@ -249,6 +277,7 @@ static void prompt_line(App *a, char lead, const char *text) {
 static void reader_bottom(App *a) {
     if (a->cmdmode)    { prompt_line(a, ':', a->cmdbuf); return; }
     if (a->searchmode) { prompt_line(a, '/', a->searchbuf); return; }
+    if (a->themepick)  { status_bar(a, " THEME  j/k move · Enter keep · Esc revert"); return; }
     if (a->msg[0])     { status_bar(a, a->msg); return; }
     if (a->visualmode) {
         int n = abs(a->rcur_line - a->visual_anchor) + 1;
@@ -275,8 +304,8 @@ static void reader_bottom(App *a) {
 static void draw_toc(App *a) {
     struct ncplane *p = a->plane;
     int h = content_rows(a);
-    RGB panel = a->dark ? (RGB){30, 30, 38} : (RGB){235, 235, 240};
-    RGB fg    = a->dark ? (RGB){210, 210, 210} : (RGB){30, 30, 30};
+    RGB panel = a->theme->panel_bg;
+    RGB fg    = a->theme->panel_fg;
     int first = a->toc_sel - h / 2 + 1;        /* scroll so the selection shows */
     if (first > a->toc.n - (h - 1)) first = a->toc.n - (h - 1);
     if (first < 0) first = 0;
@@ -330,8 +359,8 @@ static void draw_doc_line(struct ncplane *p, const Line *L, int row, int x0, int
 static void draw_backlinks(App *a) {
     struct ncplane *p = a->plane;
     int h = content_rows(a);
-    RGB panel = a->dark ? (RGB){30, 30, 38} : (RGB){235, 235, 240};
-    RGB fg    = a->dark ? (RGB){210, 210, 210} : (RGB){30, 30, 30};
+    RGB panel = a->theme->panel_bg;
+    RGB fg    = a->theme->panel_fg;
     ncplane_set_styles(p, NCSTYLE_BOLD);
     ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b);
     ncplane_set_bg_rgb8(p, panel.r, panel.g, panel.b);
@@ -459,7 +488,7 @@ static void blit_image(App *a, const char *src, int row, int rows) {
     if (a->nimgpl >= (int)(sizeof a->imgpl / sizeof a->imgpl[0])) return;
     int body = content_rows(a);
     int h = rows; if (row + h > body) h = body - row;
-    int w = a->cols;
+    int w = content_cols(a);
     if (h < 1 || w < 2) return;
     char dirbuf[4096];
     char *path = path_resolve(doc_dir(a, dirbuf, sizeof dirbuf), src);
@@ -490,6 +519,138 @@ static void blit_image(App *a, const char *src, int row, int rows) {
     ncvisual_destroy(v);
 }
 
+/* The hidable keybinding sidebar: a rounded panel on the right edge that the
+ * document has already reflowed to make room for. Drawn last so it sits on top.
+ * Pure layout (the width split, row formatting) lives in legend.c. */
+static void draw_legend(App *a) {
+    struct ncplane *p = a->plane;
+    int W = LEGEND_W;
+    int x0 = content_cols(a);          /* panel fills [x0, x0+W) — the right edge */
+    int body = content_rows(a);        /* rows above the status bar */
+    if (W < 4 || body < 2) return;
+    int inner = W - 2, bot = body - 1;
+
+    RGB border = a->theme->panel_border;
+    RGB bg     = a->theme->panel_bg;
+    RGB fg     = a->theme->panel_fg;
+    RGB keyfg  = a->theme->panel_key;
+    RGB hdrfg  = a->theme->panel_header;
+
+    /* paint the panel background */
+    ncplane_set_styles(p, NCSTYLE_NONE);
+    ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b);
+    ncplane_set_bg_rgb8(p, bg.r, bg.g, bg.b);
+    for (int y = 0; y < body; y++)
+        for (int x = 0; x < W; x++) ncplane_putchar_yx(p, y, x0 + x, ' ');
+
+    /* rounded frame */
+    ncplane_set_fg_rgb8(p, border.r, border.g, border.b);
+    ncplane_putegc_yx(p, 0,   x0,         "\xe2\x95\xad", NULL);   /* ╭ */
+    ncplane_putegc_yx(p, 0,   x0 + W - 1, "\xe2\x95\xae", NULL);   /* ╮ */
+    ncplane_putegc_yx(p, bot, x0,         "\xe2\x95\xb0", NULL);   /* ╰ */
+    ncplane_putegc_yx(p, bot, x0 + W - 1, "\xe2\x95\xaf", NULL);   /* ╯ */
+    for (int x = 1; x < W - 1; x++) {
+        ncplane_putegc_yx(p, 0,   x0 + x, "\xe2\x94\x80", NULL);   /* ─ */
+        ncplane_putegc_yx(p, bot, x0 + x, "\xe2\x94\x80", NULL);
+    }
+    for (int y = 1; y < bot; y++) {
+        ncplane_putegc_yx(p, y, x0,         "\xe2\x94\x82", NULL); /* │ */
+        ncplane_putegc_yx(p, y, x0 + W - 1, "\xe2\x94\x82", NULL);
+    }
+
+    /* title in the top edge; persistent close hint in the bottom edge */
+    ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b);
+    ncplane_putstr_yx(p, 0,   x0 + 2, " keys ");
+    ncplane_putstr_yx(p, bot, x0 + 2, " Esc \xc2\xb7 ? close ");
+
+    /* one LegendRow per content row, between the frame */
+    char line[64];
+    int rows_avail = bot - 1;          /* content rows: y in [1, bot) */
+    for (int i = 0; i < LEGEND_READER_N && i < rows_avail; i++) {
+        const LegendRow *r = &LEGEND_READER[i];
+        legend_format_row(line, sizeof line, r, inner, LEGEND_KEYCOL);
+        int y = 1 + i;
+        if (r->key) {
+            ncplane_set_styles(p, NCSTYLE_NONE);
+            ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b);
+            ncplane_putstr_yx(p, y, x0 + 1, line);
+            ncplane_set_fg_rgb8(p, keyfg.r, keyfg.g, keyfg.b);
+            ncplane_putstr_yx(p, y, x0 + 2, r->key);   /* accent the key chord */
+        } else if (r->action && r->action[0]) {
+            ncplane_set_styles(p, NCSTYLE_BOLD);
+            ncplane_set_fg_rgb8(p, hdrfg.r, hdrfg.g, hdrfg.b);
+            ncplane_putstr_yx(p, y, x0 + 1, line);
+            ncplane_set_styles(p, NCSTYLE_NONE);
+        }
+        /* spacer rows: background only */
+    }
+
+    ncplane_set_fg_default(p);
+    ncplane_set_bg_default(p);
+}
+
+/* Thin reading-progress HUD in the top-right of the document area: the dots-ring
+ * spinner (animating while the spin-down is live, else a neutral glyph) and the
+ * percentage. Drawn on top; skipped when the whole document already fits. */
+static void draw_progress(App *a) {
+    int body = content_rows(a);
+    int nline = (int)a->doc->nline;
+    if (nline <= body) return;                  /* nothing to scroll: no HUD */
+    int pct = progress_percent(a->rcur_line, nline);
+    const char *glyph = (a->spin_until_ms > now_ms())
+                        ? progress_spinner(a->spin_frame) : PROGRESS_REST;
+    char buf[16];
+    snprintf(buf, sizeof buf, "%s %d%%", glyph, pct);
+    int width = 1 + 1 + (pct >= 100 ? 3 : pct >= 10 ? 2 : 1) + 1;  /* glyph ' ' NN '%' */
+    int x = content_cols(a) - width;
+    if (x < 0) return;
+    struct ncplane *p = a->plane;
+    RGB fg = a->theme->progress;
+    ncplane_set_styles(p, NCSTYLE_NONE);
+    ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b);
+    ncplane_set_bg_default(p);
+    ncplane_putstr_yx(p, 0, x, buf);
+    ncplane_set_fg_default(p);
+}
+
+/* The theme picker: a left panel listing every theme, the highlighted one
+ * (previewed live in the reader) inverted, the on-disk default marked '*'. */
+static void draw_themepick(App *a) {
+    struct ncplane *p = a->plane;
+    int h = content_rows(a), n = theme_count();
+    RGB panel = a->theme->panel_bg, fg = a->theme->panel_fg;
+    int first = a->theme_sel - h / 2 + 1;
+    if (first > n - (h - 1)) first = n - (h - 1);
+    if (first < 0) first = 0;
+
+    ncplane_set_styles(p, NCSTYLE_BOLD);
+    ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b);
+    ncplane_set_bg_rgb8(p, panel.r, panel.g, panel.b);
+    for (int x = 0; x < TOC_W; x++) ncplane_putchar_yx(p, 0, x, ' ');
+    ncplane_putstr_yx(p, 0, 1, "Themes");
+
+    const char *deflt = theme_default_name();
+    for (int row = 1; row < h; row++) {
+        int idx = first + row - 1;
+        for (int x = 0; x < TOC_W; x++) ncplane_putchar_yx(p, row, x, ' ');
+        if (idx < 0 || idx >= n) continue;
+        const Theme *t = theme_at(idx);
+        int sel = (idx == a->theme_sel);
+        ncplane_set_styles(p, sel ? NCSTYLE_BOLD : NCSTYLE_NONE);
+        if (sel) { ncplane_set_fg_rgb8(p, 0, 0, 0); ncplane_set_bg_rgb8(p, 255, 200, 90); }
+        else     { ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b); ncplane_set_bg_rgb8(p, panel.r, panel.g, panel.b); }
+        char buf[TOC_W * 4];
+        snprintf(buf, sizeof buf, " %s%s", t->name,
+                 (deflt && !strcmp(t->name, deflt)) ? "  *" : "");
+        size_t cut = ed_col_to_byte(buf, strlen(buf), TOC_W - 1);
+        buf[cut] = '\0';
+        ncplane_putstr_yx(p, row, 0, buf);
+    }
+    ncplane_set_styles(p, NCSTYLE_NONE);
+    ncplane_set_fg_default(p);
+    ncplane_set_bg_default(p);
+}
+
 static void draw_reader(App *a) {
     notcurses_cursor_disable(a->nc);
     reader_scroll(a);
@@ -499,23 +660,23 @@ static void draw_reader(App *a) {
     for (int row = 0; row < body; row++) {
         int li = a->top + row;
         if (li >= (int)a->doc->nline) break;
-        draw_doc_line(a->plane, &a->doc->lines[li], row, 0, a->cols);
+        draw_doc_line(a->plane, &a->doc->lines[li], row, 0, content_cols(a));
     }
 
     draw_selection(a);
     draw_hits(a);
 
     /* block cursor on top (hidden while typing a command/search/panel) */
-    if (!a->cmdmode && !a->searchmode && !a->tocmode && !a->blmode) {
+    if (!a->cmdmode && !a->searchmode && !a->tocmode && !a->blmode && !a->themepick) {
         int cy = a->rcur_line - a->top;
-        RGB black = {0, 0, 0}, white = {255, 255, 255};
-        if (cy >= 0 && cy < body && a->rcur_col < a->cols)
-            overlay_cell(a->plane, cy, a->rcur_col, black, white);
+        RGB cfg = a->theme->cursor_fg, cbg = a->theme->cursor_bg;
+        if (cy >= 0 && cy < body && a->rcur_col < content_cols(a))
+            overlay_cell(a->plane, cy, a->rcur_col, cfg, cbg);
     }
 
     /* Blit any visible images over their reserved rows (not while a panel or
      * prompt is open, which would draw over the picture). */
-    if (!a->tocmode && !a->blmode && !a->helpmode && !a->cmdmode && !a->searchmode) {
+    if (!a->tocmode && !a->blmode && !a->helpmode && !a->cmdmode && !a->searchmode && !a->themepick) {
         for (int row = 0; row < body; row++) {
             int li = a->top + row;
             if (li >= (int)a->doc->nline) break;
@@ -524,6 +685,9 @@ static void draw_reader(App *a) {
         }
     }
 
+    if (a->legend) draw_legend(a);
+    draw_progress(a);
+    if (a->themepick) draw_themepick(a);
     if (a->tocmode) draw_toc(a);
     if (a->blmode)  draw_backlinks(a);
     reader_bottom(a);
@@ -603,7 +767,7 @@ static void render_preview(App *a) {
     char dirbuf[4096];
     const char *base = doc_dir(a, dirbuf, sizeof dirbuf);
     size_t nlen; char *s = editor_source(&a->ed, &nlen);
-    if (s) { a->preview = render_doc_at(s, nlen, rw, a->dark, base); free(s); }
+    if (s) { a->preview = render_doc_themed(s, nlen, rw, a->theme, base); free(s); }
 }
 
 /* Split mode: editor on the left, a live preview on the right, a divider
@@ -617,7 +781,7 @@ static void draw_split(App *a) {
     draw_editor_pane(a, 0, leftw);
 
     /* divider */
-    RGB d = a->dark ? (RGB){80, 80, 80} : (RGB){170, 170, 170};
+    RGB d = a->theme->divider;
     ncplane_set_styles(p, NCSTYLE_NONE);
     ncplane_set_fg_rgb8(p, d.r, d.g, d.b);
     ncplane_set_bg_default(p);
@@ -661,10 +825,13 @@ static void update_dims(App *a) {
  * live search is recomputed, since hit line indices refer to the old Doc. */
 static int rerender(App *a) {
     update_dims(a);
+    /* If the window shrank too far to reflow beside the panel, close it. */
+    if (a->legend && legend_should_overlay(a->cols, LEGEND_W, LEGEND_MIN_CONTENT))
+        a->legend = 0;
     if (a->doc) doc_free(a->doc);
     char dirbuf[4096];
     const char *base = doc_dir(a, dirbuf, sizeof dirbuf);
-    a->doc = render_doc_at(a->src, a->srclen, a->cols, a->dark, base);
+    a->doc = render_doc_themed(a->src, a->srclen, content_cols(a), a->theme, base);
     if (!a->doc) return -1;
     if (a->searchbuf[0]) {
         search_doc(a->doc, a->searchbuf, &a->hits);
@@ -782,8 +949,8 @@ static void draw_help(App *a) {
     };
     int n = (int)(sizeof lines / sizeof lines[0]);
     struct ncplane *p = a->plane;
-    RGB bg = a->dark ? (RGB){25, 25, 32} : (RGB){240, 240, 245};
-    RGB fg = a->dark ? (RGB){220, 220, 220} : (RGB){20, 20, 20};
+    RGB bg = a->theme->panel_bg;
+    RGB fg = a->theme->panel_fg;
     int top = (a->rows - n) / 2; if (top < 0) top = 0;
     ncplane_set_styles(p, NCSTYLE_NONE);
     ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b);
@@ -1206,6 +1373,73 @@ static int handle_backlinks(App *a, uint32_t id, const ncinput *ni) {
     return 1;
 }
 
+/* Open or close the Reader sidebar, re-wrapping the document to the new width
+ * and keeping the cursor on roughly the same line across the reflow. */
+static void toggle_legend(App *a) {
+    int old_n = a->doc ? (int)a->doc->nline : 0;
+    int old_line = a->rcur_line;
+    a->legend = !a->legend;
+    rerender(a);
+    int new_n = a->doc ? (int)a->doc->nline : 0;
+    a->rcur_line = map_line(old_line, old_n, new_n);
+    reader_clamp_cursor(a);
+}
+
+/* Persist `name` as the default theme in ~/.config/glance/config, preserving the
+ * rest of the file. Best-effort: returns 0 on success, -1 on failure. */
+static int save_default_theme(const char *name) {
+    const char *home = getenv("HOME");
+    if (!home) return -1;
+    char base[3072], dir[4096], path[4096];
+    snprintf(base, sizeof base, "%s/.config", home);
+    snprintf(dir, sizeof dir, "%s/glance", base);
+    snprintf(path, sizeof path, "%s/config", dir);
+    mkdir(base, 0755); mkdir(dir, 0755);   /* ignore EEXIST */
+
+    char *existing = NULL; size_t elen = 0;
+    FILE *f = fopen(path, "rb");
+    if (f) { existing = read_file(f, &elen); fclose(f); }
+    char out[8192];
+    int n = theme_config_set_default(existing ? existing : "", name, out, sizeof out);
+    free(existing);
+    if (n < 0) return -1;
+    return atomic_write(path, out, (size_t)n);
+}
+
+/* Open the theme picker, remembering the current theme so Esc can revert. */
+static void open_themepick(App *a) {
+    a->theme_saved = a->theme;
+    a->theme_sel = theme_index_of(a->theme->name);
+    a->themepick = 1;
+}
+
+/* Theme-picker keys: move to preview live, Enter keeps + persists, Esc reverts. */
+static int handle_themepick(App *a, uint32_t id, const ncinput *ni) {
+    int n = theme_count();
+    if (id == 'j' || id == NCKEY_DOWN)      { if (a->theme_sel + 1 < n) a->theme_sel++; }
+    else if (id == 'k' || id == NCKEY_UP)   { if (a->theme_sel > 0) a->theme_sel--; }
+    else if (id == 'g' || id == NCKEY_HOME) a->theme_sel = 0;
+    else if (id == 'G' || id == NCKEY_END)  a->theme_sel = n - 1;
+    else if (id == NCKEY_ENTER || id == '\r' || id == '\n') {
+        a->themepick = 0;
+        int ok = save_default_theme(a->theme->name) == 0;
+        snprintf(a->msg, sizeof a->msg, "theme: %s%s", a->theme->name,
+                 ok ? " (saved as default)" : " (could not save default)");
+        return 1;
+    } else if (id == NCKEY_ESC || id == 'q' || id == 'T' || ctrl_is(id, ni, 'c')) {
+        a->theme = a->theme_saved; a->dark = a->theme->dark;
+        a->themepick = 0;
+        rerender(a);
+        return 1;
+    } else {
+        return 1;                       /* ignore other keys while picking */
+    }
+    a->theme = theme_at(a->theme_sel);  /* preview the highlighted theme live */
+    a->dark = a->theme->dark;
+    rerender(a);
+    return 1;
+}
+
 /* Reader-mode keys: move the block cursor, search, enter Insert/command, quit. */
 static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     int body = content_rows(a);
@@ -1215,11 +1449,15 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     else if (id == 't')                          open_toc(a);
     else if (id == 'b')                          open_backlinks(a);
     else if (ctrl_is(id, ni, 'g')) open_graph(a);   /* graph explorer */
-    else if (id == '?')                          a->helpmode = 1;
+    else if (id == '?') {                        /* toggle the sidebar, or overlay if too narrow */
+        if (legend_should_overlay(a->cols, LEGEND_W, LEGEND_MIN_CONTENT)) a->helpmode = 1;
+        else toggle_legend(a);
+    }
+    else if (id == 'T')                          open_themepick(a);
     else if (ctrl_is(id, ni, 's'))    save_file(a);
     else if (id == 'n' && a->hits.n)             focus_hit(a, a->cur_hit + 1);
     else if (id == 'N' && a->hits.n)             focus_hit(a, a->cur_hit - 1);
-    else if (id == NCKEY_ESC)                    clear_search(a);
+    else if (id == NCKEY_ESC)                    { if (a->legend) toggle_legend(a); else clear_search(a); }
     else if (id == 'i')                          enter_insert(a);  /* vi-style */
     else if (id == 'e')                          enter_split(a);   /* editor + preview */
     else if (id == 'v' || id == 'V')             { a->visualmode = 1; a->visual_anchor = a->rcur_line; }
@@ -1239,6 +1477,13 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     else if (ctrl_is(id, ni, 'u'))    { a->rcur_line -= body / 2; a->rcur_col = a->rcur_goal; }
     else if (id == 'g' || id == NCKEY_HOME)      a->rcur_line = 0;
     else if (id == 'G' || id == NCKEY_END)       a->rcur_line = (int)a->doc->nline - 1;
+    else if (id == NCKEY_SCROLL_UP || id == NCKEY_SCROLL_DOWN) {
+        int dir = (id == NCKEY_SCROLL_DOWN) ? SCROLL_STEP : -SCROLL_STEP;
+        progress_scroll(&a->top, &a->rcur_line, dir, (int)a->doc->nline, content_rows(a));
+        a->rcur_goal = a->rcur_col;             /* keep the goal column sensible */
+        a->spin_frame++;                        /* advance the dots-ring */
+        a->spin_until_ms = now_ms() + SPIN_SETTLE_MS;
+    }
     reader_clamp_cursor(a);
     if (id == 'h' || id == 'l' || id == NCKEY_LEFT || id == NCKEY_RIGHT)
         a->rcur_goal = a->rcur_col;     /* horizontal move resets the goal col */
@@ -1404,6 +1649,7 @@ static int dispatch_key(App *a, uint32_t id, ncinput *ni) {
     }
     if (a->cmdmode)    return handle_command(a, id, ni);
     if (a->searchmode) return handle_search(a, id, ni);
+    if (a->themepick)  return handle_themepick(a, id, ni);
     if (a->tocmode)    return handle_toc(a, id, ni);
     if (a->blmode)     return handle_backlinks(a, id, ni);
     if (a->graphmode)  return handle_graph(a, id, ni);
@@ -1434,10 +1680,33 @@ static void reload_file(App *a) {
     snprintf(a->msg, sizeof a->msg, "reloaded from disk");
 }
 
+/* Load ~/.config/glance/config (if present) into the theme registry. */
+static void load_theme_config(void) {
+    const char *home = getenv("HOME");
+    if (!home) return;
+    char path[4096];
+    snprintf(path, sizeof path, "%s/.config/glance/config", home);
+    FILE *f = fopen(path, "rb");
+    if (!f) return;
+    size_t n; char *buf = read_file(f, &n);
+    fclose(f);
+    if (buf) { theme_load_config(buf); free(buf); }
+}
+
+/* Resolve the active theme: an explicit name (CLI / config default) or "auto"
+ * (terminal-detected polarity). Unknown names fall back to auto. */
+static const Theme *resolve_theme(const char *want, int detected_dark) {
+    if (!want || !*want || !strcmp(want, "auto")) return theme_auto(detected_dark);
+    const Theme *t = theme_by_name(want);
+    return t ? t : theme_auto(detected_dark);
+}
+
 /* Bring up notcurses, then loop: wait for terminal input or a file change,
  * dispatch, redraw. See tui.h. Owns a mutable copy of the source. */
-int tui_run(const char *src, unsigned long len, const char *path, const char *title) {
+int tui_run(const char *src, unsigned long len, const char *path, const char *title,
+            const char *theme_name) {
     term_kbd_reset();   /* normalize before notcurses probes (slice-2 fix) */
+    load_theme_config();
 
     notcurses_options opts;
     memset(&opts, 0, sizeof opts);
@@ -1455,8 +1724,14 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
     a.nc = notcurses_init(&opts, NULL);
     if (!a.nc) { free(a.src); return 1; }
     a.plane = notcurses_stdplane(a.nc);
-    a.dark = detect_dark(a.nc);   /* theme follows the terminal background */
+    a.dark = detect_dark(a.nc);   /* terminal background polarity */
+    /* CLI flag wins, else the config default, else "auto" (detected polarity). */
+    a.theme = resolve_theme(theme_name ? theme_name : theme_default_name(), a.dark);
+    a.dark = a.theme->dark;       /* keep dark in sync for any niche colour */
     a.pixel = notcurses_check_pixel_support(a.nc) != NCPIXEL_NONE;   /* crisp images? */
+    /* Trackpad/wheel scrolling: button events carry NCKEY_SCROLL_UP/DOWN. Mice
+     * are disabled again in shutdown_tui so no tracking sequences leak out. */
+    notcurses_mice_enable(a.nc, NCMICE_BUTTON_EVENT);
 
     g_nc = a.nc;
     term_kbd_reset();              /* run in legacy keyboard mode (see above) */
@@ -1485,7 +1760,22 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
         fds[0].fd = infd; fds[0].events = POLLIN; fds[0].revents = 0;
         int nfds = 1;
         if (a.wfd >= 0) { fds[1].fd = a.wfd; fds[1].events = POLLIN; fds[1].revents = 0; nfds = 2; }
-        if (poll(fds, nfds, -1) < 0) { if (errno == EINTR) continue; break; }
+        /* While the scroll spinner is settling, poll with a short timeout so we
+         * can tick its frames; otherwise block until input or a file event. */
+        int timeout = -1;
+        long long now = now_ms();
+        if (a.spin_until_ms > now) {
+            long long rem = a.spin_until_ms - now;
+            timeout = rem < SPIN_FRAME_MS ? (int)rem : SPIN_FRAME_MS;
+            if (timeout < 1) timeout = 1;
+        }
+        int pr = poll(fds, nfds, timeout);
+        if (pr < 0) { if (errno == EINTR) continue; break; }
+        if (pr == 0) {                       /* spin-down tick: advance and redraw */
+            a.spin_frame++;
+            redraw(&a);
+            continue;
+        }
         if (nfds == 2 && (fds[1].revents & POLLIN)) {
             watch_drain(&a.watch); reload_file(&a); redraw(&a);
         }
