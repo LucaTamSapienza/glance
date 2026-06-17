@@ -343,7 +343,7 @@ static void reader_bottom(App *a) {
                  a->title, a->cur_hit + 1, a->hits.n, a->searchbuf);
     } else {
         snprintf(status, sizeof status,
-                 " READER  %s  —  Ln %d/%d   i insert  e split  / search  t toc  :q quit",
+                 " READER  %s  —  Ln %d/%d   i insert  e split  / search  t toc  T theme  ? keys  :q quit",
                  a->title, a->rcur_line + 1, (int)a->doc->nline);
     }
     status_bar(a, status);
@@ -367,13 +367,15 @@ static void draw_toc(App *a) {
 
     for (int row = 1; row < h; row++) {
         int idx = first + row - 1;
-        for (int x = 0; x < TOC_W; x++) ncplane_putchar_yx(p, row, x, ' ');
-        if (idx < 0 || idx >= a->toc.n) continue;
-        TOCItem *it = &a->toc.v[idx];
-        int sel = (idx == a->toc_sel);
+        int sel = (idx >= 0 && idx < a->toc.n && idx == a->toc_sel);
+        /* Set this row's colours before the fill so the selection bar covers the
+         * whole row and no stale background bleeds onto the next one. */
         ncplane_set_styles(p, sel ? NCSTYLE_BOLD : NCSTYLE_NONE);
         if (sel) { ncplane_set_fg_rgb8(p, 0, 0, 0); ncplane_set_bg_rgb8(p, 255, 200, 90); }
         else     { ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b); ncplane_set_bg_rgb8(p, panel.r, panel.g, panel.b); }
+        for (int x = 0; x < TOC_W; x++) ncplane_putchar_yx(p, row, x, ' ');
+        if (idx < 0 || idx >= a->toc.n) continue;
+        TOCItem *it = &a->toc.v[idx];
         char buf[TOC_W * 4];
         int indent = (it->level - 1) * 2;
         snprintf(buf, sizeof buf, "%*s%s", indent + 1, "", it->title);
@@ -431,12 +433,14 @@ static void draw_backlinks(App *a) {
     ncplane_putstr_yx(p, 0, 1, "Backlinks");
     for (int row = 1; row < h; row++) {
         int idx = row - 1;
-        for (int x = 0; x < TOC_W; x++) ncplane_putchar_yx(p, row, x, ' ');
-        if (idx >= a->nbl) continue;
-        int sel = (idx == a->bl_sel);
+        int sel = (idx < a->nbl && idx == a->bl_sel);
+        /* Colours first, then the fill: keeps the selection bar full-width and
+         * stops it bleeding onto the row below. */
         ncplane_set_styles(p, sel ? NCSTYLE_BOLD : NCSTYLE_NONE);
         if (sel) { ncplane_set_fg_rgb8(p, 0, 0, 0); ncplane_set_bg_rgb8(p, 255, 200, 90); }
         else     { ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b); ncplane_set_bg_rgb8(p, panel.r, panel.g, panel.b); }
+        for (int x = 0; x < TOC_W; x++) ncplane_putchar_yx(p, row, x, ' ');
+        if (idx >= a->nbl) continue;
         const char *slash = strrchr(a->bl[idx], '/');   /* show the base name */
         char buf[TOC_W * 4];
         snprintf(buf, sizeof buf, " %s", slash ? slash + 1 : a->bl[idx]);
@@ -708,13 +712,15 @@ static void draw_themepick(App *a) {
     const char *deflt = theme_default_name();
     for (int row = 1; row < h; row++) {
         int idx = first + row - 1;
-        for (int x = 0; x < TOC_W; x++) ncplane_putchar_yx(p, row, x, ' ');
-        if (idx < 0 || idx >= n) continue;
-        const Theme *t = theme_at(idx);
-        int sel = (idx == a->theme_sel);
+        int sel = (idx >= 0 && idx < n && idx == a->theme_sel);
+        /* Colours before the fill so the highlight spans the whole row and the
+         * orange does not bleed onto the line beneath it. */
         ncplane_set_styles(p, sel ? NCSTYLE_BOLD : NCSTYLE_NONE);
         if (sel) { ncplane_set_fg_rgb8(p, 0, 0, 0); ncplane_set_bg_rgb8(p, 255, 200, 90); }
         else     { ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b); ncplane_set_bg_rgb8(p, panel.r, panel.g, panel.b); }
+        for (int x = 0; x < TOC_W; x++) ncplane_putchar_yx(p, row, x, ' ');
+        if (idx < 0 || idx >= n) continue;
+        const Theme *t = theme_at(idx);
         char buf[TOC_W * 4];
         snprintf(buf, sizeof buf, " %s%s", t->name,
                  (deflt && !strcmp(t->name, deflt)) ? "  *" : "");

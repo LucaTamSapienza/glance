@@ -47,6 +47,18 @@ lines, each a sequence of styled runs — and two sinks consume it: `doc_ansi.c`
 
 ## Current status (2026-06-17)
 
+**Post-merge fixes (theme discoverability + selection bar).** Two follow-ups
+after `feature/legend` landed. (1) The `T` theme picker existed but was
+undocumented: it is now listed in `--help` (KEYS — Reader), in the `?` legend
+sidebar (a new **View** group with `T → themes` and `? → this legend`), and in
+the Reader status bar (`T theme  ? keys`); `--help` also gains the `--theme NAME`
+and `--list-themes` CLI lines. (2) The selection bar in the TOC, theme picker,
+and backlinks panels bled onto the row below: each row was space-filled *before*
+its colours were set, so the row under the selected one inherited the leftover
+orange background. Fixed by setting the row colours before the fill in
+`draw_toc`/`draw_themepick`/`draw_backlinks`, which also makes the highlight a
+clean full-width bar. The graph explorer was unaffected (it never fills rows).
+
 **Claude Code plugin (the repo is the plugin).** `.claude-plugin/plugin.json` +
 `marketplace.json`, four `commands/*.md` (`/glance-outline|links|graph` wrap the
 JSON exports, `/glance-preview` runs `glance-render` inline), and two skills:
