@@ -26,6 +26,13 @@ the same files. The C rewrite exists so glance owns its rendering (md4c → our 
 `Doc` → ANSI/cells) instead of treating glamour/glow as a black box, which is what
 the original Go version did.
 
+The agent-era direction — glance as the **agent-native memory layer** over a
+Markdown vault (token-cheap bounded reads, budget-constrained hybrid retrieval
+with provenance, an MCP server, and a surgical write API) — is specced in
+[`docs/DESIGN.md`](docs/DESIGN.md). That is the north-star roadmap; the
+milestones there (M1 `context`+receipt → M2 MCP → M3 semantic → M4 write) drive
+the next phase of work.
+
 ## How to build and run
 
 ```sh

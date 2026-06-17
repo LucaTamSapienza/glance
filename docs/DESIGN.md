@@ -1,0 +1,245 @@
+# glance — Design & Vision: the agent-native memory layer for Markdown
+
+> Status: north-star design doc. Captures *why* glance exists for the agent era,
+> what we are building, and in what order. Decisions here are deliberate; open
+> questions are flagged explicitly in §11. Last updated: 2026-06-17.
+
+## 0. North Star
+
+glance is the **protocol layer between an AI agent and a Markdown vault**. The
+human gets a beautiful terminal reader/editor; the agent gets an API that hands
+it *the right slice at the right cost*. Same files on disk, two consumers.
+
+Every feature is judged by one acceptance test:
+
+> **Would an agent, given the choice, pick glance — because it is cheaper *and*
+> the output is better than not using it?**
+
+If the answer is no, the feature does not ship. This is not a slogan: it is the
+gate. The whole project succeeds only if an agent reaching for context or making
+an edit is strictly better off routing through glance.
+
+## 1. The problem: agent ↔ vault today
+
+When an agent works against a folder of Markdown notes (an Obsidian-style "second
+brain"), the state of the art is *read the raw files*. That is expensive and
+blind:
+
+1. **Whole-file reads waste tokens.** The agent loads a 2,000-word note to use
+   one paragraph.
+2. **Discovery is blind.** To find the right note it reads ten. Full-text search
+   returns lines, not meaning.
+3. **Structure is invisible.** To understand how the brain connects, the agent
+   must crawl `[[wikilinks]]` one by one. (This is the exact Obsidian pain
+   `--graph` already starts to solve.)
+4. **Context goes stale.** The agent re-reads everything each session; it has no
+   cheap way to ask "what changed?".
+5. **Writing is terrifying.** To change a note the agent either rewrites the
+   whole file (costly and risky) or avoids writing at all.
+6. **No working memory.** Every session re-derives the vault map from scratch.
+
+## 2. Why this is not "just a Skill"
+
+A reasonable objection: *couldn't a Claude Skill (a prompt) do this?* No — and the
+difference is the whole thesis.
+
+- A **Skill is a prompt**. It tells the agent *how to behave*, but the agent still
+  uses its own `Read`/`Grep`/`Glob` tools, **burning tokens inside its own
+  context window**, with no graph and no structure.
+- **glance is an engine**. It does retrieval *outside* the model — it indexes,
+  ranks, and slices in native C, and returns one compact bundle. The cost of
+  *finding and assembling* context is paid in the binary, not in the context
+  window. The agent pays only for the final result.
+- A Skill has **no persistent state/index**, cannot enforce a **deterministic
+  token budget**, and works **only with Claude**. glance works with *any* agent
+  — Claude, Cursor, Cline, GPT, the Agent SDK, cron jobs, CI. For open-source
+  adoption, that is the entire addressable market, not a slice of it.
+
+It is not glance *vs* a Skill. The best shape is a **thin Skill or MCP server that
+routes the agent to glance**: the Skill is the steering wheel, glance is the
+engine. The repo already ships a Claude Code plugin; the MCP server (§5, §9)
+generalizes it to every agent.
+
+## 3. Why an agent should use it
+
+- **Tokens.** `glance context "X" --budget 4000` returns ~4k tokens of assembled,
+  ranked context instead of the ~60–130k tokens of raw reads it would take to
+  find the same thing. An order of magnitude cheaper.
+- **Better recall.** Graph expansion + heading structure surface the *linked*
+  notes a `grep` would miss.
+- **Provenance.** Every returned span carries a stable `note#heading` anchor, so
+  the agent's answer is grounded and verifiable.
+- **Safe writes.** The agent can file knowledge back without fear of corrupting
+  the vault (§5, write side).
+
+## 4. Why a person should download it (to give to their agent)
+
+- **Local, private, no cloud.** Your notes never leave your machine.
+- **Zero migration.** Point it at your *existing* Obsidian vault — wikilinks,
+  frontmatter, tags, daily notes — and it works.
+- **Zero config.** The vault is just a folder; no `--init`, no index command.
+- **The token receipt.** Every answer reports how much it saved versus a raw read
+  — visible value, and a shareable screenshot (§6).
+- **Agent-agnostic.** One tool for every assistant they already use.
+
+## 5. Features
+
+### Read side — token-cheap context
+Every read view is **bounded**: it takes `--depth N` (and optional scope such as
+`--root <note>`) so that, in a large brain, the agent asks for exactly the depth
+it needs instead of receiving a huge JSON full of irrelevant nodes. Low default
+depth.
+
+- `outline --abstract [--depth N]` — heading tree plus the first sentence of each
+  section. Understand a note in ~80 tokens.
+- `read_section "note#heading"` — return only that heading subtree.
+- `context "query" --budget N` — the optimal bundle under N tokens (see §6).
+- `neighbors --depth N` — the link-graph neighbourhood, one synthesized line each.
+- `backlinks --context` — for each backlink, the *sentence around* the citation
+  (why others reference it), not the whole referencing note.
+- `search` — full-text search over the structured `Doc`.
+- `--since <ts>` — delta: only what changed, so the agent re-reads diffs, not the
+  vault.
+
+### Write side — surgical and safe
+The agent declares **intent + location**; glance performs the surgery. It never
+hands the agent a blank cheque to "write anywhere."
+
+- `edit append|insert|replace --under "note#heading" --text "…"` — resolve the
+  heading boundaries, insert at the correct point, preserve everything else.
+- `edit set-frontmatter --file F --key K --value V` — YAML frontmatter as a
+  first-class, queryable/updatable surface.
+- Wikilink integrity on rename, de-duplication, and **atomic** writes
+  (temp file + rename — already implemented in `fs_save.c`).
+
+**Honest note on the write side.** Today an agent like Claude Code already does
+*read whole file → string-match Edit at a point*, and it works. glance's edit API
+is still strictly better for three reasons: (a) it inserts **without reading the
+whole file first** — the same token win as the read side; (b) it is
+**structure-addressed** (`under "note#heading"`) instead of a raw string match
+the agent must first read the surrounding text to construct; (c) it keeps the
+**vault coherent** (links, frontmatter, dedup, section boundaries) — which no
+generic Edit tool does — and it works for **any agent**, not only ones with a
+good Edit tool. For Claude-Code-with-Edit specifically the marginal win is
+smaller than on the read side, which is exactly why the write API is sequenced
+last (§9, M4): the read primitives are the bigger immediate gain.
+
+### Cross-cutting
+- **Token receipt.** Every output reports `used X tok · raw read ≈ Y tok ·
+  saved Z%`, on the CLI and in MCP tool metadata. Marketing built into the tool:
+  every interaction advertises its own value and produces a shareable screenshot.
+- **MCP server** (`glance mcp`). Exposes the primitives as native tools — the
+  distribution channel (§9).
+- **Versioned, documented schema.** Stable IDs, deterministic ordering, a small
+  spec others can build on. Standards form when third parties implement *your*
+  protocol.
+- **Obsidian compatibility** is a requirement, not an extra.
+
+## 6. The retrieval engine (the part that is meant to be new)
+
+This is deliberately *not* the usual chunk-and-embed RAG pipeline. It is
+**hybrid, structural, budget-constrained retrieval with provenance**, over a
+personal Markdown corpus, fully local.
+
+- **Signal fusion.** Lexical (**BM25**, default) + **structural** (the heading
+  tree) + **relational** (the link graph as a relevance prior — 1-hop expansion /
+  personalized-PageRank-style propagation) + **dense** (optional, behind a flag).
+- **Knapsack-under-budget assembly.** Retrieval is not top-*k*. It is an
+  optimization of *information per token under a ceiling*: return the maximum
+  value that fits in N tokens.
+- **Elastic, coarse-to-fine projection.** The same note can be returned as
+  outline / section / abstract / full text. The retriever picks the granularity
+  that fits the budget. This is possible *only* because glance owns its renderer
+  (md4c → `Doc` → projection); a glamour black box cannot do it.
+- **Provenance-first.** Every returned span is citable (`note#heading`), so the
+  agent's output is verifiable.
+
+### Budget is a soft target, never a silent cut
+A hard top-*k* cut at the token ceiling risks dropping the one span the agent
+needed (the "it was at token 4001" problem). The budget therefore:
+
+- returns what fits **plus a truncation manifest** — a cheap list of what was left
+  out (anchors + relevance scores) — so the agent *knows* there is more and can
+  follow up (`read_section` on a dropped item) or raise the budget. **Never a
+  silent drop.**
+- falls back **coarse-to-fine**: a highly relevant note that does not fit at
+  section granularity is included as its **abstract/outline** (cheap) rather than
+  dropped — never invisible, only lower-resolution.
+- selects **diversity-aware**, not pure top-score: cover several relevant
+  notes/sections instead of over-spending on one, lowering the chance the needed
+  span is starved.
+- is **optional**: the default is ranked context + receipt with no hard cap; the
+  budget is opt-in for cost control, and is designed for an **iterative loop**
+  (get the manifest → drill into the one that matters) — cheaper than reading
+  everything and safer than a cutoff.
+
+### Semantic search
+Behind a flag (`--semantic`); **lexical is the default** so the base user installs
+nothing. Word2Vec is too weak (context-free word vectors); the candidates are
+small sentence encoders (e.g. MiniLM-class) or static-distilled embeddings
+(model2vec/potion-style) that run on any CPU. **Open: the exact model, the index
+location, and the embedder runtime — to be decided together (§11).** The index
+lives in a local cache, invalidated by the existing `fswatch`.
+
+## 7. How it maps onto the existing code (reuse, not green-field)
+
+| Concern                     | Existing module        | Role in the agent layer                     |
+|-----------------------------|------------------------|---------------------------------------------|
+| Agent-facing JSON exports   | `agent.c`              | extend with the new bounded views           |
+| Vault scan + wikilinks      | `vault.c`              | discovery, resolution                       |
+| Link graph                  | `graph.c`              | neighbours, graph prior for retrieval       |
+| Structured `Doc` + renderer | `render.c`             | coarse-to-fine projection (outline/section) |
+| Full-text search            | `search.c`             | lexical/BM25 base                           |
+| Atomic write                | `fs_save.c`            | the write API                               |
+| Parent-dir watch            | `fswatch.c`            | index invalidation                          |
+| **New**                     | `index/`, `mcp`, `edit`, `receipt` | BM25 (+optional dense), MCP server, surgical edits, token accounting |
+
+## 8. The moat
+
+- **Local graph + structure with no mandatory embeddings** — privacy, zero
+  per-query cost, deterministic, reproducible.
+- **Stable citations** (`note#heading`) — grounded, verifiable output.
+- **Owned renderer** — multi-granularity projection a glamour-based tool cannot do.
+- **Safe writes** — the retention feature: an agent that can *maintain* the brain.
+
+## 9. Milestones (sequenced for adoption)
+
+- **M1 — `glance context --budget` + token receipt.** The wedge: a shareable,
+  viral screenshot straight from the terminal, on infrastructure that already
+  mostly exists (`agent.c`, `graph.c`, `render.c`, `search.c`).
+- **M2 — `glance mcp`.** Expose the read primitives over MCP: native in Claude
+  Desktop / Cursor / the SDK. This is the distribution channel.
+- **M3 — semantic search behind a flag.** Model + index decided in §11.
+- **M4 — surgical write API.** Closes the loop; the moat.
+
+The read side + MCP + receipt is the adoption wedge (maximum perceived value,
+low risk, mostly refinement of existing code). Write comes last because, for the
+agents that already have a decent Edit tool, the read side is the bigger
+immediate win.
+
+## 10. The growth loop (why OSS adoption compounds)
+
+1. Someone sees the **token-receipt screenshot** — *"I gave Claude my Obsidian
+   vault; it answered in 4k tokens what would have cost 130k. Here's the receipt."*
+2. `brew install glance` → `glance mcp` → paste three lines into the Claude
+   Desktop / Cursor config. Two minutes, zero config.
+3. They query their vault → see *their own* receipt → share it → back to step 1.
+
+Everything we build either serves this loop or waits.
+
+## 11. Open questions (decide later, together)
+
+- **Semantic model.** Which small encoder (MiniLM-class vs static-distilled
+  model2vec/potion-style). The repo owner is an NLP engineer; this is a joint
+  decision.
+- **Index location.** `.glance/` inside the vault vs a user cache dir.
+- **Embedder runtime in C.** onnxruntime vs llama.cpp/ggml embeddings vs an
+  optional sidecar installed only for the semantic power-up.
+- **Name.** Stays `glance` for now; discoverability handled via README / a
+  Homebrew tap (note the OpenStack `glance` CLI name collision).
+
+## 12. Success metrics
+
+- **% tokens saved** (the receipt) versus raw reads — the headline number.
+- **Answer quality / recall** versus reading raw files for the same question.
+- **Adoption** — installs, GitHub stars, presence in MCP directories.
