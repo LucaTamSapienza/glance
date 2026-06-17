@@ -29,8 +29,14 @@ static void print_help(void) {
 "                           empty file, created on first save)\n"
 "  cat FILE | glance        read Markdown from stdin\n"
 "  glance --keys            diagnostic: print raw key events, Esc to quit\n"
-"  glance --outline FILE    print the heading tree as JSON (for agents)\n"
+"  glance --outline FILE    print the heading tree as JSON (--depth N, --abstract)\n"
+"  glance --section F#H     print the section under heading H as JSON (+ token receipt)\n"
+"  glance --context \"Q\" DIR  retrieve a token-cheap context bundle for query Q\n"
+"                           over vault DIR as JSON (--budget N caps the tokens)\n"
 "  glance --links FILE      print the file's outbound links as JSON\n"
+"  glance --backlinks N DIR notes linking to N as JSON (--context adds the line)\n"
+"  glance --neighbors N DIR link-graph neighbourhood of note N (--depth H hops)\n"
+"  glance --since TS DIR    notes in DIR modified after Unix time TS, as JSON\n"
 "  glance --graph DIR       print the vault's link graph as JSON\n"
 "  glance --theme NAME      open using colour theme NAME (see --list-themes)\n"
 "  glance --list-themes     list the available colour themes\n"
@@ -112,9 +118,71 @@ int main(int argc, char **argv) {
     }
     if (argc > 1 && (!strcmp(argv[1], "-k") || !strcmp(argv[1], "--keys")))
         return tui_keyprobe();
-    if (argc > 2 && !strcmp(argv[1], "--outline")) return run_export(agent_outline, argv[2]);
+    if (argc > 2 && !strcmp(argv[1], "--outline")) {
+        /* glance --outline FILE [--depth N] [--abstract] */
+        const char *fpath = argv[2];
+        int depth = 0, abstract = 0;
+        for (int i = 3; i < argc; i++) {
+            if (!strcmp(argv[i], "--depth") && i + 1 < argc) depth = (int)strtol(argv[++i], NULL, 10);
+            else if (!strcmp(argv[i], "--abstract")) abstract = 1;
+        }
+        size_t l; char *s = load(fpath, &l);
+        if (!s) return 1;
+        agent_outline_ex(s, l, depth, abstract);
+        free(s);
+        return 0;
+    }
+    if (argc > 3 && !strcmp(argv[1], "--neighbors")) {
+        /* glance --neighbors "Note" DIR [--depth N] */
+        const char *note = argv[2], *dir = argv[3];
+        int depth = 1;
+        for (int i = 4; i < argc; i++)
+            if (!strcmp(argv[i], "--depth") && i + 1 < argc) depth = (int)strtol(argv[++i], NULL, 10);
+        return agent_neighbors(dir, note, depth);
+    }
     if (argc > 2 && !strcmp(argv[1], "--links"))   return run_export(agent_links, argv[2]);
+    if (argc > 3 && !strcmp(argv[1], "--backlinks")) {
+        /* glance --backlinks "Note" DIR [--context] */
+        const char *note = argv[2], *dir = argv[3];
+        int want_context = 0;
+        for (int i = 4; i < argc; i++) if (!strcmp(argv[i], "--context")) want_context = 1;
+        return agent_backlinks(dir, note, want_context);
+    }
+    if (argc > 3 && !strcmp(argv[1], "--since")) {
+        /* glance --since TIMESTAMP DIR */
+        long ts = strtol(argv[2], NULL, 10);
+        return agent_since(argv[3], ts);
+    }
     if (argc > 2 && !strcmp(argv[1], "--graph"))   return agent_graph(argv[2]);
+    if (argc > 2 && !strcmp(argv[1], "--section")) {
+        /* Argument is "FILE#anchor"; a bare "FILE" selects the whole document. */
+        char *arg = argv[2], *hash = strrchr(arg, '#');
+        char fpath[1024];
+        const char *anchor = NULL;
+        if (hash) {
+            size_t flen = (size_t)(hash - arg);
+            if (flen >= sizeof fpath) flen = sizeof fpath - 1;
+            memcpy(fpath, arg, flen); fpath[flen] = '\0';
+            anchor = hash + 1;
+        } else {
+            snprintf(fpath, sizeof fpath, "%s", arg);
+        }
+        size_t l; char *s = load(fpath, &l);
+        if (!s) return 1;
+        agent_section(s, l, anchor);
+        free(s);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "--context")) {
+        /* glance --context "QUERY" [DIR] [--budget N]; DIR defaults to ".". */
+        const char *query = argv[2], *dir = ".";
+        size_t budget = 0;
+        for (int i = 3; i < argc; i++) {
+            if (!strcmp(argv[i], "--budget") && i + 1 < argc) budget = (size_t)strtoul(argv[++i], NULL, 10);
+            else dir = argv[i];
+        }
+        return agent_context(dir, query, budget);
+    }
 
     FILE *f = stdin;
     char title[256] = "stdin";

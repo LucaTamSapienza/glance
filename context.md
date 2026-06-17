@@ -26,6 +26,13 @@ the same files. The C rewrite exists so glance owns its rendering (md4c → our 
 `Doc` → ANSI/cells) instead of treating glamour/glow as a black box, which is what
 the original Go version did.
 
+The agent-era direction — glance as the **agent-native memory layer** over a
+Markdown vault (token-cheap bounded reads, budget-constrained hybrid retrieval
+with provenance, an MCP server, and a surgical write API) — is specced in
+[`docs/DESIGN.md`](docs/DESIGN.md). That is the north-star roadmap; the
+milestones there (M1 `context`+receipt → M2 MCP → M3 semantic → M4 write) drive
+the next phase of work.
+
 ## How to build and run
 
 ```sh
@@ -46,6 +53,19 @@ lines, each a sequence of styled runs — and two sinks consume it: `doc_ansi.c`
 `STATUS.md` for the full module map and `CLAUDE.md` for the invariants.
 
 ## Current status (2026-06-17)
+
+**Agent-memory layer — M1 shipped (branch `docs/design-agent-memory`, PR #9).**
+The first milestone of the [`docs/DESIGN.md`](docs/DESIGN.md) roadmap: token-cheap,
+bounded JSON exports that let an agent read a vault for a fraction of the tokens.
+New pure, unit-tested modules — `section.c` (anchor → subtree + abstract),
+`receipt.c` (token receipt), `bm25.c` (BM25 lexical core), `context.c` (the
+budget planner: score order, diversity, coarse-to-fine, truncation manifest) —
+plus the `agent.c` exports `--section`, `--context "Q" DIR --budget N`,
+`--neighbors`, `--backlinks --context`, `--since`, and `--outline --depth
+--abstract`. `glance --context "…" DIR --budget N` is the wedge: it returns
+`{query,budget_tokens,chunks,truncated,receipt}` with a token receipt (on the
+test vault, ~78% saved vs reading everything). Next: M2 (`glance mcp`), M3
+(semantic, behind a flag), M4 (surgical write API).
 
 **Post-merge fixes (theme discoverability + selection bar).** Two follow-ups
 after `feature/legend` landed. (1) The `T` theme picker existed but was
