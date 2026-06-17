@@ -175,11 +175,14 @@ needed (the "it was at token 4001" problem). The budget therefore:
 
 ### Semantic search
 Behind a flag (`--semantic`); **lexical is the default** so the base user installs
-nothing. Word2Vec is too weak (context-free word vectors); the candidates are
-small sentence encoders (e.g. MiniLM-class) or static-distilled embeddings
-(model2vec/potion-style) that run on any CPU. **Open: the exact model, the index
-location, and the embedder runtime — to be decided together (§11).** The index
-lives in a local cache, invalidated by the existing `fswatch`.
+nothing. Word2Vec is too weak (context-free word vectors). **Decided: lean
+MiniLM-class** (e.g. `all-MiniLM-L6-v2`, 22M params, 384-dim) for quality — a
+single query embedding is a ~5–15 ms CPU forward pass (negligible heat), and the
+one-time index build is incremental thereafter via `fswatch`. Static-distilled
+embeddings (model2vec/potion-style) remain the ultra-light fallback for
+constrained machines. The index lives in **`.glance/`** inside the vault
+(git-ignored, local cache). **Still open (§11): the embedder runtime — to be
+locked after an on-device latency/heat benchmark.**
 
 ## 7. How it maps onto the existing code (reuse, not green-field)
 
@@ -229,12 +232,13 @@ Everything we build either serves this loop or waits.
 
 ## 11. Open questions (decide later, together)
 
-- **Semantic model.** Which small encoder (MiniLM-class vs static-distilled
-  model2vec/potion-style). The repo owner is an NLP engineer; this is a joint
-  decision.
-- **Index location.** `.glance/` inside the vault vs a user cache dir.
+- ~~**Semantic model.**~~ **Decided: MiniLM-class** (quality), with
+  model2vec/potion-style static embeddings as the ultra-light fallback.
+- ~~**Index location.**~~ **Decided: `.glance/` inside the vault** (git-ignored
+  local cache, invalidated by `fswatch`).
 - **Embedder runtime in C.** onnxruntime vs llama.cpp/ggml embeddings vs an
-  optional sidecar installed only for the semantic power-up.
+  optional sidecar installed only for the semantic power-up — to be locked after
+  an on-device latency/heat benchmark of MiniLM on Apple Silicon.
 - **Name.** Stays `glance` for now; discoverability handled via README / a
   Homebrew tap (note the OpenStack `glance` CLI name collision).
 
