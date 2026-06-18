@@ -41,3 +41,9 @@ void watch_close(Watch *w) {
     if (w->kq >= 0) close(w->kq);
     w->kq = w->dir = -1;
 }
+
+ReloadAction watch_reload_action(int content_differs, int dirty) {
+    if (!content_differs) return RELOAD_NONE;   /* identical (often our own save) */
+    if (!dirty) return RELOAD_APPLY;            /* nothing local to lose: live-sync */
+    return RELOAD_CONFLICT;                      /* both sides changed: ask the user */
+}

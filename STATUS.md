@@ -80,7 +80,10 @@ The renderer emits a **structured Doc**; the sinks consume it — `doc_ansi.c`
   width; the cursor and scrolling count wrapped visual rows.
 - **Search** `/` with highlight, `n`/`N` next/prev. **TOC** panel `t`, jump on Enter.
 - **Save** atomic: `:w` `:wq` `:x`, `Ctrl-S`; `:q` refuses on unsaved, `:q!`
-  discards. **Live reload** on external change (kqueue), only when clean.
+  discards. **Live reload** on external change (kqueue): when the buffer is clean
+  the disk version is adopted in any mode (Reader/Insert/Split), so a second
+  session's edits sync through; with unsaved edits a conflict prompt is raised
+  (`r` reload / `k` keep) instead of silently dropping either side.
 - **Clipboard:** visual select — `v` charwise, `V` linewise — `y` yanks to the
   system clipboard. **Open links** / follow `[[wikilinks]]` with Enter.
 - **Key legend sidebar** `?`: a rounded right-side panel; the document reflows
@@ -150,8 +153,8 @@ make install          # -> $(PREFIX)/bin (default /usr/local; honours PREFIX/DES
 ## Tests
 
 Pure modules are unit-tested under ASan/UBSan (`make test`) — **24 suites**:
-editor, preprocess, search, toc, fs_save, completion, legend, progress, theme,
-highlight, image_size, render, vault, graph; and the agent layer — receipt, bm25,
+editor, preprocess, search, toc, fs_save, fswatch, completion, legend, progress, theme,
+highlight, image_size, render, doc_html, vault, graph; and the agent layer — receipt, bm25,
 context, section, embed, json, edit, agent (JSON exports + a write roundtrip),
 mcp (a full initialize → tools/list → tools/call session + the error paths). The
 notcurses front-end needs a real terminal and is verified interactively.

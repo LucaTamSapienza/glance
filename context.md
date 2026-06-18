@@ -61,7 +61,9 @@ ASan/UBSan.
 ### User-side — done
 Full reader/editor: three modes; editor soft-wraps long lines; charwise (`v`) and
 linewise (`V`) selection with clipboard yank (`y`); search (`/ n N`); TOC (`t`);
-atomic save (`:w`/`Ctrl-S`) with kqueue live-reload; open links / follow
+atomic save (`:w`/`Ctrl-S`) with kqueue live-reload (clean buffers adopt a
+second session's edits in any mode; a dirty buffer raises an `r`/`k` conflict
+prompt); open links / follow
 `[[wikilinks]]` (Enter) with a back-stack (`-`/`Ctrl-O`); backlinks panel (`b`);
 graph explorer (`Ctrl-G`). Presentation: per-language syntax highlighting
 (`highlight.c`), bordered/column-aligned tables, inline images (pixel or
