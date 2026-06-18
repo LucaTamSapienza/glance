@@ -39,7 +39,7 @@ milestones there (M1 reads → M2 MCP → M3 semantic → M4 write) are all ship
 
 ```sh
 make                 # build ./glance (TUI) and ./glance-render (CLI)
-make test            # all unit tests (24 suites) under AddressSanitizer + UBSan
+make test            # all unit tests (26 suites) under AddressSanitizer + UBSan
 make install         # copy both binaries to PREFIX/bin (default /usr/local)
 
 ./glance testdata/sample.md                                  # user-side
@@ -55,7 +55,7 @@ Requires `md4c`, `notcurses`, `pkg-config` (`brew install md4c notcurses pkg-con
 
 ## Current status
 
-Everything below is on `main`, built clean, **24 test suites green** under
+Everything below is on `main`, built clean, **26 test suites green** under
 ASan/UBSan.
 
 ### User-side — done

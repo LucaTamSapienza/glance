@@ -82,7 +82,7 @@ src/
   util.c         shared UTF-8 + whole-file helpers
   tui.c          notcurses front-end: modes, input, drawing, event loop
   main.c         glance entry (TUI)    ·   main_render.c   glance-render entry (CLI)
-tests/           one unit test per pure module (make test — 24 suites)
+tests/           one unit test per pure module (make test — 26 suites)
 testdata/        sample.md showcase + an example vault/
 docs/            DESIGN.md (agent-memory north-star) · MCP.md · HANDOFF.md · REVIEW.md
 ```

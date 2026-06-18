@@ -148,7 +148,7 @@ image, `Alt`/`Ctrl`+`←`/`→` word jump, `Ctrl-A`/`Ctrl-E` line start/end.
 
 ```sh
 make                  # glance (TUI) + glance-render (CLI)
-make test             # all module unit tests, ASan/UBSan (24 suites)
+make test             # all module unit tests, ASan/UBSan (26 suites)
 make install          # -> $(PREFIX)/bin (default /usr/local; honours PREFIX/DESTDIR)
 ./glance --help       # full usage + every key binding (user + agent)
 ```
