@@ -28,7 +28,8 @@ all: glance glance-render
 GUI := $(SRC)/main.c $(SRC)/tui.c $(SRC)/editor.c $(SRC)/fswatch.c \
        $(SRC)/clipboard.c $(SRC)/completion.c $(SRC)/agent.c $(SRC)/legend.c \
        $(SRC)/progress.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/bm25.c \
-       $(SRC)/context.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/json.c $(SRC)/mcp.c
+       $(SRC)/context.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/json.c $(SRC)/mcp.c \
+       $(SRC)/fuzzy.c
 glance: $(GUI) $(CORE) $(HDRS)
 	$(CC) $(CFLAGS) -o $@ $(GUI) $(CORE) $(MD4C_LIBS) $(NC_LIBS) -lm
 
@@ -47,6 +48,7 @@ test:
 	  $(SRC)/toc.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-toc; \
 	$(CC) $(TCFLAGS) -o build-t-fssave tests/fs_save_test.c $(SRC)/fs_save.c && ./build-t-fssave; \
 	$(CC) $(TCFLAGS) -o build-t-completion tests/completion_test.c $(SRC)/completion.c && ./build-t-completion; \
+	$(CC) $(TCFLAGS) -o build-t-fuzzy tests/fuzzy_test.c $(SRC)/fuzzy.c && ./build-t-fuzzy; \
 	$(CC) $(TCFLAGS) -o build-t-legend tests/legend_test.c $(SRC)/legend.c && ./build-t-legend; \
 	$(CC) $(TCFLAGS) -o build-t-progress tests/progress_test.c $(SRC)/progress.c && ./build-t-progress; \
 	$(CC) $(TCFLAGS) -o build-t-receipt tests/receipt_test.c $(SRC)/receipt.c && ./build-t-receipt; \

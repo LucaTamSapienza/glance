@@ -17,6 +17,7 @@
 #include "clipboard.h"
 #include "completion.h"
 #include "vault.h"
+#include "fuzzy.h"
 #include "graph.h"
 #include "legend.h"
 #include "progress.h"
@@ -88,6 +89,14 @@ typedef struct {
     int    blmode;               /* backlinks panel open */
     char  *bl[256];              /* file names that link here (owned) */
     int    nbl, bl_sel;
+    int    fuzzymode;            /* fuzzy file-open palette open */
+    VFiles fuzzy_files;          /* every vault file (paths relative to fuzzy_root) */
+    char   fuzzy_root[4096];     /* vault root the file list is relative to */
+    char   fuzzy_query[128];     /* the live filter text */
+    int    fuzzy_qlen;
+    int   *fuzzy_filt;           /* ranked indices into fuzzy_files passing the filter */
+    int    fuzzy_nfilt;
+    int    fuzzy_sel;            /* selected row within fuzzy_filt */
     int    graphmode;            /* interactive graph explorer open */
     Graph  graph;                /* the vault link graph */
     char   graph_root[4096];     /* vault root the graph was built from */
@@ -453,6 +462,53 @@ static void draw_backlinks(App *a) {
     ncplane_set_bg_default(p);
 }
 
+#define FUZZY_W 64               /* file-switcher palette width (clamped to cols) */
+
+/* Draw the fuzzy file-open palette: a left panel with the live query on the
+ * header row and the ranked matches below, the selection on a bar. */
+static void draw_fuzzy(App *a) {
+    struct ncplane *p = a->plane;
+    int h = content_rows(a);
+    int w = a->cols < FUZZY_W ? a->cols : FUZZY_W;
+    RGB panel = a->theme->panel_bg, fg = a->theme->panel_fg;
+
+    int first = a->fuzzy_sel - (h - 2) / 2;          /* scroll to keep sel visible */
+    if (first > a->fuzzy_nfilt - (h - 1)) first = a->fuzzy_nfilt - (h - 1);
+    if (first < 0) first = 0;
+
+    /* Header row: the prompt + the typed query. */
+    ncplane_set_styles(p, NCSTYLE_BOLD);
+    ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b);
+    ncplane_set_bg_rgb8(p, panel.r, panel.g, panel.b);
+    for (int x = 0; x < w; x++) ncplane_putchar_yx(p, 0, x, ' ');
+    char head[FUZZY_W * 4];
+    snprintf(head, sizeof head, " Open ▸ %s", a->fuzzy_query);
+    size_t hcut = ed_col_to_byte(head, strlen(head), w - 1);
+    head[hcut] = '\0';
+    ncplane_putstr_yx(p, 0, 0, head);
+
+    for (int row = 1; row < h; row++) {
+        int idx = first + row - 1;
+        int sel = (idx >= 0 && idx < a->fuzzy_nfilt && idx == a->fuzzy_sel);
+        ncplane_set_styles(p, sel ? NCSTYLE_BOLD : NCSTYLE_NONE);
+        if (sel) { ncplane_set_fg_rgb8(p, 0, 0, 0); ncplane_set_bg_rgb8(p, 255, 200, 90); }
+        else     { ncplane_set_fg_rgb8(p, fg.r, fg.g, fg.b); ncplane_set_bg_rgb8(p, panel.r, panel.g, panel.b); }
+        for (int x = 0; x < w; x++) ncplane_putchar_yx(p, row, x, ' ');
+        if (idx < 0 || idx >= a->fuzzy_nfilt) continue;
+        const char *rel = a->fuzzy_files.v[a->fuzzy_filt[idx]];
+        const char *slash = strrchr(rel, '/');
+        char buf[FUZZY_W * 4];
+        if (slash) snprintf(buf, sizeof buf, " %s  (%.*s)", slash + 1, (int)(slash - rel), rel);
+        else       snprintf(buf, sizeof buf, " %s", rel);
+        size_t cut = ed_col_to_byte(buf, strlen(buf), w - 1);
+        buf[cut] = '\0';
+        ncplane_putstr_yx(p, row, 0, buf);
+    }
+    ncplane_set_styles(p, NCSTYLE_NONE);
+    ncplane_set_fg_default(p);
+    ncplane_set_bg_default(p);
+}
+
 /* The base name of a node's relative path. */
 static const char *node_base(const char *rel) {
     const char *s = strrchr(rel, '/');
@@ -752,7 +808,7 @@ static void draw_reader(App *a) {
     draw_hits(a);
 
     /* block cursor on top (hidden while typing a command/search/panel) */
-    if (!a->cmdmode && !a->searchmode && !a->tocmode && !a->blmode && !a->themepick) {
+    if (!a->cmdmode && !a->searchmode && !a->tocmode && !a->blmode && !a->themepick && !a->fuzzymode) {
         int cy = a->rcur_line - a->top;
         RGB cfg = a->theme->cursor_fg, cbg = a->theme->cursor_bg;
         if (cy >= 0 && cy < body && a->rcur_col < content_cols(a))
@@ -761,7 +817,7 @@ static void draw_reader(App *a) {
 
     /* Blit any visible images over their reserved rows (not while a panel or
      * prompt is open, which would draw over the picture). */
-    if (!a->tocmode && !a->blmode && !a->helpmode && !a->cmdmode && !a->searchmode && !a->themepick) {
+    if (!a->tocmode && !a->blmode && !a->helpmode && !a->cmdmode && !a->searchmode && !a->themepick && !a->fuzzymode) {
         for (int row = 0; row < body; row++) {
             int li = a->top + row;
             if (li >= (int)a->doc->nline) break;
@@ -775,6 +831,7 @@ static void draw_reader(App *a) {
     if (a->themepick) draw_themepick(a);
     if (a->tocmode) draw_toc(a);
     if (a->blmode)  draw_backlinks(a);
+    if (a->fuzzymode) draw_fuzzy(a);
     reader_bottom(a);
     notcurses_render(a->nc);
 }
@@ -1518,6 +1575,62 @@ static int handle_backlinks(App *a, uint32_t id, const ncinput *ni) {
     return 1;
 }
 
+/* Re-rank the vault file list against the current query and clamp the selection. */
+static void fuzzy_refilter(App *a) {
+    a->fuzzy_nfilt = fuzzy_rank(a->fuzzy_query,
+                                (const char *const *)a->fuzzy_files.v,
+                                a->fuzzy_files.n, a->fuzzy_filt);
+    if (a->fuzzy_sel >= a->fuzzy_nfilt) a->fuzzy_sel = a->fuzzy_nfilt - 1;
+    if (a->fuzzy_sel < 0) a->fuzzy_sel = 0;
+}
+
+/* Scan the vault and open the fuzzy file-open palette. */
+static void open_fuzzy(App *a) {
+    if (!a->path) { snprintf(a->msg, sizeof a->msg, "no vault (reading stdin)"); return; }
+    vault_root(a->path, a->fuzzy_root, sizeof a->fuzzy_root);
+    vfiles_free(&a->fuzzy_files);
+    vault_scan(a->fuzzy_root, &a->fuzzy_files);
+    if (a->fuzzy_files.n == 0) { snprintf(a->msg, sizeof a->msg, "no files in vault"); return; }
+    free(a->fuzzy_filt);
+    a->fuzzy_filt = malloc((size_t)a->fuzzy_files.n * sizeof(int));
+    if (!a->fuzzy_filt) { vfiles_free(&a->fuzzy_files); return; }
+    a->fuzzy_query[0] = '\0'; a->fuzzy_qlen = 0; a->fuzzy_sel = 0;
+    fuzzy_refilter(a);
+    a->fuzzymode = 1;
+}
+
+/* File-switcher keys: type to filter, Up/Down or Ctrl-N/Ctrl-P move, Enter opens
+ * the selection, Esc/Ctrl-C close. */
+static int handle_fuzzy(App *a, uint32_t id, const ncinput *ni) {
+    if (id == NCKEY_ESC || ctrl_is(id, ni, 'c')) { a->fuzzymode = 0; return 1; }
+    if (id == NCKEY_DOWN || ctrl_is(id, ni, 'n')) { if (a->fuzzy_sel + 1 < a->fuzzy_nfilt) a->fuzzy_sel++; return 1; }
+    if (id == NCKEY_UP   || ctrl_is(id, ni, 'p')) { if (a->fuzzy_sel > 0) a->fuzzy_sel--; return 1; }
+    if (id == NCKEY_ENTER || id == '\r' || id == '\n') {
+        a->fuzzymode = 0;
+        if (a->fuzzy_nfilt <= 0) return 1;
+        if (a->dirty) { snprintf(a->msg, sizeof a->msg, "unsaved changes — :w first"); return 1; }
+        char full[8192];
+        snprintf(full, sizeof full, "%s/%s", a->fuzzy_root, a->fuzzy_files.v[a->fuzzy_filt[a->fuzzy_sel]]);
+        navigate_to(a, full);
+        return 1;
+    }
+    if (id == NCKEY_BACKSPACE || id == 0x08 || id == 0x7f) {
+        if (a->fuzzy_qlen > 0) { a->fuzzy_query[--a->fuzzy_qlen] = '\0'; fuzzy_refilter(a); }
+        else a->fuzzymode = 0;
+        return 1;
+    }
+    if (!ncinput_ctrl_p(ni) && ni->eff_text[0] >= 0x20) {
+        char buf[8]; int k = u8_encode(ni->eff_text[0], buf);
+        if (a->fuzzy_qlen + k < (int)sizeof(a->fuzzy_query) - 1) {
+            memcpy(a->fuzzy_query + a->fuzzy_qlen, buf, k);
+            a->fuzzy_qlen += k; a->fuzzy_query[a->fuzzy_qlen] = '\0';
+            a->fuzzy_sel = 0;
+            fuzzy_refilter(a);
+        }
+    }
+    return 1;
+}
+
 /* Open or close the Reader sidebar, re-wrapping the document to the new width
  * and keeping the cursor on roughly the same line across the reflow. */
 static void toggle_legend(App *a) {
@@ -1594,6 +1707,7 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     else if (id == 't')                          open_toc(a);
     else if (id == 'b')                          open_backlinks(a);
     else if (ctrl_is(id, ni, 'g')) open_graph(a);   /* graph explorer */
+    else if (ctrl_is(id, ni, 'p')) open_fuzzy(a);   /* fuzzy file switcher */
     else if (id == '?') {                        /* toggle the sidebar, or overlay if too narrow */
         if (legend_should_overlay(a->cols, LEGEND_W, LEGEND_MIN_CONTENT)) a->helpmode = 1;
         else toggle_legend(a);
@@ -1826,6 +1940,7 @@ static int dispatch_key(App *a, uint32_t id, ncinput *ni) {
     if (a->themepick)  return handle_themepick(a, id, ni);
     if (a->tocmode)    return handle_toc(a, id, ni);
     if (a->blmode)     return handle_backlinks(a, id, ni);
+    if (a->fuzzymode)  return handle_fuzzy(a, id, ni);
     if (a->graphmode)  return handle_graph(a, id, ni);
     if (a->visualmode) return handle_visual(a, id, ni);
     if (a->mode == MODE_READER) return handle_reader(a, id, ni);
@@ -1978,6 +2093,8 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
     for (int i = 0; i < a.nbl; i++) free(a.bl[i]);
     for (int i = 0; i < a.nback; i++) free(a.back[i]);
     graph_free(&a.graph);
+    vfiles_free(&a.fuzzy_files);
+    free(a.fuzzy_filt);
     free(a.path);
     free(a.src);
     return 0;

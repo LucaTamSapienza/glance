@@ -2,7 +2,7 @@
 
 > Orientation for anyone (including Claude) picking up the work. The durable
 > picture — not a changelog; history lives in git.
-> Last updated: 2026-06-18.
+> Last updated: 2026-06-19.
 
 ## What it is
 
@@ -39,7 +39,7 @@ milestones there (M1 reads → M2 MCP → M3 semantic → M4 write) are all ship
 
 ```sh
 make                 # build ./glance (TUI) and ./glance-render (CLI)
-make test            # all unit tests (23 suites) under AddressSanitizer + UBSan
+make test            # all unit tests (24 suites) under AddressSanitizer + UBSan
 make install         # copy both binaries to PREFIX/bin (default /usr/local)
 
 ./glance testdata/sample.md                                  # user-side
@@ -55,7 +55,7 @@ Requires `md4c`, `notcurses`, `pkg-config` (`brew install md4c notcurses pkg-con
 
 ## Current status
 
-Everything below is on `main`, built clean, **23 test suites green** under
+Everything below is on `main`, built clean, **24 test suites green** under
 ASan/UBSan.
 
 ### User-side — done
@@ -63,7 +63,8 @@ Full reader/editor: three modes; editor soft-wraps long lines; charwise (`v`) an
 linewise (`V`) selection with clipboard yank (`y`); search (`/ n N`); TOC (`t`);
 atomic save (`:w`/`Ctrl-S`) with kqueue live-reload; open links / follow
 `[[wikilinks]]` (Enter) with a back-stack (`-`/`Ctrl-O`); backlinks panel (`b`);
-graph explorer (`Ctrl-G`). Presentation: per-language syntax highlighting
+graph explorer (`Ctrl-G`); fuzzy file switcher (`Ctrl-P`, `fuzzy.c`).
+Presentation: per-language syntax highlighting
 (`highlight.c`), bordered/column-aligned tables, inline images (pixel or
 half-block blit, with a `Ctrl-V` clipboard-image paste), heading chips for
 `#`/`##`. Eight color themes with a live picker (`T`) and `~/.config/glance/config`.

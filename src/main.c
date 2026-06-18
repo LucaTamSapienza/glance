@@ -59,6 +59,7 @@ static void print_help(void) {
 "  Enter                open link / follow [[wikilink]] under the cursor\n"
 "  - / Ctrl-O           back to the previous file (after following a link)\n"
 "  b                    backlinks panel          Ctrl-G       graph explorer\n"
+"  Ctrl-P               fuzzy file switcher (type to filter, Enter opens)\n"
 "  T                    theme picker             ?            toggle the help legend\n"
 "  Ctrl-S               save                     Ctrl-C       quit\n"
 "  :w :wq :q :q!        write / quit (vi-style)\n"
