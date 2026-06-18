@@ -70,6 +70,9 @@ typedef struct {
     Watch  watch;                /* file watcher for the current file's dir */
     int    wfd;                  /* watcher kqueue fd, or -1 */
     int    dirty;                /* unsaved changes since the last write */
+    int    reload_pending;       /* a disk change awaits an [r]eload/[k]eep choice */
+    char  *pending_src;          /* the disk bytes held while the conflict is open */
+    size_t pending_len;
     char   msg[160];             /* transient status message (one keypress) */
     Doc   *preview;              /* Split mode: live render of the editor text */
     int    preview_top;          /* Split mode: preview's first visible line (scroll) */
@@ -134,6 +137,7 @@ static const char *doc_dir(App *a, char *buf, size_t cap);/* defined below */
 static int doc_src_line(const Doc *d, int line);          /* defined below */
 static int src_doc_line(const Doc *d, int srcline);       /* defined below */
 static void open_graph(App *a);                           /* defined below */
+static void resolve_reload_conflict(App *a, int reload);  /* defined below */
 
 /* ---- terminal teardown (kitty keyboard protocol, see slice-2 fix) --------- */
 
@@ -1135,6 +1139,10 @@ static int save_file(App *a) {
         return -1;
     }
     a->dirty = 0;
+    if (a->reload_pending) {        /* our write wins the conflict; drop the held copy */
+        free(a->pending_src); a->pending_src = NULL; a->pending_len = 0;
+        a->reload_pending = 0;
+    }
     snprintf(a->msg, sizeof a->msg, "\"%s\" %zuB written", a->title, a->srclen);
     return 0;
 }
@@ -1815,6 +1823,11 @@ int tui_keyprobe(void) {
 static int dispatch_key(App *a, uint32_t id, ncinput *ni) {
     if (ni->evtype == NCTYPE_RELEASE) return 1;
     a->msg[0] = '\0';                            /* clear the transient message */
+    if (a->reload_pending) {                     /* resolve a disk/buffer conflict first */
+        if (id == 'r' || id == 'R') { resolve_reload_conflict(a, 1); return 1; }
+        if (id == 'k' || id == 'K' || id == NCKEY_ESC) { resolve_reload_conflict(a, 0); return 1; }
+        resolve_reload_conflict(a, 0);           /* any other key keeps yours, then acts */
+    }
     if (a->helpmode) { a->helpmode = 0; return 1; }   /* any key closes help */
     if (id == NCKEY_RESIZE) {
         if (a->mode == MODE_READER) rerender(a);
@@ -1833,8 +1846,57 @@ static int dispatch_key(App *a, uint32_t id, ncinput *ni) {
     return handle_insert(a, id, ni);
 }
 
-/* Re-read the file after an external change. Reloads only in Reader mode with
- * no unsaved edits; identical content (e.g. our own save) is ignored silently. */
+/* Re-init the editor buffer from the (just-replaced) source, keeping the cursor
+ * where it was, clamped into the new text. Used when a clean editor-mode buffer
+ * adopts an external change. */
+static void editor_reseed_clamped(App *a) {
+    int cy = a->ed.cy, cx = a->ed.cx;
+    editor_free(&a->ed);
+    editor_init(&a->ed, a->src, a->srclen);
+    if (cy >= (int)a->ed.n) cy = (int)a->ed.n - 1;
+    if (cy < 0) cy = 0;
+    a->ed.cy = cy;
+    ELine *L = &a->ed.lines[cy];
+    if (cx > (int)L->len) cx = (int)L->len;
+    a->ed.cx = cx;
+    a->ed.goal_col = -1;
+    a->ed.dirty = 0;                 /* the buffer now matches disk */
+}
+
+/* Adopt the current a->src everywhere the active mode displays it. */
+static void apply_reloaded_source(App *a) {
+    if (a->mode == MODE_INSERT || a->mode == MODE_SPLIT) {
+        editor_reseed_clamped(a);
+        if (a->mode == MODE_SPLIT) render_preview(a);
+    } else {
+        rerender(a);
+        reader_clamp_cursor(a);
+    }
+    a->dirty = 0;
+    snprintf(a->msg, sizeof a->msg, "reloaded from disk");
+}
+
+/* Resolve an open reload conflict: 'r' adopts the disk version, anything else
+ * keeps the local edits. */
+static void resolve_reload_conflict(App *a, int reload) {
+    if (!a->reload_pending) return;
+    if (reload) {
+        free(a->src); a->src = a->pending_src; a->srclen = a->pending_len;
+        a->pending_src = NULL; a->pending_len = 0;
+        a->reload_pending = 0;
+        apply_reloaded_source(a);
+    } else {
+        free(a->pending_src); a->pending_src = NULL; a->pending_len = 0;
+        a->reload_pending = 0;
+        snprintf(a->msg, sizeof a->msg, "kept your version (disk change ignored)");
+    }
+}
+
+/* Re-read the file after an external change. With no unsaved edits the disk
+ * version is adopted live — in any mode, so a second session's edits show up
+ * here (cross-session sync). With unsaved edits, a conflict prompt is raised
+ * (r: reload / k: keep) rather than silently dropping either side. Identical
+ * content (e.g. our own save) is ignored. */
 static void reload_file(App *a) {
     if (!a->path) return;
     FILE *f = fopen(a->path, "rb");
@@ -1842,16 +1904,23 @@ static void reload_file(App *a) {
     size_t nlen; char *ns = read_file(f, &nlen);
     fclose(f);
     if (!ns) return;
-    if (nlen == a->srclen && memcmp(ns, a->src, nlen) == 0) { free(ns); return; }
-    if (a->dirty || a->mode != MODE_READER) {
-        snprintf(a->msg, sizeof a->msg, "file changed on disk — unsaved edits kept");
-        free(ns);
-        return;
+    int differs = !(nlen == a->srclen && memcmp(ns, a->src, nlen) == 0);
+    switch (watch_reload_action(differs, a->dirty)) {
+        case RELOAD_NONE:
+            free(ns);
+            return;
+        case RELOAD_CONFLICT:
+            free(a->pending_src);
+            a->pending_src = ns; a->pending_len = nlen;
+            a->reload_pending = 1;
+            snprintf(a->msg, sizeof a->msg,
+                     "file changed on disk — r: reload (lose your edits)   k: keep yours");
+            return;
+        case RELOAD_APPLY:
+            free(a->src); a->src = ns; a->srclen = nlen;
+            apply_reloaded_source(a);
+            return;
     }
-    free(a->src); a->src = ns; a->srclen = nlen;
-    rerender(a);
-    reader_clamp_cursor(a);
-    snprintf(a->msg, sizeof a->msg, "reloaded from disk");
 }
 
 /* Load ~/.config/glance/config (if present) into the theme registry. */
@@ -1970,6 +2039,7 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
     while ((d = notcurses_get_nblock(a.nc, &drain)) != 0 && d != (uint32_t)-1) { }
 
     if (a.mode == MODE_INSERT || a.mode == MODE_SPLIT) editor_free(&a.ed);
+    free(a.pending_src);
     if (a.preview) doc_free(a.preview);
     hits_free(&a.hits);
     toc_free(&a.toc);

@@ -46,6 +46,7 @@ test:
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-toc tests/toc_test.c \
 	  $(SRC)/toc.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-toc; \
 	$(CC) $(TCFLAGS) -o build-t-fssave tests/fs_save_test.c $(SRC)/fs_save.c && ./build-t-fssave; \
+	$(CC) $(TCFLAGS) -o build-t-fswatch tests/fswatch_test.c $(SRC)/fswatch.c && ./build-t-fswatch; \
 	$(CC) $(TCFLAGS) -o build-t-completion tests/completion_test.c $(SRC)/completion.c && ./build-t-completion; \
 	$(CC) $(TCFLAGS) -o build-t-legend tests/legend_test.c $(SRC)/legend.c && ./build-t-legend; \
 	$(CC) $(TCFLAGS) -o build-t-progress tests/progress_test.c $(SRC)/progress.c && ./build-t-progress; \
