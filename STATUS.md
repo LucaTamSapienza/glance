@@ -42,6 +42,7 @@ search.c       case-insensitive full-text search over a Doc
 toc.c          table of contents from tagged heading lines
 editor.c       line-array text buffer with a rune-aware cursor
 completion.c   bracket auto-pairing (no backtick/fence)
+fuzzy.c        subsequence fuzzy match + ranking (the Ctrl-P file switcher)
 legend.c       Reader key-sidebar layout (width split, aligned row formatting)
 progress.c     Reader scroll/progress HUD logic (percent, ride-along, spinner)
 theme.c        color themes: built-in palettes, chrome derivation, config parser
@@ -102,7 +103,9 @@ The renderer emits a **structured Doc**; the sinks consume it — `doc_ansi.c`
   graphics where supported, half-blocks otherwise, with a `▦ alt` placeholder
   fallback. `Ctrl-V` pastes a clipboard image into a `<name>_media/` folder.
 - **Vault navigation:** `[[wikilinks]]` resolve/follow across subfolders;
-  back-stack (`-`/`Ctrl-O`); backlinks panel (`b`); graph explorer (`Ctrl-G`).
+  back-stack (`-`/`Ctrl-O`); backlinks panel (`b`); graph explorer (`Ctrl-G`);
+  **fuzzy file switcher** (`Ctrl-P`) — type to filter the whole vault, ranked by
+  a subsequence match (`fuzzy.c`), Enter opens.
 - **Cursor sync** maps reader↔editor by exact source lines (`Line.source_line`).
 - **Export:** `glance-render --html FILE` emits a self-contained, themed HTML page
   (semantic + reflowable, syntax-highlighted code, no JS/CDN); `glance --export
@@ -152,9 +155,9 @@ make install          # -> $(PREFIX)/bin (default /usr/local; honours PREFIX/DES
 
 ## Tests
 
-Pure modules are unit-tested under ASan/UBSan (`make test`) — **24 suites**:
-editor, preprocess, search, toc, fs_save, fswatch, completion, legend, progress, theme,
-highlight, image_size, render, doc_html, vault, graph; and the agent layer — receipt, bm25,
+Pure modules are unit-tested under ASan/UBSan (`make test`) — **26 suites**:
+editor, preprocess, search, toc, fs_save, fswatch, completion, fuzzy, legend, progress,
+theme, highlight, image_size, render, doc_html, vault, graph; and the agent layer — receipt, bm25,
 context, section, embed, json, edit, agent (JSON exports + a write roundtrip),
 mcp (a full initialize → tools/list → tools/call session + the error paths). The
 notcurses front-end needs a real terminal and is verified interactively.

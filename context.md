@@ -65,7 +65,8 @@ atomic save (`:w`/`Ctrl-S`) with kqueue live-reload (clean buffers adopt a
 second session's edits in any mode; a dirty buffer raises an `r`/`k` conflict
 prompt); open links / follow
 `[[wikilinks]]` (Enter) with a back-stack (`-`/`Ctrl-O`); backlinks panel (`b`);
-graph explorer (`Ctrl-G`). Presentation: per-language syntax highlighting
+graph explorer (`Ctrl-G`); fuzzy file switcher (`Ctrl-P`, `fuzzy.c`).
+Presentation: per-language syntax highlighting
 (`highlight.c`), bordered/column-aligned tables, inline images (pixel or
 half-block blit, with a `Ctrl-V` clipboard-image paste), heading chips for
 `#`/`##`. Eight color themes with a live picker (`T`) and `~/.config/glance/config`.
