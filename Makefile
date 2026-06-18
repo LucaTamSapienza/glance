@@ -16,8 +16,8 @@ PREFIX ?= /usr/local
 BINDIR := $(DESTDIR)$(PREFIX)/bin
 
 # renderer + shared helpers, linked into both binaries
-CORE := $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/preprocess.c $(SRC)/theme.c $(SRC)/search.c \
-        $(SRC)/toc.c $(SRC)/fs_save.c $(SRC)/vault.c $(SRC)/graph.c \
+CORE := $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/doc_html.c $(SRC)/preprocess.c $(SRC)/theme.c \
+        $(SRC)/search.c $(SRC)/toc.c $(SRC)/fs_save.c $(SRC)/vault.c $(SRC)/graph.c \
         $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c
 HDRS := $(wildcard $(SRC)/*.h)   # rebuild on any header change
 
@@ -28,7 +28,8 @@ all: glance glance-render
 GUI := $(SRC)/main.c $(SRC)/tui.c $(SRC)/editor.c $(SRC)/fswatch.c \
        $(SRC)/clipboard.c $(SRC)/completion.c $(SRC)/agent.c $(SRC)/legend.c \
        $(SRC)/progress.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/bm25.c \
-       $(SRC)/context.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/json.c $(SRC)/mcp.c
+       $(SRC)/context.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/json.c $(SRC)/mcp.c \
+       $(SRC)/export.c
 glance: $(GUI) $(CORE) $(HDRS)
 	$(CC) $(CFLAGS) -o $@ $(GUI) $(CORE) $(MD4C_LIBS) $(NC_LIBS) -lm
 
@@ -66,6 +67,8 @@ test:
 	$(CC) $(TCFLAGS) -o build-t-imagesize tests/image_size_test.c $(SRC)/image_size.c && ./build-t-imagesize; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-render tests/render_test.c \
 	  $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/preprocess.c $(SRC)/theme.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-render; \
+	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-dochtml tests/doc_html_test.c \
+	  $(SRC)/doc_html.c $(SRC)/theme.c $(SRC)/highlight.c $(shell pkg-config --libs md4c) && ./build-t-dochtml; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-vault tests/vault_test.c \
 	  $(SRC)/vault.c $(shell pkg-config --libs md4c) && ./build-t-vault; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-agent tests/agent_test.c \
