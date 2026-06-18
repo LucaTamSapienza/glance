@@ -2,7 +2,7 @@
 
 > Orientation for anyone (including Claude) picking up the work. The durable
 > picture — not a changelog; history lives in git.
-> Last updated: 2026-06-18.
+> Last updated: 2026-06-19.
 
 ## What it is
 
@@ -39,7 +39,7 @@ milestones there (M1 reads → M2 MCP → M3 semantic → M4 write) are all ship
 
 ```sh
 make                 # build ./glance (TUI) and ./glance-render (CLI)
-make test            # all unit tests (23 suites) under AddressSanitizer + UBSan
+make test            # all unit tests (24 suites) under AddressSanitizer + UBSan
 make install         # copy both binaries to PREFIX/bin (default /usr/local)
 
 ./glance testdata/sample.md                                  # user-side
@@ -55,7 +55,7 @@ Requires `md4c`, `notcurses`, `pkg-config` (`brew install md4c notcurses pkg-con
 
 ## Current status
 
-Everything below is on `main`, built clean, **23 test suites green** under
+Everything below is on `main`, built clean, **24 test suites green** under
 ASan/UBSan.
 
 ### User-side — done
@@ -69,6 +69,13 @@ half-block blit, with a `Ctrl-V` clipboard-image paste), heading chips for
 `#`/`##`. Eight color themes with a live picker (`T`) and `~/.config/glance/config`.
 A hidable key-legend sidebar (`?`), trackpad scrolling with a reading-progress
 HUD. Exact offset-based reader↔editor cursor sync.
+
+**Export:** `glance-render --html FILE` emits a self-contained, themed HTML page
+(semantic + reflowable, syntax-highlighted code via `highlight.c`, no JS/CDN —
+`doc_html.c` is a fourth sink that re-runs md4c rather than projecting the visual
+Doc). `glance --export FILE [OUT]` writes HTML, or a PDF when `OUT` ends in
+`.pdf` (HTML handed to a detected converter: weasyprint / wkhtmltopdf / headless
+Chrome; `export.c`).
 
 ### Agent-side — done (the M1–M4 memory layer)
 Token-cheap, bounded JSON exports + retrieval + writes + MCP, all reusing the same

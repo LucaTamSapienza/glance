@@ -8,6 +8,7 @@
  *     --theme NAME  named colour theme (dracula, nord, …); default auto
  */
 #include "render.h"
+#include "doc_html.h"
 #include "theme.h"
 #include "util.h"
 
@@ -40,24 +41,38 @@ static const char *pull_theme(int *argc, char **argv) {
     return NULL;
 }
 
+/* Remove a bare flag like "--html" from argv; returns 1 if it was present. */
+static int pull_flag(int *argc, char **argv, const char *flag) {
+    for (int i = 1; i < *argc; i++) {
+        if (!strcmp(argv[i], flag)) {
+            for (int j = i; j + 1 < *argc; j++) argv[j] = argv[j + 1];
+            (*argc)--;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* Parse flags, render the input Markdown, and print the ANSI to stdout. */
 int main(int argc, char **argv) {
     const char *theme_name = pull_theme(&argc, argv);
+    int as_html = pull_flag(&argc, argv, "--html");
     int width = 0, dark = 1, opt;
     while ((opt = getopt(argc, argv, "w:lh")) != -1) {
         switch (opt) {
             case 'w': width = atoi(optarg); break;
             case 'l': dark = 0; break;
             case 'h':
-                printf("usage: %s [-w width] [-l] [file.md]\n"
+                printf("usage: %s [-w width] [-l] [--theme name] [--html] [file.md]\n"
                        "  -w WIDTH  wrap width (default: terminal width, or 80)\n"
                        "  -l        light theme (default: dark)\n"
-                       "  reads stdin when no file is given; writes ANSI to stdout.\n"
+                       "  --html    emit a self-contained themed HTML page (not ANSI)\n"
+                       "  reads stdin when no file is given; writes to stdout.\n"
                        "  for the interactive TUI and full key list, run: glance --help\n",
                        argv[0]);
                 return 0;
             default:
-                fprintf(stderr, "usage: %s [-w width] [-l] [--theme name] [file.md]\n", argv[0]);
+                fprintf(stderr, "usage: %s [-w width] [-l] [--theme name] [--html] [file.md]\n", argv[0]);
                 return 2;
         }
     }
@@ -78,6 +93,21 @@ int main(int argc, char **argv) {
     char *src = read_file(f, &len);
     if (f != stdin) fclose(f);
     if (!src) { fprintf(stderr, "read failed\n"); return 1; }
+
+    if (as_html) {
+        char tbuf[256]; const char *title = "glance";
+        if (optind < argc) {
+            char nb[1024]; snprintf(nb, sizeof nb, "%s", argv[optind]);
+            snprintf(tbuf, sizeof tbuf, "%s", basename(nb));
+            title = tbuf;
+        }
+        char *html = md_to_html(src, len, theme, title);
+        free(src);
+        if (!html) { fprintf(stderr, "html render failed\n"); return 1; }
+        fputs(html, stdout);
+        free(html);
+        return 0;
+    }
 
     Doc *doc = render_doc_themed(src, len, width, theme, base);
     free(src);
