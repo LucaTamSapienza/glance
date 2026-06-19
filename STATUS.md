@@ -91,8 +91,9 @@ The renderer emits a **structured Doc**; the sinks consume it — `doc_ansi.c`
   beside it (no overlay), with a narrow-window centered-overlay fallback.
 - **Trackpad/wheel scrolling** (cursor rides along) + a top-right reading-progress
   HUD (percent + a dots-ring spinner).
-- **Color themes**: 8 built-ins (`auto`, `dracula`, `nord`, `gruvbox-dark`,
-  `solarized-dark`/`-light`, `github-light`), `--theme`, `--list-themes`, a live
+- **Color themes**: 12 built-ins (`auto`, `dracula`, `nord`, `gruvbox-dark`,
+  `solarized-dark`/`-light`, `github-light`, `tokyo-night`, `catppuccin-mocha`,
+  `rose-pine`, `everforest`), `--theme`, `--list-themes`, a live
   **`T`** picker (preview-as-you-browse, persists to config), and
   `~/.config/glance/config`. Drives the document and the UI chrome.
 - **Syntax highlighting** in fenced code blocks, per language (`highlight.c`):
@@ -164,6 +165,11 @@ notcurses front-end needs a real terminal and is verified interactively.
 
 ## Known limitations / future
 
+- **Inline WYSIWYG rendering (TODO, big bet):** render markup *in place as you
+  type* — `**ciao**` becomes bold immediately — collapsing the Reader/Insert
+  split into one mode (à la editxr). Builds on the existing structured `Doc`;
+  needs an incremental editing model and cursor-accurate in-place styling, not a
+  new parser. glance's durable edge stays the agent-side token-saving layer.
 - **Agent-side (DESIGN.md §11):** the semantic tier ships a feature-hashing
   embedder (a structural signal, not a model); a MiniLM-class encoder is the
   drop-in upgrade behind the `Embedder` interface, gated on an on-device benchmark.

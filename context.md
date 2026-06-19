@@ -69,7 +69,8 @@ graph explorer (`Ctrl-G`); fuzzy file switcher (`Ctrl-P`, `fuzzy.c`).
 Presentation: per-language syntax highlighting
 (`highlight.c`), bordered/column-aligned tables, inline images (pixel or
 half-block blit, with a `Ctrl-V` clipboard-image paste), heading chips for
-`#`/`##`. Eight color themes with a live picker (`T`) and `~/.config/glance/config`.
+`#`/`##`. Twelve color themes (incl. tokyo-night, catppuccin-mocha, rose-pine,
+everforest) with a live picker (`T`) and `~/.config/glance/config`.
 A hidable key-legend sidebar (`?`), trackpad scrolling with a reading-progress
 HUD. Exact offset-based reader↔editor cursor sync.
 
@@ -105,6 +106,15 @@ validation, and `emit_id`/`emit_jstr` UTF-8 hardening.
 
 ## Known gaps / open items
 
+- **Big bet — inline WYSIWYG rendering (TODO):** collapse the Reader/Insert split
+  into a single mode that renders markup *in place as you type* — write `**ciao**`
+  and it turns bold immediately, like editxr (the line under the cursor may stay
+  raw, everything else rendered). This is the north-star "Notion/Obsidian in the
+  terminal" UX. The renderer already produces a structured `Doc`, so the work is
+  an incremental editing model + cursor-accurate in-place styling, not a new
+  parser. Note glance's edge over editxr stays the **agent-side token-saving
+  layer** (bounded reads, budgeted retrieval, MCP) — that's the durable
+  differentiator; the WYSIWYG mode is about matching the editing feel.
 - **Agent-side (DESIGN.md §11):** the semantic tier ships a dependency-free
   feature-hashing embedder behind the `Embedder` interface; a **MiniLM-class
   encoder** is the drop-in upgrade, gated on an on-device latency/heat benchmark to

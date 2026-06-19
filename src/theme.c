@@ -35,7 +35,7 @@ static void derive_chrome(Theme *t) {
 
 /* ---- built-in presets ----------------------------------------------------- */
 
-#define NBUILTIN 8
+#define NBUILTIN 12
 static Theme g_builtin[NBUILTIN];
 static int   g_inited = 0;
 
@@ -117,6 +117,34 @@ static void theme_init(void) {
         rgb(36,41,46), rgb(239,241,243), rgb(9,105,218), rgb(130,80,223), rgb(110,119,129), rgb(208,215,222),
         rgb(207,34,46), rgb(149,56,0), rgb(10,48,105), rgb(5,80,174), rgb(110,119,129),
         rgb(130,80,223), rgb(149,56,0), rgb(17,99,41), rgb(36,41,46));
+
+    /* 8: tokyo-night — folke's storm-ish palette: deep indigo, soft pastels */
+    doc(&t[8], "tokyo-night", 1,
+        rgb(187,154,247), rgb(122,162,247), rgb(125,207,255), rgb(158,206,106), rgb(86,95,137),
+        rgb(192,202,245), rgb(36,40,59), rgb(122,162,247), rgb(125,207,255), rgb(86,95,137), rgb(59,66,97),
+        rgb(187,154,247), rgb(42,195,222), rgb(158,206,106), rgb(255,158,100), rgb(86,95,137),
+        rgb(122,162,247), rgb(247,118,142), rgb(125,207,255), rgb(137,221,255));
+
+    /* 9: catppuccin-mocha — the popular soft-pastel dark theme */
+    doc(&t[9], "catppuccin-mocha", 1,
+        rgb(203,166,247), rgb(137,180,250), rgb(137,220,235), rgb(166,227,161), rgb(108,112,134),
+        rgb(205,214,244), rgb(49,50,68), rgb(137,180,250), rgb(137,220,235), rgb(108,112,134), rgb(69,71,90),
+        rgb(203,166,247), rgb(249,226,175), rgb(166,227,161), rgb(250,179,135), rgb(108,112,134),
+        rgb(137,180,250), rgb(243,139,168), rgb(148,226,213), rgb(137,220,235));
+
+    /* 10: rose-pine — muted, rosy "natural pine, faux fur" dark */
+    doc(&t[10], "rose-pine", 1,
+        rgb(196,167,231), rgb(156,207,216), rgb(235,188,186), rgb(246,193,119), rgb(110,106,134),
+        rgb(224,222,244), rgb(38,35,58), rgb(156,207,216), rgb(196,167,231), rgb(110,106,134), rgb(64,61,82),
+        rgb(196,167,231), rgb(156,207,216), rgb(246,193,119), rgb(235,188,186), rgb(110,106,134),
+        rgb(235,188,186), rgb(235,111,146), rgb(156,207,216), rgb(144,140,170));
+
+    /* 11: everforest — warm, low-contrast green forest (dark medium) */
+    doc(&t[11], "everforest", 1,
+        rgb(167,192,128), rgb(127,187,179), rgb(131,192,146), rgb(219,188,127), rgb(133,146,137),
+        rgb(211,198,170), rgb(52,63,68), rgb(127,187,179), rgb(131,192,146), rgb(133,146,137), rgb(74,85,91),
+        rgb(230,126,128), rgb(219,188,127), rgb(167,192,128), rgb(214,153,182), rgb(133,146,137),
+        rgb(167,192,128), rgb(230,152,117), rgb(131,192,146), rgb(230,152,117));
 }
 
 /* ---- config-defined themes ------------------------------------------------ */
