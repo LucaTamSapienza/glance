@@ -31,6 +31,9 @@ make                 # build ./glance (TUI) and ./glance-render (CLI)
 make test            # all unit tests under AddressSanitizer + UBSan
 make install         # copy both binaries to $(PREFIX)/bin (default /usr/local)
 make clean           # remove binaries and build artifacts
+make GLANCE_SEMANTIC=1   # opt-in: build with the on-device MiniLM embedder
+                         # (needs `git submodule update --init`; builds vendored
+                         #  llama.cpp once, links it; default build stays llama-free)
 
 ./glance --help                         # full usage + every key binding (both sides)
 ./glance testdata/sample.md             # user-side: open in the TUI
@@ -74,6 +77,8 @@ src/
   receipt.c      token-cost estimate + saved-% receipt
   bm25.c         Okapi BM25 lexical ranking index (the retrieval core)
   embed.c        embedding seam: Embedder interface + a hashing default + cosine
+  embed_minilm.c all-MiniLM-L6-v2 encoder via llama.cpp (GLANCE_SEMANTIC build only)
+  embcache.c     persistent content-addressed section-vector cache under .glance/
   context.c      budget planner: score order, diversity, coarse-to-fine, manifest
   edit.c         surgical source edits: section append/insert/replace, frontmatter
   json.c         a small dependency-free JSON parser (for the MCP server)
@@ -82,7 +87,7 @@ src/
   util.c         shared UTF-8 + whole-file helpers
   tui.c          notcurses front-end: modes, input, drawing, event loop
   main.c         glance entry (TUI)    ·   main_render.c   glance-render entry (CLI)
-tests/           one unit test per pure module (make test — 27 suites)
+tests/           one unit test per pure module (make test — 28 suites)
 testdata/        sample.md showcase + an example vault/
 docs/            DESIGN.md (agent-memory north-star) · MCP.md · HANDOFF.md · REVIEW.md
 ```

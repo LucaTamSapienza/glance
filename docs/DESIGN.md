@@ -2,7 +2,7 @@
 
 > Status: north-star design doc. Captures *why* glance exists for the agent era,
 > what we are building, and in what order. Decisions here are deliberate; open
-> questions are flagged explicitly in §11. Last updated: 2026-06-17.
+> questions are flagged explicitly in §11. Last updated: 2026-06-19.
 
 ## 0. North Star
 
@@ -184,8 +184,11 @@ single query embedding is a ~5–15 ms CPU forward pass (negligible heat), and t
 one-time index build is incremental thereafter via `fswatch`. Static-distilled
 embeddings (model2vec/potion-style) remain the ultra-light fallback for
 constrained machines. The index lives in **`.glance/`** inside the vault
-(git-ignored, local cache). **Still open (§11): the embedder runtime — to be
-locked after an on-device latency/heat benchmark.**
+(git-ignored, local cache). **Shipped:** `all-MiniLM-L6-v2` on-device via a
+vendored, statically-linked **llama.cpp** (`embed_minilm.c`, behind
+`make GLANCE_SEMANTIC=1`), section vectors cached in `.glance/` (`embcache.c`),
+model fetched to `~/.cache/glance` on first use — runtime locked after the
+on-device benchmark (M2 Pro: ~24 ms/chunk CPU, no thermal throttle).
 
 ## 7. How it maps onto the existing code (reuse, not green-field)
 
@@ -219,16 +222,19 @@ locked after an on-device latency/heat benchmark.**
   framed. Native in Claude Desktop / Cursor / the SDK — the distribution channel.
   Wiring + tool reference: `docs/MCP.md`. New modules: `json.c` (a small JSON
   parser) and `mcp.c` (the server). Unit-tested (`json_test`, `mcp_test`).
-- **M3 — semantic search behind a flag. ◑ infrastructure shipped; model pending
-  the benchmark.** The full dense pipeline is in place: an `Embedder` interface
-  (`embed.c`), cosine similarity, and `--context --semantic` fusing the
-  embedding score with the lexical BM25 score (notes a keyword search misses can
-  surface). The shipped default embedder is dependency-free (feature-hashed token
-  n-grams) — a *structural* signal that exercises the whole pipeline, **not** a
-  semantic model. The real quality jump is a MiniLM-class encoder plugged in
-  behind the same `Embedder` interface, plus an embedding cache in `.glance/`;
-  that step is deliberately deferred to the on-device latency/heat benchmark we
-  agreed to run together (§11). Lexical stays the default.
+- **M3 — semantic search behind a flag. ✅ shipped (MiniLM + cache).** The full
+  dense pipeline: an `Embedder` interface (`embed.c`), cosine similarity, and
+  `--context --semantic` fusing the embedding score with the lexical BM25 score
+  (notes a keyword search misses can surface). Two embedders behind the one seam:
+  the dependency-free feature-hashing default (a *structural* signal, the base
+  install), and **`all-MiniLM-L6-v2`** — a real 384-dim sentence encoder run
+  on-device via a vendored, statically-linked **llama.cpp** (`embed_minilm.c`),
+  compiled in only with `make GLANCE_SEMANTIC=1`. Section vectors are cached in
+  **`.glance/`** (`embcache.c`, content-addressed, tagged by model+dim); only the
+  query is embedded live. The model is downloaded to `~/.cache/glance` on first
+  use. The on-device benchmark that gated this (§11) ran on Apple Silicon (M2
+  Pro): ~24 ms/chunk CPU (~6 ms Metal), ~360 MB RSS, no thermal throttle — well
+  within budget; we ship fp16. Lexical stays the default; semantic is opt-in.
 - **M4 — surgical write API. ✅ shipped.** Structure-addressed edits on the raw
   source (formatting preserved), written atomically: `--edit FILE
   append|insert|replace "Heading" "text"` and `--set-frontmatter FILE KEY VALUE`,
@@ -277,11 +283,13 @@ Everything we build either serves this loop or waits.
   model2vec/potion-style static embeddings as the ultra-light fallback.
 - ~~**Index location.**~~ **Decided: `.glance/` inside the vault** (git-ignored
   local cache, invalidated by `fswatch`).
-- **Embedder runtime in C.** The `Embedder` interface (`embed.c`) is in place and
-  a real encoder drops in behind it with no change to retrieval. Still to lock,
-  after an on-device latency/heat benchmark of MiniLM on Apple Silicon:
-  onnxruntime vs llama.cpp/ggml embeddings vs an optional sidecar installed only
-  for the semantic power-up — plus the embedding cache layout under `.glance/`.
+- ~~**Embedder runtime in C.**~~ **Decided: llama.cpp/ggml, vendored as a git
+  submodule and statically linked**, compiled in only with `make GLANCE_SEMANTIC=1`
+  (the base install stays dependency-free). Chosen after the on-device latency/heat
+  benchmark on Apple Silicon (`embed_minilm.c`); the `.glance/` cache layout is
+  shipped in `embcache.c`. Open follow-ups: a graph-expansion retrieval tier
+  (surface zero-lexical 1-hop neighbours) and incremental cache refresh via
+  `fswatch`.
 - **Name.** Stays `glance` for now; discoverability handled via README / a
   Homebrew tap (note the OpenStack `glance` CLI name collision).
 

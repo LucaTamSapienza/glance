@@ -151,8 +151,10 @@ and can follow up. It returns `{query, budget_tokens, chunks, truncated, receipt
 
 Retrieval is **lexical + graph by default** (local, deterministic, private);
 `--semantic` fuses in an embedding score so notes a keyword search would miss can
-surface (a dependency-free embedder ships today; a MiniLM-class encoder is a
-drop-in behind the same interface).
+surface. A dependency-free hashing embedder ships in the base build; a build with
+`make GLANCE_SEMANTIC=1` swaps in **`all-MiniLM-L6-v2`** running on-device (a
+vendored, statically-linked llama.cpp), caching section vectors in `DIR/.glance/`
+and fetching the model to `~/.cache/glance` on first use — still local and private.
 
 ### Writes — surgical, never a whole-file rewrite
 
@@ -222,6 +224,14 @@ cd glance
 make                 # builds ./glance (TUI) and ./glance-render (CLI)
 make test            # unit tests under AddressSanitizer/UBSan
 make install         # copy onto your PATH (/usr/local/bin; honours PREFIX/DESTDIR)
+```
+
+**Optional — on-device semantic search** (the `all-MiniLM-L6-v2` embedder). Off by
+default so the base install carries no extra dependency:
+
+```sh
+git submodule update --init           # vendored llama.cpp
+make GLANCE_SEMANTIC=1                 # builds the static libs once, links them
 ```
 
 For a no-sudo install: `make install PREFIX=~/.local` (with `~/.local/bin` on your

@@ -56,7 +56,8 @@ Requires `md4c`, `notcurses`, `pkg-config` (`brew install md4c notcurses pkg-con
 ## Current status
 
 Everything below is on `main`, built clean, **27 test suites green** under
-ASan/UBSan.
+ASan/UBSan. (Branch `feat/semantic-minilm` adds a 28th suite, `embcache_test`,
+for the on-device MiniLM semantic tier — see Known gaps.)
 
 ### User-side — done
 Full reader/editor: three modes; editor soft-wraps long lines; charwise (`v`) and
@@ -88,13 +89,18 @@ Token-cheap, bounded JSON exports + retrieval + writes + MCP, all reusing the sa
   BM25 + a link-graph prior, diversity, coarse-to-fine, truncation manifest, token
   receipt); `--section "FILE#Heading"`; `--outline --depth --abstract`;
   `--neighbors`; `--backlinks --context`; `--since`; plus `--links`/`--graph`.
+  `--semantic` fuses an embedding cosine into the ranking: a `GLANCE_SEMANTIC=1`
+  build uses the on-device **all-MiniLM-L6-v2** encoder (vendored llama.cpp),
+  caching section vectors in `DIR/.glance/` and fetching the model to
+  `~/.cache/glance` on first use; otherwise the dependency-free hashing embedder.
 - **Writes:** `--edit FILE append|insert|replace "Heading" "text"` and
   `--set-frontmatter FILE KEY VALUE` — structure-addressed edits on the raw source
   (formatting preserved, fenced-code headings ignored), written atomically.
 - **MCP:** `glance mcp` — stdio JSON-RPC 2.0 exposing all of the above as native
   tools (Claude Desktop / Cursor / SDK). Wiring in [`docs/MCP.md`](docs/MCP.md).
 - **Modules:** `section.c`, `receipt.c`, `bm25.c`, `context.c`, `embed.c`,
-  `edit.c`, `json.c`, `mcp.c`; orchestrated by `agent.c`.
+  `embed_minilm.c` (MiniLM, GLANCE_SEMANTIC build), `embcache.c` (`.glance/`
+  vector cache), `edit.c`, `json.c`, `mcp.c`; orchestrated by `agent.c`.
 
 ### Hardening
 An adversarial multi-agent review ([`docs/REVIEW.md`](docs/REVIEW.md)) led to a
@@ -115,11 +121,17 @@ validation, and `emit_id`/`emit_jstr` UTF-8 hardening.
   parser. Note glance's edge over editxr stays the **agent-side token-saving
   layer** (bounded reads, budgeted retrieval, MCP) — that's the durable
   differentiator; the WYSIWYG mode is about matching the editing feel.
-- **Agent-side (DESIGN.md §11):** the semantic tier ships a dependency-free
-  feature-hashing embedder behind the `Embedder` interface; a **MiniLM-class
-  encoder** is the drop-in upgrade, gated on an on-device latency/heat benchmark to
-  run together. A persistent **`.glance/` index cache** and **graph-expansion
-  retrieval** (surfacing zero-lexical 1-hop neighbours) are the next two.
+- **Agent-side (DESIGN.md §11):** the semantic tier now ships **two** embedders
+  behind the `Embedder` seam — the dependency-free feature-hashing default and
+  **all-MiniLM-L6-v2** on-device (vendored, statically-linked llama.cpp,
+  `embed_minilm.c`, built with `make GLANCE_SEMANTIC=1`) — with a persistent
+  content-addressed **`.glance/` vector cache** (`embcache.c`) and model
+  download-on-first-use to `~/.cache/glance`. Runtime locked after an on-device
+  benchmark (M2 Pro: ~24 ms/chunk CPU, ~6 ms Metal, no thermal throttle; ship
+  fp16). Built on branch `feat/semantic-minilm`. Open next: **graph-expansion
+  retrieval** (surfacing zero-lexical 1-hop neighbours) and incremental cache
+  refresh via `fswatch`. Minor polish: ggml/Metal stderr logs on the `-ngl>0`
+  path (harmless for JSON-on-stdout; CPU path is already silent).
 - **Review follow-ups (REVIEW.md §3):** low-severity cleanups and clarity nits.
 - **User-side residuals:** image decode-per-frame (a persistent-plane cache is the
   right fix), `Option`+arrow word-jump under the legacy keyboard protocol, remote

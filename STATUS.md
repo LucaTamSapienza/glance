@@ -27,7 +27,7 @@ Nothing about the output is opaque to us.
 | Clipboard/open | pbcopy / open (`clipboard.c`)                | atotto/clipboard             |
 | Syntax hl      | spec-driven highlighter (`highlight.c`)      | chroma                       |
 | Retrieval      | BM25 + graph prior + budget (`bm25/context`) | — (new, agent-side)          |
-| Embeddings     | `Embedder` seam + hashing default (`embed.c`)| — (new, opt-in)              |
+| Embeddings     | hashing default + MiniLM via llama.cpp (`embed*.c`) | — (new, opt-in)       |
 | JSON / MCP     | own parser + stdio server (`json/mcp`)       | — (new, agent-side)          |
 
 ## Module map (`src/`)
@@ -58,6 +58,8 @@ section.c      heading anchor -> subtree + abstract projection (bounded reads)
 receipt.c      token-cost estimate + saved-% receipt (used vs raw-read)
 bm25.c         Okapi BM25 lexical ranking index (the retrieval core)
 embed.c        embedding seam: Embedder interface + a hashing default + cosine
+embed_minilm.c all-MiniLM-L6-v2 sentence encoder via llama.cpp (GLANCE_SEMANTIC only)
+embcache.c     persistent content-addressed section-vector cache under .glance/
 context.c      budget planner: score order, diversity, coarse-to-fine, manifest
 edit.c         surgical source edits: section append/insert/replace, frontmatter
 json.c         a small dependency-free JSON parser (for the MCP server)
@@ -125,8 +127,12 @@ reusing the same `Doc`. See [`docs/DESIGN.md`](docs/DESIGN.md).
   `{query,budget_tokens,chunks,truncated,receipt}` — note sections ranked by BM25
   fused with a link-graph prior, selected with diversity and a coarse-to-fine
   projection (full → abstract), a truncation manifest, and a token receipt. Lexical
-  + graph by default; `--semantic` fuses an embedding cosine (dependency-free
-  embedder; MiniLM-class is a drop-in behind the `Embedder` interface).
+  + graph by default; `--semantic` fuses an embedding cosine. Two embedders behind
+  one seam: the dependency-free feature-hashing default, and **`all-MiniLM-L6-v2`**
+  — a 384-dim on-device sentence encoder via a vendored, statically-linked
+  llama.cpp (`embed_minilm.c`, built with `make GLANCE_SEMANTIC=1`), with section
+  vectors cached in `.glance/` (`embcache.c`) and the model fetched to
+  `~/.cache/glance` on first use.
 - **Surgical writes:** `--edit FILE append|insert|replace "Heading" "text"` and
   `--set-frontmatter FILE KEY VALUE` — structure-addressed edits on the raw source
   (formatting preserved; fenced-code and setext headings handled), written via
