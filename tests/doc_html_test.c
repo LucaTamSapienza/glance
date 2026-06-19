@@ -90,6 +90,13 @@ int main(void) {
     hasnt(h, "<li><p>", "tight list items not paragraph-wrapped");
     free(h);
 
+    /* But a paragraph nested in a blockquote inside a tight item keeps its <p>:
+     * tightness applies only to paragraphs that are DIRECT children of the item. */
+    h = render("- > quote\n- two\n");
+    has(h, "<blockquote>", "blockquote inside tight item");
+    has(h, "<p>quote</p>", "nested paragraph keeps <p> despite tight list");
+    free(h);
+
     if (fails) { printf("%d doc_html test(s) FAILED\n", fails); return 1; }
     printf("all doc_html tests passed\n");
     return 0;

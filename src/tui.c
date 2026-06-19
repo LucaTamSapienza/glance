@@ -73,7 +73,7 @@ typedef struct {
     int    dirty;                /* unsaved changes since the last write */
     int    reload_pending;       /* a disk change awaits an [r]eload/[k]eep choice */
     char  *pending_src;          /* the disk bytes held while the conflict is open */
-    size_t pending_len;
+    size_t pending_len;          /* length of pending_src */
     char   msg[160];             /* transient status message (one keypress) */
     Doc   *preview;              /* Split mode: live render of the editor text */
     int    preview_top;          /* Split mode: preview's first visible line (scroll) */
@@ -1937,10 +1937,10 @@ int tui_keyprobe(void) {
 static int dispatch_key(App *a, uint32_t id, ncinput *ni) {
     if (ni->evtype == NCTYPE_RELEASE) return 1;
     a->msg[0] = '\0';                            /* clear the transient message */
-    if (a->reload_pending) {                     /* resolve a disk/buffer conflict first */
+    if (a->reload_pending && id != NCKEY_RESIZE) {  /* resolve a disk/buffer conflict first */
         if (id == 'r' || id == 'R') { resolve_reload_conflict(a, 1); return 1; }
         if (id == 'k' || id == 'K' || id == NCKEY_ESC) { resolve_reload_conflict(a, 0); return 1; }
-        resolve_reload_conflict(a, 0);           /* any other key keeps yours, then acts */
+        resolve_reload_conflict(a, 0);           /* any other real keypress keeps yours, then acts */
     }
     if (a->helpmode) { a->helpmode = 0; return 1; }   /* any key closes help */
     if (id == NCKEY_RESIZE) {

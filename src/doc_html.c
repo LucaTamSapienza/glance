@@ -74,7 +74,14 @@ typedef struct {
     int   img_depth;       /* inside an <img> alt text (emit plain, no tags) */
     int   tight[TIGHT_MAX];/* per-list tightness, innermost on top */
     int   tdepth;          /* list-nesting depth into `tight` */
-    int   p_suppress;      /* the current MD_BLOCK_P sits in a tight list item */
+    /* Whether a paragraph that is a DIRECT child of the current container should
+     * have its <p> suppressed — pushed per container that can hold a paragraph
+     * (a tight list item suppresses; a blockquote/doc does not). CommonMark
+     * tightness applies only to paragraphs directly inside a list item, so an
+     * intervening blockquote must restore <p>. */
+    int   psup[TIGHT_MAX];
+    int   psup_n;
+    int   p_suppress;      /* the <p> currently open was suppressed (skip </p>) */
 } Ctx;
 
 /* Append an md4c attribute (href/src/target …) escaped for an HTML attribute. */
@@ -141,12 +148,23 @@ static const char *align_style(MD_ALIGN a) {
     }
 }
 
+/* Push a "suppress direct-child <p>?" frame for a container that can hold a
+ * paragraph. */
+static void psup_push(Ctx *c, int suppress) {
+    if (c->psup_n < TIGHT_MAX) c->psup[c->psup_n] = suppress;
+    c->psup_n++;
+}
+static void psup_pop(Ctx *c) { if (c->psup_n > 0) c->psup_n--; }
+
+/* md4c: open the HTML for a block element. Lists track tightness (for <p>
+ * suppression) and ordered-list start; code blocks switch to accumulate mode;
+ * table cells carry their alignment. */
 static int cb_enter_block(MD_BLOCKTYPE type, void *detail, void *ud) {
     Ctx *c = ud;
     SB *o = &c->out;
     switch (type) {
         case MD_BLOCK_DOC: break;
-        case MD_BLOCK_QUOTE: sb_puts(o, "<blockquote>\n"); break;
+        case MD_BLOCK_QUOTE: psup_push(c, 0); sb_puts(o, "<blockquote>\n"); break;
         case MD_BLOCK_UL: {
             MD_BLOCK_UL_DETAIL *d = detail;
             if (c->tdepth < TIGHT_MAX) c->tight[c->tdepth] = d->is_tight;
@@ -164,6 +182,9 @@ static int cb_enter_block(MD_BLOCKTYPE type, void *detail, void *ud) {
         }
         case MD_BLOCK_LI: {
             MD_BLOCK_LI_DETAIL *d = detail;
+            /* A direct-child <p> is suppressed iff this item's list is tight. */
+            int tight = (c->tdepth > 0 && c->tdepth <= TIGHT_MAX && c->tight[c->tdepth - 1]);
+            psup_push(c, tight);
             if (d->is_task) {
                 sb_puts(o, "<li class=\"task\"><input type=\"checkbox\" disabled");
                 if (d->task_mark == 'x' || d->task_mark == 'X') sb_puts(o, " checked");
@@ -189,8 +210,10 @@ static int cb_enter_block(MD_BLOCKTYPE type, void *detail, void *ud) {
         }
         case MD_BLOCK_HTML: break;     /* raw HTML arrives via text() verbatim */
         case MD_BLOCK_P:
-            c->p_suppress = (c->tdepth > 0 && c->tdepth <= TIGHT_MAX &&
-                             c->tight[c->tdepth - 1]);
+            /* Suppress only when this paragraph is a direct child of a tight
+             * list item (the current container's frame), not merely nested
+             * somewhere inside a tight list. */
+            c->p_suppress = (c->psup_n > 0 && c->psup[c->psup_n - 1]);
             if (!c->p_suppress) sb_puts(o, "<p>");
             break;
         case MD_BLOCK_TABLE: sb_puts(o, "<table>\n"); break;
@@ -203,16 +226,18 @@ static int cb_enter_block(MD_BLOCKTYPE type, void *detail, void *ud) {
     return 0;
 }
 
+/* md4c: close the HTML for a block element — the mirror of cb_enter_block,
+ * popping the list/paragraph-context stacks and flushing a code block. */
 static int cb_leave_block(MD_BLOCKTYPE type, void *detail, void *ud) {
     (void)detail;
     Ctx *c = ud;
     SB *o = &c->out;
     switch (type) {
         case MD_BLOCK_DOC: break;
-        case MD_BLOCK_QUOTE: sb_puts(o, "</blockquote>\n"); break;
+        case MD_BLOCK_QUOTE: psup_pop(c); sb_puts(o, "</blockquote>\n"); break;
         case MD_BLOCK_UL: if (c->tdepth > 0) c->tdepth--; sb_puts(o, "</ul>\n"); break;
         case MD_BLOCK_OL: if (c->tdepth > 0) c->tdepth--; sb_puts(o, "</ol>\n"); break;
-        case MD_BLOCK_LI: sb_puts(o, "</li>\n"); break;
+        case MD_BLOCK_LI: psup_pop(c); sb_puts(o, "</li>\n"); break;
         case MD_BLOCK_HR: break;
         case MD_BLOCK_H: { MD_BLOCK_H_DETAIL *d = detail; char b[8]; snprintf(b, sizeof b, "</h%u>\n", d->level); sb_puts(o, b); break; }
         case MD_BLOCK_CODE: flush_code(c); c->in_code_block = 0; break;
@@ -228,6 +253,8 @@ static int cb_leave_block(MD_BLOCKTYPE type, void *detail, void *ud) {
     return 0;
 }
 
+/* md4c: open an inline span (emphasis, link, code, image, …). Inside an image's
+ * alt text no tags are emitted, only the nested text, which becomes the alt= value. */
 static int cb_enter_span(MD_SPANTYPE type, void *detail, void *ud) {
     Ctx *c = ud;
     SB *o = &c->out;
@@ -262,6 +289,7 @@ static int cb_enter_span(MD_SPANTYPE type, void *detail, void *ud) {
     return 0;
 }
 
+/* md4c: close an inline span; closing an image emits the alt quote + ">". */
 static int cb_leave_span(MD_SPANTYPE type, void *detail, void *ud) {
     (void)detail;
     Ctx *c = ud;
@@ -283,6 +311,9 @@ static int cb_leave_span(MD_SPANTYPE type, void *detail, void *ud) {
     return 0;
 }
 
+/* md4c: emit a run of text. Inside a code block it is accumulated for later
+ * highlighting; inside an image's alt it is attribute-escaped; otherwise it is
+ * HTML-escaped (entities/raw-HTML/line-breaks handled per text type). */
 static int cb_text(MD_TEXTTYPE type, const MD_CHAR *text, MD_SIZE size, void *ud) {
     Ctx *c = ud;
     SB *o = &c->out;

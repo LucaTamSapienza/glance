@@ -92,6 +92,11 @@ static int is_pdf(const char *path) {
  * hang glance forever. Converters that exit promptly (weasyprint/wkhtmltopdf)
  * are reaped on the first poll. */
 static int run_to_pdf(char *const argv[], const char *out, int timeout_s) {
+    /* Start from a clean slate: a stale PDF left by a previous export (or an
+     * earlier converter in the fallthrough) would make the first is_pdf() poll
+     * succeed before this converter has written anything, killing it and keeping
+     * the old file. `out` is never the (separate) temp HTML, so this is safe. */
+    unlink(out);
     pid_t pid = fork();
     if (pid < 0) return 1;
     if (pid == 0) {
@@ -186,11 +191,12 @@ int export_file(const char *in, const char *out, const Theme *theme) {
         /* Fall back to a sibling .html so the export is never empty-handed. */
         char alt[4200];
         snprintf(alt, sizeof alt, "%s.html", out);
-        atomic_write(alt, html, strlen(html));
+        int altok = atomic_write(alt, html, strlen(html)) == 0;
         free(html);
         fprintf(stderr, "could not produce a PDF (no working converter — install "
-                        "weasyprint / wkhtmltopdf, or close other Chrome windows).\n"
-                        "wrote %s instead.\n", alt);
+                        "weasyprint / wkhtmltopdf, or close other Chrome windows).\n");
+        if (altok) fprintf(stderr, "wrote %s instead.\n", alt);
+        else       fprintf(stderr, "%s: write failed too.\n", alt);
         return 1;
     }
     free(html);

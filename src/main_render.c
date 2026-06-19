@@ -1,11 +1,12 @@
-/* main_render.c — slice-1 CLI: render a Markdown file (or stdin) to ANSI on
- * stdout. This is the C equivalent of `glance --render`, and proves the
- * renderer in isolation before any TUI exists.
+/* main_render.c — the render-only CLI: turn a Markdown file (or stdin) into
+ * ANSI for the terminal, or a self-contained HTML page, on stdout. It exercises
+ * the renderer and the HTML sink in isolation, independent of the TUI.
  *
- *   glance-render [-w WIDTH] [-l] [--theme NAME] [file.md]
- *     -w WIDTH      wrap width (default: terminal width, or 80)
+ *   glance-render [-w WIDTH] [-l] [--theme NAME] [--html] [file.md]
+ *     -w WIDTH      wrap width (default: terminal width, or 80; ANSI only)
  *     -l            light theme (shortcut for --theme auto-light)
  *     --theme NAME  named colour theme (dracula, nord, …); default auto
+ *     --html        emit a self-contained themed HTML page instead of ANSI
  */
 #include "render.h"
 #include "doc_html.h"

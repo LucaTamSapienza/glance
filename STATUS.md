@@ -149,17 +149,17 @@ image, `Alt`/`Ctrl`+`←`/`→` word jump, `Ctrl-A`/`Ctrl-E` line start/end.
 
 ```sh
 make                  # glance (TUI) + glance-render (CLI)
-make test             # all module unit tests, ASan/UBSan (26 suites)
+make test             # all module unit tests, ASan/UBSan (27 suites)
 make install          # -> $(PREFIX)/bin (default /usr/local; honours PREFIX/DESTDIR)
 ./glance --help       # full usage + every key binding (user + agent)
 ```
 
 ## Tests
 
-Pure modules are unit-tested under ASan/UBSan (`make test`) — **26 suites**:
+Pure modules are unit-tested under ASan/UBSan (`make test`) — **27 suites**:
 editor, preprocess, search, toc, fs_save, fswatch, completion, fuzzy, legend, progress,
 theme, highlight, image_size, render, doc_html, vault, graph; and the agent layer — receipt, bm25,
-context, section, embed, json, edit, agent (JSON exports + a write roundtrip),
+context, section, embed, json, edit, export, agent (JSON exports + a write roundtrip),
 mcp (a full initialize → tools/list → tools/call session + the error paths). The
 notcurses front-end needs a real terminal and is verified interactively.
 

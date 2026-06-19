@@ -71,6 +71,8 @@ test:
 	  $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/preprocess.c $(SRC)/theme.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-render; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-dochtml tests/doc_html_test.c \
 	  $(SRC)/doc_html.c $(SRC)/theme.c $(SRC)/highlight.c $(shell pkg-config --libs md4c) && ./build-t-dochtml; \
+	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-export tests/export_test.c \
+	  $(SRC)/export.c $(SRC)/doc_html.c $(SRC)/theme.c $(SRC)/highlight.c $(SRC)/fs_save.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-export; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-vault tests/vault_test.c \
 	  $(SRC)/vault.c $(shell pkg-config --libs md4c) && ./build-t-vault; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-agent tests/agent_test.c \
