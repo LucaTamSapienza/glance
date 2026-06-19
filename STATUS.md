@@ -43,6 +43,7 @@ toc.c          table of contents from tagged heading lines
 editor.c       line-array text buffer with a rune-aware cursor
 completion.c   bracket auto-pairing (no backtick/fence)
 fuzzy.c        subsequence fuzzy match + ranking (the Ctrl-P file switcher)
+live.c         WYSIWYG (Live) projection: partition the Doc around the active source line
 legend.c       Reader key-sidebar layout (width split, aligned row formatting)
 progress.c     Reader scroll/progress HUD logic (percent, ride-along, spinner)
 theme.c        color themes: built-in palettes, chrome derivation, config parser
@@ -76,9 +77,13 @@ The renderer emits a **structured Doc**; the sinks consume it — `doc_ansi.c`
 
 ### User-side (reader / editor)
 
-- **Three modes:** Reader (rendered, block cursor), Insert (full-screen editor),
-  Split (editor + live preview). The editor soft-wraps long lines to the pane
-  width; the cursor and scrolling count wrapped visual rows.
+- **Four modes:** Reader (rendered, block cursor), Insert (full-screen editor),
+  Split (editor + live preview), and **Live** (`w`, WYSIWYG): the rendered
+  document with the source line under the cursor shown raw in place, so markup
+  styles as you type everywhere but the line being edited (`live.c` partitions
+  the Doc; the styled backdrop re-renders only on line change). The editor
+  soft-wraps long lines to the pane width; the cursor and scrolling count
+  wrapped visual rows.
 - **Search** `/` with highlight, `n`/`N` next/prev. **TOC** panel `t`, jump on Enter.
 - **Save** atomic: `:w` `:wq` `:x`, `Ctrl-S`; `:q` refuses on unsaved, `:q!`
   discards. **Live reload** on external change (kqueue): when the buffer is clean

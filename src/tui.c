@@ -18,6 +18,7 @@
 #include "completion.h"
 #include "vault.h"
 #include "fuzzy.h"
+#include "live.h"
 #include "graph.h"
 #include "legend.h"
 #include "progress.h"
@@ -39,7 +40,7 @@
 #include <sys/stat.h>
 #include <time.h>
 
-enum { MODE_READER, MODE_INSERT, MODE_SPLIT };
+enum { MODE_READER, MODE_INSERT, MODE_SPLIT, MODE_LIVE };
 
 typedef struct {
     struct notcurses *nc;
@@ -108,6 +109,9 @@ typedef struct {
     struct ncplane *imgpl[16];   /* planes the reader blits decoded images onto */
     int    nimgpl;
     int    pixel;                /* terminal supports pixel graphics (sixel/kitty/iterm) */
+    int    live_stale;           /* Live mode: the active line was edited but the styled
+                                    backdrop (a->preview) not yet reparsed — deferred until
+                                    the cursor leaves the line (the active line is raw anyway) */
 } App;
 
 #define TOC_W 30                 /* table-of-contents panel width */
@@ -1077,6 +1081,94 @@ static void enter_insert(App *a) { seed_editor(a); a->mode = MODE_INSERT; }
 /* Enter Split mode (editor + live preview). */
 static void enter_split(App *a) { seed_editor(a); a->mode = MODE_SPLIT; a->preview_top = 0; render_preview(a); }
 
+/* ---- Live (WYSIWYG) mode -------------------------------------------------- */
+
+/* Re-render the whole editor text at content width into a->preview — the styled
+ * backdrop Live mode draws everywhere except the source line under the cursor.
+ * Only the other lines come from here; the active line is always drawn raw from
+ * the editor buffer, so this need only run when the cursor changes line or the
+ * line count changes (see handle_live), not on every keystroke. */
+static void render_live(App *a) {
+    if (a->preview) { doc_free(a->preview); a->preview = NULL; }
+    char dirbuf[4096];
+    const char *base = doc_dir(a, dirbuf, sizeof dirbuf);
+    size_t nlen; char *s = editor_source(&a->ed, &nlen);
+    if (s) { a->preview = render_doc_themed(s, nlen, content_cols(a), a->theme, base); free(s); }
+    a->live_stale = 0;          /* backdrop now reflects the current text */
+}
+
+/* Draw one soft-wrapped subrow `sub` of a raw editor line at screen `row`. The
+ * same in-place clip the editor pane uses, for a single line. */
+static void draw_raw_subrow(struct ncplane *p, ELine *L, int sub, int row, int x0, int width) {
+    if (!L->b || L->len == 0) return;
+    size_t s  = ed_col_to_byte(L->b, L->len, sub * width);
+    size_t en = ed_col_to_byte(L->b, L->len, (sub + 1) * width);
+    if (en <= s) return;
+    char save = L->b[en]; L->b[en] = '\0';
+    ncplane_putstr_yx(p, row, x0, L->b + s);
+    L->b[en] = save;
+}
+
+/* Live (WYSIWYG) mode: the rendered document with the cursor's source line shown
+ * raw in place, so markup styles as you type everywhere but the line you edit.
+ * live_build partitions the rendered preview around the active line; we blit the
+ * kept rendered lines and draw the active line raw, with the hardware cursor on
+ * it. Scrolling counts the combined visual rows (rendered lines + the active
+ * line's wrapped height). */
+static void draw_live(App *a) {
+    struct ncplane *p = a->plane;
+    Editor *e = &a->ed;
+    int width = content_cols(a), body = content_rows(a);
+    if (!a->preview) render_live(a);
+
+    LiveView lv;
+    if (!a->preview || live_build(a->preview, e->cy, &lv) != 0) { draw_editor(a); return; }
+
+    ELine *AL = &e->lines[e->cy];
+    int arows = eline_rows(AL, width);
+    int total = lv.nline + arows;
+
+    int ccol = editor_cursor_col(e);
+    int currow = lv.active_at + ccol / width;   /* combined visual row of the cursor */
+    int curcol = ccol % width;
+
+    if (currow < a->top) a->top = currow;
+    if (currow >= a->top + body) a->top = currow - body + 1;
+    if (a->top > total - body) a->top = total - body;
+    if (a->top < 0) a->top = 0;
+
+    ncplane_erase(p);
+    for (int r = 0; r < body; r++) {
+        int vr = a->top + r;
+        if (vr >= total) break;
+        if (vr < lv.active_at) {
+            draw_doc_line(p, lv.lines[vr], r, 0, width);
+        } else if (vr < lv.active_at + arows) {
+            ncplane_set_styles(p, NCSTYLE_NONE);
+            ncplane_set_fg_default(p); ncplane_set_bg_default(p);
+            draw_raw_subrow(p, AL, vr - lv.active_at, r, 0, width);
+        } else {
+            draw_doc_line(p, lv.lines[vr - arows], r, 0, width);
+        }
+    }
+    live_free(&lv);
+
+    char status[320];
+    if (a->msg[0]) snprintf(status, sizeof status, " %s", a->msg);
+    else snprintf(status, sizeof status,
+                  " LIVE  %s%s  —  Ln %d, Col %d   Esc reader   ^S save",
+                  a->title, e->dirty ? " *" : "", e->cy + 1, ccol + 1);
+    status_bar(a, status);
+
+    int crow = currow - a->top;
+    if (crow >= 0 && crow < body) notcurses_cursor_enable(a->nc, crow, curcol);
+    else notcurses_cursor_disable(a->nc);
+    notcurses_render(a->nc);
+}
+
+/* Enter Live (WYSIWYG) mode. */
+static void enter_live(App *a) { seed_editor(a); a->mode = MODE_LIVE; a->top = 0; render_live(a); }
+
 /* Copy the editor's buffer back into the app source (editor stays alive). */
 static void sync_source(App *a) {
     size_t nlen; char *ns = editor_source(&a->ed, &nlen);
@@ -1157,6 +1249,7 @@ static void redraw(App *a) {
     if (a->graphmode)               draw_graph(a);
     else if (a->mode == MODE_READER)     draw_reader(a);
     else if (a->mode == MODE_SPLIT) draw_split(a);
+    else if (a->mode == MODE_LIVE)  draw_live(a);
     else                            draw_editor(a);
     if (a->helpmode) { draw_help(a); notcurses_render(a->nc); }
 }
@@ -1727,6 +1820,7 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
     else if (id == NCKEY_ESC)                    { if (a->legend) toggle_legend(a); else clear_search(a); }
     else if (id == 'i')                          enter_insert(a);  /* vi-style */
     else if (id == 'e')                          enter_split(a);   /* editor + preview */
+    else if (id == 'w')                          enter_live(a);    /* WYSIWYG in place */
     else if (id == 'v') { a->visualmode = 1; a->visual_char = 1;   /* charwise from the cursor */
                           a->visual_anchor = a->rcur_line; a->visual_anchor_col = a->rcur_col; }
     else if (id == 'V') { a->visualmode = 1; a->visual_char = 0;   /* linewise */
@@ -1864,6 +1958,32 @@ static int handle_insert(App *a, uint32_t id, const ncinput *ni) {
     return 1;
 }
 
+/* Live (WYSIWYG) mode input: edit and move like Insert, but reparse the styled
+ * backdrop as rarely as possible, since reparsing the whole document on every
+ * keystroke or cursor move is what makes the mode feel janky.
+ *
+ *   - A structural edit (line split/join) shifts every source-line number below
+ *     it, so the backdrop must be reparsed right away.
+ *   - An edit *within* the active line is invisible in the backdrop: that line
+ *     is drawn raw from the editor buffer, so every other line stays valid.
+ *     Just mark the backdrop stale and defer the reparse.
+ *   - Moving off a line that was edited is when its deferred change must finally
+ *     render — reparse then, and only then.
+ *   - Pure movement (no pending edit) reparses nothing; draw_live re-runs the
+ *     cheap live_build over the cached backdrop.
+ */
+static int handle_live(App *a, uint32_t id, const ncinput *ni) {
+    if (id == NCKEY_ESC) { leave_editor(a); return 1; }
+    if (ctrl_is(id, ni, 's')) { sync_source(a); save_file(a); return 1; }
+    int cy0 = a->ed.cy; size_t n0 = a->ed.n, len0 = a->ed.lines[cy0].len;
+    apply_edit_key(&a->ed, id, ni);
+
+    if (a->ed.n != n0)                            render_live(a);          /* structural: reparse now */
+    else if (a->ed.cy != cy0)  { if (a->live_stale) render_live(a); }      /* left an edited line */
+    else if (a->ed.lines[a->ed.cy].len != len0)   a->live_stale = 1;       /* within-line edit: defer */
+    return 1;
+}
+
 /* Split-mode keys: same editing as Insert, plus a live preview refresh. */
 static int handle_split(App *a, uint32_t id, const ncinput *ni) {
     if (id == NCKEY_ESC) leave_editor(a);
@@ -1945,7 +2065,7 @@ static int dispatch_key(App *a, uint32_t id, ncinput *ni) {
     if (a->helpmode) { a->helpmode = 0; return 1; }   /* any key closes help */
     if (id == NCKEY_RESIZE) {
         if (a->mode == MODE_READER) rerender(a);
-        else update_dims(a);
+        else { update_dims(a); if (a->mode == MODE_LIVE) render_live(a); }
         return 1;
     }
     if (a->cmdmode)    return handle_command(a, id, ni);
@@ -1958,6 +2078,7 @@ static int dispatch_key(App *a, uint32_t id, ncinput *ni) {
     if (a->visualmode) return handle_visual(a, id, ni);
     if (a->mode == MODE_READER) return handle_reader(a, id, ni);
     if (a->mode == MODE_SPLIT)  return handle_split(a, id, ni);
+    if (a->mode == MODE_LIVE)   return handle_live(a, id, ni);
     return handle_insert(a, id, ni);
 }
 
@@ -1980,9 +2101,10 @@ static void editor_reseed_clamped(App *a) {
 
 /* Adopt the current a->src everywhere the active mode displays it. */
 static void apply_reloaded_source(App *a) {
-    if (a->mode == MODE_INSERT || a->mode == MODE_SPLIT) {
+    if (a->mode == MODE_INSERT || a->mode == MODE_SPLIT || a->mode == MODE_LIVE) {
         editor_reseed_clamped(a);
         if (a->mode == MODE_SPLIT) render_preview(a);
+        else if (a->mode == MODE_LIVE) render_live(a);
     } else {
         rerender(a);
         reader_clamp_cursor(a);
@@ -2024,7 +2146,7 @@ static void reload_file(App *a) {
      * synced on leave/save, so fold in ed.dirty or a clean-looking reload would
      * clobber an in-progress edit instead of prompting. */
     int dirty = a->dirty ||
-                ((a->mode == MODE_INSERT || a->mode == MODE_SPLIT) && a->ed.dirty);
+                ((a->mode == MODE_INSERT || a->mode == MODE_SPLIT || a->mode == MODE_LIVE) && a->ed.dirty);
     switch (watch_reload_action(differs, dirty)) {
         case RELOAD_NONE:
             free(ns);
@@ -2158,7 +2280,7 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
     ncinput drain; uint32_t d;
     while ((d = notcurses_get_nblock(a.nc, &drain)) != 0 && d != (uint32_t)-1) { }
 
-    if (a.mode == MODE_INSERT || a.mode == MODE_SPLIT) editor_free(&a.ed);
+    if (a.mode == MODE_INSERT || a.mode == MODE_SPLIT || a.mode == MODE_LIVE) editor_free(&a.ed);
     free(a.pending_src);
     if (a.preview) doc_free(a.preview);
     hits_free(&a.hits);

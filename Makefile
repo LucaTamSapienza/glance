@@ -29,7 +29,7 @@ GUI := $(SRC)/main.c $(SRC)/tui.c $(SRC)/editor.c $(SRC)/fswatch.c \
        $(SRC)/clipboard.c $(SRC)/completion.c $(SRC)/agent.c $(SRC)/legend.c \
        $(SRC)/progress.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/bm25.c \
        $(SRC)/context.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/json.c $(SRC)/mcp.c \
-       $(SRC)/export.c $(SRC)/fuzzy.c
+       $(SRC)/export.c $(SRC)/fuzzy.c $(SRC)/live.c
 glance: $(GUI) $(CORE) $(HDRS)
 	$(CC) $(CFLAGS) -o $@ $(GUI) $(CORE) $(MD4C_LIBS) $(NC_LIBS) -lm
 
@@ -80,6 +80,8 @@ test:
 	  $(shell pkg-config --libs md4c) -lm && ./build-t-agent; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-graph tests/graph_test.c \
 	  $(SRC)/graph.c $(SRC)/vault.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-graph; \
+	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-live tests/live_test.c \
+	  $(SRC)/live.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-live; \
 	rm -rf build-t-*
 
 # Install both binaries onto PATH (default /usr/local/bin; may need sudo).

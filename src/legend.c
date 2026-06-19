@@ -24,6 +24,7 @@ const LegendRow LEGEND_READER[] = {
     { NULL,      "Edit & files" },
     { "i",       "insert mode"  },
     { "e",       "split editor" },
+    { "w",       "live (WYSIWYG)"},
     { "C-s",     "save"         },
     { ":w :q",   "write / quit" },
 };

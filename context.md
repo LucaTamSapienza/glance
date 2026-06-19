@@ -39,7 +39,7 @@ milestones there (M1 reads → M2 MCP → M3 semantic → M4 write) are all ship
 
 ```sh
 make                 # build ./glance (TUI) and ./glance-render (CLI)
-make test            # all unit tests (27 suites) under AddressSanitizer + UBSan
+make test            # all unit tests (28 suites) under AddressSanitizer + UBSan
 make install         # copy both binaries to PREFIX/bin (default /usr/local)
 
 ./glance testdata/sample.md                                  # user-side
@@ -56,7 +56,8 @@ Requires `md4c`, `notcurses`, `pkg-config` (`brew install md4c notcurses pkg-con
 ## Current status
 
 Everything below is on `main`, built clean, **27 test suites green** under
-ASan/UBSan.
+ASan/UBSan. (Branch `feat/wysiwyg-inline` adds a 28th suite, `live_test`, for the
+in-progress Live mode — see Known gaps.)
 
 ### User-side — done
 Full reader/editor: three modes; editor soft-wraps long lines; charwise (`v`) and
@@ -106,15 +107,30 @@ validation, and `emit_id`/`emit_jstr` UTF-8 hardening.
 
 ## Known gaps / open items
 
-- **Big bet — inline WYSIWYG rendering (TODO):** collapse the Reader/Insert split
-  into a single mode that renders markup *in place as you type* — write `**ciao**`
-  and it turns bold immediately, like editxr (the line under the cursor may stay
-  raw, everything else rendered). This is the north-star "Notion/Obsidian in the
-  terminal" UX. The renderer already produces a structured `Doc`, so the work is
-  an incremental editing model + cursor-accurate in-place styling, not a new
-  parser. Note glance's edge over editxr stays the **agent-side token-saving
-  layer** (bounded reads, budgeted retrieval, MCP) — that's the durable
-  differentiator; the WYSIWYG mode is about matching the editing feel.
+- **Big bet — inline WYSIWYG rendering (in progress, branch `feat/wysiwyg-inline`):**
+  collapse the Reader/Insert split into a single mode that renders markup *in place
+  as you type* — write `**ciao**` and it turns bold immediately, like editxr (the
+  source line under the cursor stays raw, everything else rendered). This is the
+  north-star "Notion/Obsidian in the terminal" UX. **Slice 1 shipped on the branch:**
+  a new **Live mode** (`w` from Reader, `MODE_LIVE`) backed by `live.c` — it
+  partitions the rendered `Doc` around the active source line (a `LiveView`: kept
+  rendered lines + an `active_at` insertion index), so tui.c blits the styled lines
+  and draws the active line raw with the editor pane, hardware cursor on it. The
+  styled backdrop (`a->preview`) is reparsed as rarely as possible: a structural
+  edit (line split/join) reparses immediately; an edit *within* the active line is
+  only marked stale (`a->live_stale`) and deferred — that line is drawn raw, so the
+  rest stays valid — and the reparse happens when the cursor finally leaves the
+  edited line; **pure navigation and within-line typing never reparse**. This
+  removed the per-move/per-keystroke md4c reparse that made the first cut janky.
+  Next slices: kill the residual layout "breathing" (active line's raw height ≠ its
+  rendered height makes lines below shift; fix = cursor-anchored viewport +
+  preserving block spacer rows in `live_build`); keep the *block* under the cursor
+  raw (lists/tables/code); a default-mode/config toggle; and an incremental
+  per-block re-render so even structural edits don't reparse the whole file. A
+  config/default-mode toggle, and an incremental re-render to drop the per-line full
+  reparse. Note glance's edge over editxr stays the **agent-side token-saving layer**
+  (bounded reads, budgeted retrieval, MCP) — the durable differentiator; the WYSIWYG
+  mode is about matching the editing feel.
 - **Agent-side (DESIGN.md §11):** the semantic tier ships a dependency-free
   feature-hashing embedder behind the `Embedder` interface; a **MiniLM-class
   encoder** is the drop-in upgrade, gated on an on-device latency/heat benchmark to

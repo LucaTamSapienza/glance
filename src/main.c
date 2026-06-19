@@ -57,6 +57,7 @@ static void print_help(void) {
 "  h j k l / arrows     move the cursor          g / G        top / bottom\n"
 "  Ctrl-D / Ctrl-U      half page down / up      PgDn / PgUp  page down / up\n"
 "  i                    insert mode (edit)       e            split: edit + preview\n"
+"  w                    live edit (WYSIWYG: markup styles in place as you type)\n"
 "  t                    table of contents        / n N        search, next, prev\n"
 "  v / V                select chars / lines      y            yank selection to clipboard\n"
 "  Enter                open link / follow [[wikilink]] under the cursor\n"

@@ -69,6 +69,7 @@ src/
   clipboard.c    pbcopy + open (system clipboard / opening links)
   vault.c        vault scan + wikilink resolution (the folder is the vault)
   graph.c        vault link graph (shared by --graph and the Ctrl-G explorer)
+  live.c         WYSIWYG (Live) projection: partition a Doc around the active source line
   # agent-memory layer:
   section.c      heading anchor -> subtree + abstract projection (bounded reads)
   receipt.c      token-cost estimate + saved-% receipt
@@ -82,7 +83,7 @@ src/
   util.c         shared UTF-8 + whole-file helpers
   tui.c          notcurses front-end: modes, input, drawing, event loop
   main.c         glance entry (TUI)    ·   main_render.c   glance-render entry (CLI)
-tests/           one unit test per pure module (make test — 27 suites)
+tests/           one unit test per pure module (make test — 28 suites)
 testdata/        sample.md showcase + an example vault/
 docs/            DESIGN.md (agent-memory north-star) · MCP.md · HANDOFF.md · REVIEW.md
 ```
