@@ -27,7 +27,9 @@ typedef void (*EmbedFn)(const Embedder *e, const char *text, size_t len, float *
 struct Embedder {
     int     dim;
     EmbedFn embed;
-    void   *ctx;     /* model handle for a real encoder; NULL for the default */
+    void   *ctx;            /* model handle for a real encoder; NULL for the default */
+    void  (*free_ctx)(void *ctx);  /* optional teardown of ctx (real encoders own
+                                      a model/context); NULL for the default */
 };
 
 /* The dependency-free default embedder at `dim` dimensions (e.g. 256). Owns no

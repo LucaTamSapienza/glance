@@ -21,7 +21,7 @@ CORE := $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/doc_html.c $(SRC)/preprocess.c 
         $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c
 HDRS := $(wildcard $(SRC)/*.h)   # rebuild on any header change
 
-.PHONY: all test clean install uninstall
+.PHONY: all test clean install uninstall semantic-smoke
 
 all: glance glance-render
 
@@ -30,8 +30,45 @@ GUI := $(SRC)/main.c $(SRC)/tui.c $(SRC)/editor.c $(SRC)/fswatch.c \
        $(SRC)/progress.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/bm25.c \
        $(SRC)/context.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/json.c $(SRC)/mcp.c \
        $(SRC)/export.c $(SRC)/fuzzy.c
-glance: $(GUI) $(CORE) $(HDRS)
-	$(CC) $(CFLAGS) -o $@ $(GUI) $(CORE) $(MD4C_LIBS) $(NC_LIBS) -lm
+
+# --- Optional semantic embeddings (All-MiniLM-L6-v2 via vendored llama.cpp) ----
+# OFF by default: the standard build carries no llama dependency and uses the
+# dependency-free hashing embedder. Enable with:  make GLANCE_SEMANTIC=1
+# (builds the vendored static libs once, then links them into glance).
+LLAMA_DIR   := third_party/llama.cpp
+LLAMA_BUILD := $(LLAMA_DIR)/build-static
+LLAMA_A     := $(LLAMA_BUILD)/src/libllama.a \
+               $(LLAMA_BUILD)/ggml/src/libggml.a \
+               $(LLAMA_BUILD)/ggml/src/libggml-cpu.a \
+               $(LLAMA_BUILD)/ggml/src/ggml-metal/libggml-metal.a \
+               $(LLAMA_BUILD)/ggml/src/ggml-blas/libggml-blas.a \
+               $(LLAMA_BUILD)/ggml/src/libggml-base.a
+LLAMA_INC   := -I$(LLAMA_DIR)/include -I$(LLAMA_DIR)/ggml/include
+LLAMA_FW    := -lc++ -framework Foundation -framework Metal -framework MetalKit \
+               -framework Accelerate -framework QuartzCore
+
+SEM_DEPS :=
+SEM_LINK :=
+ifeq ($(GLANCE_SEMANTIC),1)
+CFLAGS   += -DGLANCE_SEMANTIC $(LLAMA_INC)
+GUI      += $(SRC)/embed_minilm.c
+SEM_DEPS := $(LLAMA_BUILD)/src/libllama.a
+SEM_LINK := $(LLAMA_A) $(LLAMA_FW)
+endif
+
+# Build the vendored llama.cpp as static libs (only the `llama` target: skips the
+# app/httplib/openssl target that needs a generated build-info.h).
+$(LLAMA_BUILD)/src/libllama.a:
+	cmake -B $(LLAMA_BUILD) -S $(LLAMA_DIR) -DCMAKE_BUILD_TYPE=Release \
+	  -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF \
+	  -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF \
+	  -DLLAMA_BUILD_TOOLS=OFF -DLLAMA_BUILD_SERVER=OFF \
+	  -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON
+	cmake --build $(LLAMA_BUILD) --target llama -j
+# ------------------------------------------------------------------------------
+
+glance: $(SEM_DEPS) $(GUI) $(CORE) $(HDRS)
+	$(CC) $(CFLAGS) -o $@ $(GUI) $(CORE) $(MD4C_LIBS) $(NC_LIBS) -lm $(SEM_LINK)
 
 glance-render: $(SRC)/main_render.c $(CORE) $(HDRS)
 	$(CC) $(CFLAGS) -o $@ $(SRC)/main_render.c $(CORE) $(MD4C_LIBS)
@@ -81,6 +118,16 @@ test:
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-graph tests/graph_test.c \
 	  $(SRC)/graph.c $(SRC)/vault.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-graph; \
 	rm -rf build-t-*
+
+# Semantic embedder sanity check (needs the vendored llama build + a gguf model).
+# Not part of `make test` (which must stay model-less and dependency-light).
+#   make semantic-smoke MODEL=/path/to/all-MiniLM-L6-v2.gguf
+semantic-smoke: $(LLAMA_BUILD)/src/libllama.a
+	$(CC) -std=c11 -O2 -DGLANCE_SEMANTIC $(LLAMA_INC) -o build-t-minilm \
+	  tests/embed_minilm_smoke.c $(SRC)/embed_minilm.c $(SRC)/embed.c \
+	  $(LLAMA_A) $(LLAMA_FW) -lm
+	./build-t-minilm $(MODEL)
+	rm -f build-t-minilm
 
 # Install both binaries onto PATH (default /usr/local/bin; may need sudo).
 install: all

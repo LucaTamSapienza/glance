@@ -78,6 +78,8 @@ Embedder *embedder_default(int dim) {
 }
 
 void embedder_free(Embedder *e) {
+    if (!e) return;
+    if (e->free_ctx) e->free_ctx(e->ctx);   /* tear down a real encoder's model/context */
     free(e);
 }
 
