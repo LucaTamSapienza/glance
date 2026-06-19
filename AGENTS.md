@@ -64,6 +64,9 @@ make                 # build ./glance (TUI) and ./glance-render (CLI)
 make test            # every unit suite under UBSan (+ ASan where it can start)
 make install         # copy both binaries to $(PREFIX)/bin (default /usr/local)
 make clean           # remove binaries and build artifacts
+make GLANCE_SEMANTIC=1   # opt-in: on-device MiniLM semantic embedder
+                         # (needs `git submodule update --init`; builds vendored
+                         #  llama.cpp once; default build stays llama-free)
 
 ./glance --help                         # full usage + every key binding (both sides)
 ./glance testdata/sample.md             # user-side: open in the TUI
@@ -122,6 +125,8 @@ src/
   receipt.c      token-cost estimate + saved-% receipt
   bm25.c         Okapi BM25 lexical ranking index (the retrieval core)
   embed.c        embedding seam: Embedder interface + a hashing default + cosine
+  embed_minilm.c all-MiniLM-L6-v2 encoder via llama.cpp (GLANCE_SEMANTIC build only)
+  embcache.c     persistent content-addressed section-vector cache under .glance/
   context.c      budget planner: score order, diversity, coarse-to-fine, manifest
   edit.c         surgical source edits: section append/insert/replace, frontmatter
   doctor.c       vault hygiene facts: note size/age, link degree, dangling links

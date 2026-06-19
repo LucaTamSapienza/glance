@@ -49,9 +49,11 @@ entry points. The release artefact is darwin_arm64 only.
   semantic tier: all-MiniLM-L6-v2 (fp16, via llama.cpp) behind the `Embedder`
   seam, persistent `.glance/` embedding cache, model download-on-first-use,
   k-hop graph-expansion retrieval. Supersedes DESIGN.md §11's "next two".
-  Spike numbers and ship decisions: [[decisions]]. Open before merge: the
-  llama.cpp dependency story on main (the branch tracks
-  `third_party/llama.cpp` as a submodule).
+  Spike numbers and ship decisions: [[decisions]]. Rebased onto post-M5 main
+  on 2026-07-21 (its STATUS.md/context.md edits folded into AGENTS.md + this
+  note; verified end-to-end that day: build, suites, model fetch, warm cache
+  86 ms, k-hop). Open before merge: the llama.cpp dependency story on main
+  (the branch tracks `third_party/llama.cpp` as a submodule).
 - **feat/wysiwyg-inline — ON HOLD.** Inline WYSIWYG editing, collapsing
   Reader/Insert into one mode. The big user-side bet; parked, not abandoned.
 - **feature/claim-store — Eddie's research spike, analyzed 2026-07-10.**
