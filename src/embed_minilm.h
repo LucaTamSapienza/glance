@@ -17,4 +17,12 @@
  * fails to load. Free with embedder_free (it tears down the model + context). */
 Embedder *embedder_minilm(const char *model_path, int n_gpu_layers);
 
+/* Resolve a usable all-MiniLM-L6-v2 gguf path, downloading it once if needed.
+ * Order: $GLANCE_MINILM_MODEL (if it points at a real file), then the cached
+ * default ~/.cache/glance/<model>.gguf — downloaded from Hugging Face on first
+ * use (~44 MB, with a one-time stderr notice). Returns a pointer to a static
+ * buffer, or NULL if no model is available (e.g. offline first run), so the
+ * caller can fall back to the lexical/hashing path. */
+const char *minilm_model_path(void);
+
 #endif /* GLANCE_EMBED_MINILM_H */

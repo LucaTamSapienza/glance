@@ -15,6 +15,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
 
 /* Per-embedder model state, hung off Embedder.ctx. */
 typedef struct {
@@ -107,6 +111,8 @@ Embedder *embedder_minilm(const char *model_path, int n_gpu_layers) {
     cp.n_batch      = 512;
     cp.embeddings   = true;
     cp.pooling_type = LLAMA_POOLING_TYPE_MEAN;
+    const char *th = getenv("GLANCE_MINILM_THREADS");   /* default: llama's auto */
+    if (th && atoi(th) > 0) { cp.n_threads = atoi(th); cp.n_threads_batch = atoi(th); }
     struct llama_context *lctx = llama_init_from_model(model, cp);
     if (!lctx) { llama_model_free(model); return NULL; }
 
@@ -123,4 +129,68 @@ Embedder *embedder_minilm(const char *model_path, int n_gpu_layers) {
     e->ctx      = m;
     e->free_ctx = minilm_free;
     return e;
+}
+
+/* ---- model resolution + first-use download --------------------------------- */
+
+#define MINILM_FILE "all-MiniLM-L6-v2-ggml-model-f16.gguf"
+#define MINILM_URL  "https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/" MINILM_FILE
+
+/* True if `path` is a non-empty file whose first bytes are the GGUF magic. */
+static int is_gguf(const char *path) {
+    struct stat st;
+    if (stat(path, &st) != 0 || st.st_size <= 0) return 0;
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    char m[4] = {0};
+    size_t got = fread(m, 1, 4, f);
+    fclose(f);
+    return got == 4 && memcmp(m, "GGUF", 4) == 0;
+}
+
+/* Run `curl -fL -o out url` without a shell (no injection from $HOME). Returns 0
+ * on a clean exit. */
+static int fetch(const char *url, const char *out) {
+    pid_t pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) {
+        execlp("curl", "curl", "-fL", "--retry", "2", "-o", out, url, (char *)NULL);
+        _exit(127);                               /* curl not found */
+    }
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) return -1;
+    return (WIFEXITED(status) && WEXITSTATUS(status) == 0) ? 0 : -1;
+}
+
+/* See embed_minilm.h. */
+const char *minilm_model_path(void) {
+    static char path[4096];
+
+    const char *env = getenv("GLANCE_MINILM_MODEL");
+    if (env && *env && is_gguf(env)) { snprintf(path, sizeof path, "%s", env); return path; }
+
+    const char *home = getenv("HOME");
+    if (!home || !*home) return NULL;
+    char dir[3500];
+    snprintf(dir, sizeof dir, "%s/.cache/glance", home);
+    snprintf(path, sizeof path, "%s/%s", dir, MINILM_FILE);
+    if (is_gguf(path)) return path;
+
+    /* First use: download to the cache dir. mkdir the chain by hand (no shell). */
+    char cache[3500];
+    snprintf(cache, sizeof cache, "%s/.cache", home);
+    mkdir(cache, 0755);
+    mkdir(dir, 0755);
+
+    fprintf(stderr, "glance: fetching the all-MiniLM-L6-v2 model (~44 MB, one-time) -> %s\n", path);
+    char tmp[4096];
+    snprintf(tmp, sizeof tmp, "%s.part", path);
+    if (fetch(MINILM_URL, tmp) != 0 || !is_gguf(tmp)) {
+        unlink(tmp);
+        fprintf(stderr, "glance: model download failed; using the lexical fallback.\n");
+        return NULL;
+    }
+    if (rename(tmp, path) != 0) { unlink(tmp); return NULL; }
+    fprintf(stderr, "glance: model ready.\n");
+    return path;
 }

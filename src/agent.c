@@ -359,13 +359,13 @@ static void sec_push(Sec **v, int *n, int *cap, int note, char *anchor,
  * MiniLM build (GLANCE_SEMANTIC) and a model available, use the real sentence
  * encoder (CPU by default — no Metal shader warm-up on the one-shot CLI path;
  * GLANCE_MINILM_NGL overrides); otherwise the dependency-free hashing embedder.
- * The model path comes from GLANCE_MINILM_MODEL for now — slice 3 adds the
- * download-on-first-use fallback. *model_id is a short stable string so the
+ * minilm_model_path resolves the gguf ($GLANCE_MINILM_MODEL, else the cached
+ * default, downloaded on first use). *model_id is a short stable string so the
  * cache never mixes vectors from different encoders. Returns NULL on OOM. */
 static Embedder *resolve_embedder(const char **model_id) {
 #ifdef GLANCE_SEMANTIC
-    const char *path = getenv("GLANCE_MINILM_MODEL");
-    if (path && *path) {
+    const char *path = minilm_model_path();           /* env -> cache -> download */
+    if (path) {
         const char *g = getenv("GLANCE_MINILM_NGL");
         Embedder *e = embedder_minilm(path, g ? atoi(g) : 0);
         if (e) { *model_id = "minilm-l6-384"; return e; }
