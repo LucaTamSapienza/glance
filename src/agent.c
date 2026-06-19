@@ -7,6 +7,10 @@
 #include "context.h"
 #include "bm25.h"
 #include "embed.h"
+#include "embcache.h"
+#ifdef GLANCE_SEMANTIC
+#include "embed_minilm.h"
+#endif
 #include "edit.h"
 #include "fs_save.h"
 #include "vault.h"
@@ -351,6 +355,26 @@ static void sec_push(Sec **v, int *n, int *cap, int note, char *anchor,
 #define CTX_EMBED_DIM      256
 #define CTX_SEMANTIC_LAMBDA 1.0
 
+/* Resolve the embedder for --semantic and tag it for the on-disk cache. With a
+ * MiniLM build (GLANCE_SEMANTIC) and a model available, use the real sentence
+ * encoder (CPU by default — no Metal shader warm-up on the one-shot CLI path;
+ * GLANCE_MINILM_NGL overrides); otherwise the dependency-free hashing embedder.
+ * The model path comes from GLANCE_MINILM_MODEL for now — slice 3 adds the
+ * download-on-first-use fallback. *model_id is a short stable string so the
+ * cache never mixes vectors from different encoders. Returns NULL on OOM. */
+static Embedder *resolve_embedder(const char **model_id) {
+#ifdef GLANCE_SEMANTIC
+    const char *path = getenv("GLANCE_MINILM_MODEL");
+    if (path && *path) {
+        const char *g = getenv("GLANCE_MINILM_NGL");
+        Embedder *e = embedder_minilm(path, g ? atoi(g) : 0);
+        if (e) { *model_id = "minilm-l6-384"; return e; }
+    }
+#endif
+    *model_id = "hash-256";
+    return embedder_default(CTX_EMBED_DIM);
+}
+
 int agent_context(const char *dir, const char *query, size_t budget, int semantic) {
     DIR *probe = opendir(dir);
     if (!probe) return 1;
@@ -410,9 +434,14 @@ int agent_context(const char *dir, const char *query, size_t budget, int semanti
      * the top BM25 score) with each section's embedding cosine to the query, so
      * notes a keyword search misses can still surface. Lexical-only is default. */
     if (semantic) {
-        Embedder *emb = embedder_default(CTX_EMBED_DIM);
+        const char *model_id = NULL;
+        Embedder *emb = resolve_embedder(&model_id);
         if (emb) {
             int dim = emb->dim;
+            /* Cache section vectors under <dir>/.glance/: only the query is
+             * embedded live, unchanged sections hit the cache, edited ones miss
+             * and are re-embedded. Keyed by the model + section text. */
+            EmbCache *cache = embcache_open(dir, dim, model_id);
             float *qv = malloc((size_t)dim * sizeof *qv);
             float *sv = malloc((size_t)dim * sizeof *sv);
             if (qv && sv) {
@@ -421,13 +450,21 @@ int agent_context(const char *dir, const char *query, size_t budget, int semanti
                 for (int s = 0; s < nsec; s++) if (sec[s].score > maxb) maxb = sec[s].score;
                 for (int s = 0; s < nsec; s++) {
                     double bn = (maxb > 0.0) ? sec[s].score / maxb : 0.0;
-                    emb->embed(emb, sec[s].full, strlen(sec[s].full), sv);
-                    double cos = embed_cosine(qv, sv, dim);
+                    const char *txt = sec[s].full;
+                    size_t tl = strlen(txt);
+                    const float *vec = cache ? embcache_get(cache, txt, tl) : NULL;
+                    if (!vec) {                       /* miss: embed now, remember it */
+                        emb->embed(emb, txt, tl, sv);
+                        vec = sv;
+                        if (cache) embcache_put(cache, txt, tl, sv);
+                    }
+                    double cos = embed_cosine(qv, vec, dim);
                     if (cos < 0.0) cos = 0.0;
                     sec[s].score = bn + CTX_SEMANTIC_LAMBDA * cos;
                 }
             }
             free(qv); free(sv);
+            if (cache) { embcache_save(cache); embcache_free(cache); }
             embedder_free(emb);
         }
     }

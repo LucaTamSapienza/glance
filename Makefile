@@ -28,7 +28,7 @@ all: glance glance-render
 GUI := $(SRC)/main.c $(SRC)/tui.c $(SRC)/editor.c $(SRC)/fswatch.c \
        $(SRC)/clipboard.c $(SRC)/completion.c $(SRC)/agent.c $(SRC)/legend.c \
        $(SRC)/progress.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/bm25.c \
-       $(SRC)/context.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/json.c $(SRC)/mcp.c \
+       $(SRC)/context.c $(SRC)/embed.c $(SRC)/embcache.c $(SRC)/edit.c $(SRC)/json.c $(SRC)/mcp.c \
        $(SRC)/export.c $(SRC)/fuzzy.c
 
 # --- Optional semantic embeddings (All-MiniLM-L6-v2 via vendored llama.cpp) ----
@@ -93,11 +93,12 @@ test:
 	$(CC) $(TCFLAGS) -lm -o build-t-bm25 tests/bm25_test.c $(SRC)/bm25.c && ./build-t-bm25; \
 	$(CC) $(TCFLAGS) -o build-t-context tests/context_test.c $(SRC)/context.c && ./build-t-context; \
 	$(CC) $(TCFLAGS) -lm -o build-t-embed tests/embed_test.c $(SRC)/embed.c && ./build-t-embed; \
+	$(CC) $(TCFLAGS) -o build-t-embcache tests/embcache_test.c $(SRC)/embcache.c && ./build-t-embcache; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-edit tests/edit_test.c \
 	  $(SRC)/edit.c $(SRC)/section.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-edit; \
 	$(CC) $(TCFLAGS) -lm -o build-t-json tests/json_test.c $(SRC)/json.c $(SRC)/util.c && ./build-t-json; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-mcp tests/mcp_test.c \
-	  $(SRC)/mcp.c $(SRC)/json.c $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
+	  $(SRC)/mcp.c $(SRC)/json.c $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/embcache.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
 	  $(shell pkg-config --libs md4c) -lm && ./build-t-mcp; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-section tests/section_test.c \
 	  $(SRC)/section.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-section; \
@@ -113,7 +114,7 @@ test:
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-vault tests/vault_test.c \
 	  $(SRC)/vault.c $(shell pkg-config --libs md4c) && ./build-t-vault; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-agent tests/agent_test.c \
-	  $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
+	  $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/embcache.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
 	  $(shell pkg-config --libs md4c) -lm && ./build-t-agent; \
 	$(CC) $(TCFLAGS) $(shell pkg-config --cflags md4c) -o build-t-graph tests/graph_test.c \
 	  $(SRC)/graph.c $(SRC)/vault.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-graph; \
