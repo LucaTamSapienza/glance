@@ -11,6 +11,7 @@
 #include "agent.h"
 #include "mcp.h"
 #include "theme.h"
+#include "export.h"
 #include "util.h"
 
 #include <stdio.h>
@@ -43,12 +44,14 @@ static void print_help(void) {
 "  glance --edit F OP H T   edit section H of file F (OP=append|insert|replace,\n"
 "                           T=text), saved atomically; prints the new section\n"
 "  glance --set-frontmatter F K V   set YAML frontmatter key K to value V in F\n"
+"  glance --export F [OUT]   export F to HTML (or PDF if OUT ends in .pdf);\n"
+"                           OUT defaults to F with a .html extension\n"
 "  glance mcp               serve the agent-memory tools over MCP (stdio JSON-RPC)\n"
 "  glance --theme NAME      open using colour theme NAME (see --list-themes)\n"
 "  glance --list-themes     list the available colour themes\n"
 "  glance --help            show this help\n"
 "\n"
-"  glance-render [-w WIDTH] [-l] [--theme NAME] [FILE]   render to ANSI on stdout\n"
+"  glance-render [-w WIDTH] [-l] [--theme NAME] [--html] [FILE]   render to stdout\n"
 "\n"
 "KEYS — Reader\n"
 "  h j k l / arrows     move the cursor          g / G        top / bottom\n"
@@ -59,6 +62,7 @@ static void print_help(void) {
 "  Enter                open link / follow [[wikilink]] under the cursor\n"
 "  - / Ctrl-O           back to the previous file (after following a link)\n"
 "  b                    backlinks panel          Ctrl-G       graph explorer\n"
+"  Ctrl-P               fuzzy file switcher (type to filter, Enter opens)\n"
 "  T                    theme picker             ?            toggle the help legend\n"
 "  Ctrl-S               save                     Ctrl-C       quit\n"
 "  :w :wq :q :q!        write / quit (vi-style)\n"
@@ -173,6 +177,22 @@ int main(int argc, char **argv) {
     if (argc > 4 && !strcmp(argv[1], "--set-frontmatter")) {
         /* glance --set-frontmatter FILE KEY VALUE */
         return agent_frontmatter(argv[2], argv[3], argv[4]);
+    }
+    if (argc > 2 && !strcmp(argv[1], "--export")) {
+        /* glance --export FILE [OUT]; OUT extension picks HTML/PDF, default .html */
+        const char *in = argv[2];
+        char outbuf[1100];
+        const char *out = (argc > 3) ? argv[3] : NULL;
+        if (!out) {                          /* default OUT = FILE with .html */
+            char tmp[1024]; snprintf(tmp, sizeof tmp, "%s", in);
+            char *dot = strrchr(tmp, '.'), *slash = strrchr(tmp, '/');
+            if (dot && (!slash || dot > slash)) *dot = '\0';   /* drop the extension */
+            snprintf(outbuf, sizeof outbuf, "%s.html", tmp);
+            out = outbuf;
+        }
+        const Theme *th = theme_name ? theme_by_name(theme_name) : NULL;
+        if (!th) th = theme_auto(1);
+        return export_file(in, out, th);
     }
     if (argc > 2 && !strcmp(argv[1], "--graph"))   return agent_graph(argv[2]);
     if (argc > 2 && !strcmp(argv[1], "--section")) {

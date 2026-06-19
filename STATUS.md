@@ -35,11 +35,14 @@ Nothing about the output is opaque to us.
 ```
 render.h/.c    md4c -> structured Doc (lines of styled runs); links tagged
 doc_ansi.c     Doc -> ANSI string (render CLI + tests)
+doc_html.c     Markdown -> self-contained themed HTML (md4c SAX sink; reuses highlight.c)
+export.c       export a file to HTML, or PDF via an external converter
 preprocess.c   tolerant-Markdown fix-ups (bold tighten, setext neutralize)
 search.c       case-insensitive full-text search over a Doc
 toc.c          table of contents from tagged heading lines
 editor.c       line-array text buffer with a rune-aware cursor
 completion.c   bracket auto-pairing (no backtick/fence)
+fuzzy.c        subsequence fuzzy match + ranking (the Ctrl-P file switcher)
 legend.c       Reader key-sidebar layout (width split, aligned row formatting)
 progress.c     Reader scroll/progress HUD logic (percent, ride-along, spinner)
 theme.c        color themes: built-in palettes, chrome derivation, config parser
@@ -78,15 +81,19 @@ The renderer emits a **structured Doc**; the sinks consume it — `doc_ansi.c`
   width; the cursor and scrolling count wrapped visual rows.
 - **Search** `/` with highlight, `n`/`N` next/prev. **TOC** panel `t`, jump on Enter.
 - **Save** atomic: `:w` `:wq` `:x`, `Ctrl-S`; `:q` refuses on unsaved, `:q!`
-  discards. **Live reload** on external change (kqueue), only when clean.
+  discards. **Live reload** on external change (kqueue): when the buffer is clean
+  the disk version is adopted in any mode (Reader/Insert/Split), so a second
+  session's edits sync through; with unsaved edits a conflict prompt is raised
+  (`r` reload / `k` keep) instead of silently dropping either side.
 - **Clipboard:** visual select — `v` charwise, `V` linewise — `y` yanks to the
   system clipboard. **Open links** / follow `[[wikilinks]]` with Enter.
 - **Key legend sidebar** `?`: a rounded right-side panel; the document reflows
   beside it (no overlay), with a narrow-window centered-overlay fallback.
 - **Trackpad/wheel scrolling** (cursor rides along) + a top-right reading-progress
   HUD (percent + a dots-ring spinner).
-- **Color themes**: 8 built-ins (`auto`, `dracula`, `nord`, `gruvbox-dark`,
-  `solarized-dark`/`-light`, `github-light`), `--theme`, `--list-themes`, a live
+- **Color themes**: 12 built-ins (`auto`, `dracula`, `nord`, `gruvbox-dark`,
+  `solarized-dark`/`-light`, `github-light`, `tokyo-night`, `catppuccin-mocha`,
+  `rose-pine`, `everforest`), `--theme`, `--list-themes`, a live
   **`T`** picker (preview-as-you-browse, persists to config), and
   `~/.config/glance/config`. Drives the document and the UI chrome.
 - **Syntax highlighting** in fenced code blocks, per language (`highlight.c`):
@@ -97,8 +104,14 @@ The renderer emits a **structured Doc**; the sinks consume it — `doc_ansi.c`
   graphics where supported, half-blocks otherwise, with a `▦ alt` placeholder
   fallback. `Ctrl-V` pastes a clipboard image into a `<name>_media/` folder.
 - **Vault navigation:** `[[wikilinks]]` resolve/follow across subfolders;
-  back-stack (`-`/`Ctrl-O`); backlinks panel (`b`); graph explorer (`Ctrl-G`).
+  back-stack (`-`/`Ctrl-O`); backlinks panel (`b`); graph explorer (`Ctrl-G`);
+  **fuzzy file switcher** (`Ctrl-P`) — type to filter the whole vault, ranked by
+  a subsequence match (`fuzzy.c`), Enter opens.
 - **Cursor sync** maps reader↔editor by exact source lines (`Line.source_line`).
+- **Export:** `glance-render --html FILE` emits a self-contained, themed HTML page
+  (semantic + reflowable, syntax-highlighted code, no JS/CDN); `glance --export
+  FILE [OUT]` writes HTML, or a PDF when `OUT` ends in `.pdf` (HTML handed to a
+  detected converter: weasyprint / wkhtmltopdf / headless Chrome).
 
 ### Agent-side (the M1–M4 memory layer)
 
@@ -136,22 +149,27 @@ image, `Alt`/`Ctrl`+`←`/`→` word jump, `Ctrl-A`/`Ctrl-E` line start/end.
 
 ```sh
 make                  # glance (TUI) + glance-render (CLI)
-make test             # all module unit tests, ASan/UBSan (23 suites)
+make test             # all module unit tests, ASan/UBSan (27 suites)
 make install          # -> $(PREFIX)/bin (default /usr/local; honours PREFIX/DESTDIR)
 ./glance --help       # full usage + every key binding (user + agent)
 ```
 
 ## Tests
 
-Pure modules are unit-tested under ASan/UBSan (`make test`) — **23 suites**:
-editor, preprocess, search, toc, fs_save, completion, legend, progress, theme,
-highlight, image_size, render, vault, graph; and the agent layer — receipt, bm25,
-context, section, embed, json, edit, agent (JSON exports + a write roundtrip),
+Pure modules are unit-tested under ASan/UBSan (`make test`) — **27 suites**:
+editor, preprocess, search, toc, fs_save, fswatch, completion, fuzzy, legend, progress,
+theme, highlight, image_size, render, doc_html, vault, graph; and the agent layer — receipt, bm25,
+context, section, embed, json, edit, export, agent (JSON exports + a write roundtrip),
 mcp (a full initialize → tools/list → tools/call session + the error paths). The
 notcurses front-end needs a real terminal and is verified interactively.
 
 ## Known limitations / future
 
+- **Inline WYSIWYG rendering (TODO, big bet):** render markup *in place as you
+  type* — `**ciao**` becomes bold immediately — collapsing the Reader/Insert
+  split into one mode (à la editxr). Builds on the existing structured `Doc`;
+  needs an incremental editing model and cursor-accurate in-place styling, not a
+  new parser. glance's durable edge stays the agent-side token-saving layer.
 - **Agent-side (DESIGN.md §11):** the semantic tier ships a feature-hashing
   embedder (a structural signal, not a model); a MiniLM-class encoder is the
   drop-in upgrade behind the `Embedder` interface, gated on an on-device benchmark.

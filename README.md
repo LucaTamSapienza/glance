@@ -50,8 +50,17 @@ editor), **Split** (editor + live preview).
 | `Enter` | follow link / `[[wikilink]]` | `t` | table of contents |
 | `-` / `Ctrl-O` | back to previous file | `b` | backlinks panel |
 | `?` | key legend (sidebar) | `Ctrl-G` | graph explorer |
-| `T` | theme picker (live) | `Ctrl-S` | save |
-| `:w` `:wq` `:x` `:q` `:q!` | write / quit (vi-style) | | |
+| `Ctrl-P` | fuzzy file switcher | `T` | theme picker (live) |
+| `Ctrl-S` | save | `:w` `:wq` `:x` `:q` `:q!` | write / quit (vi-style) |
+
+**Fuzzy file switcher** (`Ctrl-P`): type to filter every file in the vault by a
+subsequence match (ranked best-first), `↑`/`↓` or `Ctrl-N`/`Ctrl-P` to move,
+`Enter` to open, `Esc` to close.
+
+**Live reload across sessions**: if the file changes on disk and your buffer has
+no unsaved edits, glance adopts the new version automatically — so a second
+glance session editing the same file syncs through. With unsaved edits it instead
+shows a conflict prompt: `r` to reload (take the disk copy) or `k` to keep yours.
 
 Press `?` to slide out a **key legend** on the right; the document reflows into
 the space beside it. **Trackpad / mouse-wheel scrolling** works (the cursor rides
@@ -68,8 +77,9 @@ re-centres to walk the vault.
 
 ### Themes
 
-Eight built-ins — `auto` (default; follows your terminal background), `dracula`,
-`nord`, `gruvbox-dark`, `solarized-dark`, `solarized-light`, `github-light`. Pick
+Twelve built-ins — `auto` (default; follows your terminal background), `dracula`,
+`nord`, `gruvbox-dark`, `solarized-dark`, `solarized-light`, `github-light`,
+`tokyo-night`, `catppuccin-mocha`, `rose-pine`, `everforest`. Pick
 one with `--theme`, list them with `--list-themes`, or press **`T`** in the reader
 for a **live picker** (the page recolors as you browse; `Enter` keeps and saves
 it, `Esc` reverts). Set a default and define custom palettes in
@@ -89,6 +99,23 @@ heading1 = #ff00aa
 up to the nearest `.git` or `.obsidian` marker (falling back to the file's
 directory), then scans it **recursively** — so `[[wikilinks]]` resolve to notes
 anywhere in the tree. No `--init`, no index file.
+
+### Export to HTML / PDF
+
+glance owns the renderer, so it can emit a **self-contained, themed HTML page**
+(semantic and reflowable, with the same syntax-highlighted code as the terminal —
+no JavaScript, no CDN):
+
+```sh
+glance-render --html notes.md > notes.html          # HTML to stdout
+glance --export notes.md                            # writes notes.html
+glance --export notes.md out.pdf                    # PDF (OUT ending in .pdf)
+```
+
+PDF is produced by handing the HTML to the first converter found —
+**weasyprint**, **wkhtmltopdf**, or headless **Chrome/Chromium**; if none is
+available glance writes the `.html` instead and tells you. `--theme` applies to
+the export too.
 
 ---
 

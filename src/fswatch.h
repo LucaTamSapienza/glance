@@ -17,4 +17,12 @@ void watch_drain(Watch *w);
 
 void watch_close(Watch *w);
 
+/* What to do when the watched file changed on disk. Pure decision, split out so
+ * it can be unit-tested without a terminal:
+ *   RELOAD_NONE     — content is identical (e.g. our own save); do nothing
+ *   RELOAD_APPLY    — adopt the disk version (no unsaved edits to lose)
+ *   RELOAD_CONFLICT — disk and buffer both changed; ask the user which to keep */
+typedef enum { RELOAD_NONE, RELOAD_APPLY, RELOAD_CONFLICT } ReloadAction;
+ReloadAction watch_reload_action(int content_differs, int dirty);
+
 #endif /* GLANCE_FSWATCH_H */

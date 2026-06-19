@@ -23,6 +23,11 @@ int main(void) {
     expect(theme_auto(1)->dark, 1, "auto(1) is dark");
     expect(theme_auto(0)->dark, 0, "auto(0) is light");
     expect(theme_count() >= 8, 1, "at least 8 built-ins");
+    /* newer built-in palettes are present and dark */
+    expect(theme_by_name("tokyo-night") != NULL, 1, "tokyo-night exists");
+    expect(theme_by_name("catppuccin-mocha") != NULL, 1, "catppuccin-mocha exists");
+    expect(theme_by_name("rose-pine") != NULL, 1, "rose-pine exists");
+    expect(theme_by_name("everforest") != NULL, 1, "everforest exists");
 
     /* HL_TEXT derives from code_fg */
     const Theme *d = theme_by_name("dracula");
