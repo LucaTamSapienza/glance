@@ -11,3 +11,6 @@
 .DS_Store
 build.log
 testdata/todo.md
+
+# local embedding spike (llama.cpp build + models, not committed)
+/spike/
