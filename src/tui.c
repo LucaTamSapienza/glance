@@ -2020,7 +2020,12 @@ static void reload_file(App *a) {
     fclose(f);
     if (!ns) return;
     int differs = !(nlen == a->srclen && memcmp(ns, a->src, nlen) == 0);
-    switch (watch_reload_action(differs, a->dirty)) {
+    /* In Insert/Split the live edits live in the editor buffer; a->dirty is only
+     * synced on leave/save, so fold in ed.dirty or a clean-looking reload would
+     * clobber an in-progress edit instead of prompting. */
+    int dirty = a->dirty ||
+                ((a->mode == MODE_INSERT || a->mode == MODE_SPLIT) && a->ed.dirty);
+    switch (watch_reload_action(differs, dirty)) {
         case RELOAD_NONE:
             free(ns);
             return;

@@ -18,6 +18,7 @@
 #include <libgen.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <signal.h>
 
 int export_wants_pdf(const char *out) {
     if (!out) return 0;
@@ -64,34 +65,90 @@ static int have_cmd(const char *cmd) {
     return 0;
 }
 
+/* Recursively remove a directory we created (a Chrome profile under /tmp). The
+ * path is always our own mkdtemp result, never user input, so the argv `rm -rf`
+ * is safe. */
+static void rmrf(const char *dir) {
+    char *argv[] = { "rm", "-rf", (char *)dir, NULL };
+    run(argv);
+}
+
+/* True if `path` begins with the "%PDF" signature — i.e. a converter actually
+ * produced a PDF, not an empty/garbage file. */
+static int is_pdf(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    char sig[4] = {0};
+    size_t n = fread(sig, 1, 4, f);
+    fclose(f);
+    return n == 4 && memcmp(sig, "%PDF", 4) == 0;
+}
+
+/* Spawn argv (output to /dev/null) and wait up to `timeout_s` for the PDF at
+ * `out` to appear. Returns 0 if `out` is a valid PDF afterwards. Polling rather
+ * than a plain wait is deliberate: headless Chrome writes the PDF promptly but
+ * can linger for tens of seconds before exiting, so we stop as soon as the file
+ * is ready and kill a lingering child — and a genuinely stuck converter can't
+ * hang glance forever. Converters that exit promptly (weasyprint/wkhtmltopdf)
+ * are reaped on the first poll. */
+static int run_to_pdf(char *const argv[], const char *out, int timeout_s) {
+    pid_t pid = fork();
+    if (pid < 0) return 1;
+    if (pid == 0) {
+        int dn = open("/dev/null", O_WRONLY);
+        if (dn >= 0) { dup2(dn, 1); dup2(dn, 2); close(dn); }
+        execvp(argv[0], argv);
+        _exit(127);
+    }
+    int reaped = 0;
+    for (int i = 0; i < timeout_s * 5; i++) {        /* poll every 200ms */
+        if (waitpid(pid, NULL, WNOHANG) == pid) { reaped = 1; break; }
+        if (is_pdf(out)) { usleep(400000); break; }  /* ready; let the write settle */
+        usleep(200000);
+    }
+    if (!reaped) { kill(pid, SIGKILL); waitpid(pid, NULL, 0); }
+    return is_pdf(out) ? 0 : 1;
+}
+
 /* Convert the HTML at `html_path` to a PDF at `out`, trying known converters in
- * turn. Returns 0 on success, non-zero if none worked. */
+ * turn. Returns 0 only when `out` is genuinely a PDF afterwards (validated by
+ * run_to_pdf), so a converter that exits without producing one — e.g. headless
+ * Chrome silently attaching to a running profile — is not mistaken for success. */
 static int html_to_pdf(const char *html_path, const char *out) {
     /* weasyprint <in.html> <out.pdf> */
     if (have_cmd("weasyprint")) {
         char *argv[] = { "weasyprint", (char *)html_path, (char *)out, NULL };
-        if (run(argv) == 0) return 0;
+        if (run_to_pdf(argv, out, 30) == 0) return 0;
     }
     /* wkhtmltopdf -q <in.html> <out.pdf> */
     if (have_cmd("wkhtmltopdf")) {
         char *argv[] = { "wkhtmltopdf", "-q", (char *)html_path, (char *)out, NULL };
-        if (run(argv) == 0) return 0;
+        if (run_to_pdf(argv, out, 30) == 0) return 0;
     }
-    /* Headless Chrome / Chromium: --print-to-pdf=<out> <in.html> */
+    /* Headless Chrome / Chromium: --print-to-pdf=<out> <in.html>. A dedicated,
+     * throwaway --user-data-dir is essential: without it, when the user already
+     * has Chrome open, the new process attaches to that profile and the headless
+     * print silently no-ops (the cause behind "the PDF stayed HTML"). */
     static const char *chromes[] = {
         "google-chrome", "google-chrome-stable", "chromium", "chromium-browser",
         "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
         "/Applications/Chromium.app/Contents/MacOS/Chromium",
     };
-    for (size_t i = 0; i < sizeof chromes / sizeof chromes[0]; i++) {
+    char profile[] = "/tmp/glance-chrome-XXXXXX";
+    char *prof = mkdtemp(profile);
+    int ok = 0;
+    for (size_t i = 0; i < sizeof chromes / sizeof chromes[0] && !ok; i++) {
         if (!have_cmd(chromes[i])) continue;
-        char pflag[4200];
+        char pflag[4200], uflag[4200];
         snprintf(pflag, sizeof pflag, "--print-to-pdf=%s", out);
+        snprintf(uflag, sizeof uflag, "--user-data-dir=%s", prof ? prof : "/tmp/glance-chrome");
         char *argv[] = { (char *)chromes[i], "--headless=new", "--disable-gpu",
-                         "--no-pdf-header-footer", pflag, (char *)html_path, NULL };
-        if (run(argv) == 0) return 0;
+                         "--no-first-run", "--no-default-browser-check",
+                         "--no-pdf-header-footer", uflag, pflag, (char *)html_path, NULL };
+        ok = (run_to_pdf(argv, out, 30) == 0);
     }
-    return 1;
+    if (prof) rmrf(prof);
+    return ok ? 0 : 1;
 }
 
 int export_file(const char *in, const char *out, const Theme *theme) {
@@ -116,21 +173,27 @@ int export_file(const char *in, const char *out, const Theme *theme) {
         return 0;
     }
 
-    /* PDF: stage the HTML next to the output, convert, then clean up. */
+    /* PDF: stage the HTML beside the output (a real .html extension — converters
+     * key off it), convert, then clean up. */
     char tmp[4200];
-    snprintf(tmp, sizeof tmp, "%s.html.tmp", out);
+    snprintf(tmp, sizeof tmp, "%s.glance-tmp.html", out);
     int wrote = atomic_write(tmp, html, strlen(html));
-    free(html);
-    if (wrote != 0) { fprintf(stderr, "%s: write failed\n", tmp); return 1; }
+    if (wrote != 0) { free(html); fprintf(stderr, "%s: write failed\n", tmp); return 1; }
 
     int rc = html_to_pdf(tmp, out);
     unlink(tmp);
     if (rc != 0) {
-        fprintf(stderr, "no HTML->PDF converter found. Install one of: weasyprint, "
-                        "wkhtmltopdf, or Google Chrome / Chromium.\n"
-                        "Tip: export to .html instead, or pipe glance-render --html.\n");
+        /* Fall back to a sibling .html so the export is never empty-handed. */
+        char alt[4200];
+        snprintf(alt, sizeof alt, "%s.html", out);
+        atomic_write(alt, html, strlen(html));
+        free(html);
+        fprintf(stderr, "could not produce a PDF (no working converter — install "
+                        "weasyprint / wkhtmltopdf, or close other Chrome windows).\n"
+                        "wrote %s instead.\n", alt);
         return 1;
     }
+    free(html);
     fprintf(stderr, "wrote %s\n", out);
     return 0;
 }
