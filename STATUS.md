@@ -125,9 +125,13 @@ reusing the same `Doc`. See [`docs/DESIGN.md`](docs/DESIGN.md).
   `--backlinks … --context`, `--since TS`, plus `--links`/`--graph`.
 - **Budgeted retrieval:** `--context "Q" DIR [--budget N] [--semantic]` returns
   `{query,budget_tokens,chunks,truncated,receipt}` — note sections ranked by BM25
-  fused with a link-graph prior, selected with diversity and a coarse-to-fine
-  projection (full → abstract), a truncation manifest, and a token receipt. Lexical
-  + graph by default; `--semantic` fuses an embedding cosine. Two embedders behind
+  fused with a link-graph signal, selected with diversity and a coarse-to-fine
+  projection (full → abstract), a truncation manifest, and a token receipt. The
+  graph signal is twofold: a *prior* boosting matched notes, and **k-hop
+  spreading activation** (`graph_expand`) that *surfaces* a linked note no keyword
+  or embedding matched (tagged `"surfaced":"graph"` + `"via"`; knobs
+  `GLANCE_GRAPH_KHOP`/`GLANCE_GRAPH_ALPHA`). Lexical + graph by default;
+  `--semantic` fuses an embedding cosine. Two embedders behind
   one seam: the dependency-free feature-hashing default, and **`all-MiniLM-L6-v2`**
   — a 384-dim on-device sentence encoder via a vendored, statically-linked
   llama.cpp (`embed_minilm.c`, built with `make GLANCE_SEMANTIC=1`), with section
@@ -177,9 +181,12 @@ notcurses front-end needs a real terminal and is verified interactively.
   needs an incremental editing model and cursor-accurate in-place styling, not a
   new parser. glance's durable edge stays the agent-side token-saving layer.
 - **Agent-side (DESIGN.md §11):** the semantic tier ships a feature-hashing
-  embedder (a structural signal, not a model); a MiniLM-class encoder is the
-  drop-in upgrade behind the `Embedder` interface, gated on an on-device benchmark.
-  A persistent `.glance/` index cache and graph-expansion retrieval are next.
+  embedder (a structural signal, not a model) plus on-device MiniLM-L6 behind the
+  `Embedder` interface (`GLANCE_SEMANTIC` build), with a persistent `.glance/`
+  vector cache. **Graph-expansion retrieval shipped** (`graph_expand`, k-hop
+  zero-lexical surfacing). Next: incremental `.glance/` refresh via `fswatch`, the
+  multilingual embedder swap (EmbeddingGemma-300M @ 256-dim), and an opt-in
+  `--rerank` flag (jina multilingual cross-encoder).
 - **Cursor sync** is exact per source line; consecutive lines md4c folds into one
   paragraph (soft break) share a line number — inherent to a rendered preview.
 - Display width is one column per codepoint (wide/zero-width chars TBD).

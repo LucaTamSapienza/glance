@@ -2,7 +2,7 @@
 
 > Status: north-star design doc. Captures *why* glance exists for the agent era,
 > what we are building, and in what order. Decisions here are deliberate; open
-> questions are flagged explicitly in §11. Last updated: 2026-06-19.
+> questions are flagged explicitly in §11. Last updated: 2026-06-25.
 
 ## 0. North Star
 
@@ -142,8 +142,10 @@ This is deliberately *not* the usual chunk-and-embed RAG pipeline. It is
 personal Markdown corpus, fully local.
 
 - **Signal fusion.** Lexical (**BM25**, default) + **structural** (the heading
-  tree) + **relational** (the link graph as a relevance prior — 1-hop expansion /
-  personalized-PageRank-style propagation) + **dense** (optional, behind a flag).
+  tree) + **relational** (the link graph: a relevance *prior* on matched notes
+  **and** *k-hop spreading activation* that surfaces a linked note no keyword or
+  embedding matched — `graph_expand`, shipped) + **dense** (optional, behind a
+  flag).
 - **Knapsack-under-budget assembly.** Retrieval is not top-*k*. It is an
   optimization of *information per token under a ceiling*: return the maximum
   value that fits in N tokens.
@@ -287,9 +289,16 @@ Everything we build either serves this loop or waits.
   submodule and statically linked**, compiled in only with `make GLANCE_SEMANTIC=1`
   (the base install stays dependency-free). Chosen after the on-device latency/heat
   benchmark on Apple Silicon (`embed_minilm.c`); the `.glance/` cache layout is
-  shipped in `embcache.c`. Open follow-ups: a graph-expansion retrieval tier
-  (surface zero-lexical 1-hop neighbours) and incremental cache refresh via
-  `fswatch`.
+  shipped in `embcache.c`. **Graph-expansion retrieval shipped** (`graph_expand`):
+  k-hop, degree-normalized, attenuated spreading activation seeded by the matched
+  notes, surfacing zero-lexical linked neighbours through their first section with
+  `"surfaced":"graph"` + `"via"` provenance; knobs `GLANCE_GRAPH_KHOP` /
+  `GLANCE_GRAPH_ALPHA` are env-tunable for ablation. Open follow-ups: incremental
+  cache refresh via `fswatch` (mtime-gated + content-hash backstop + prune;
+  lazy-on-query for the MCP server), the multilingual embedder swap
+  (EmbeddingGemma-300M @ 256-dim Matryoshka), and an opt-in `--rerank` flag
+  (jina-reranker-v2-base-multilingual, cross-encoder over the top-k before
+  budget assembly).
 - **Name.** Stays `glance` for now; discoverability handled via README / a
   Homebrew tap (note the OpenStack `glance` CLI name collision).
 

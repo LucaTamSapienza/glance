@@ -333,6 +333,8 @@ typedef struct {
     size_t full_tokens;
     size_t abstract_tokens;
     double score;            /* BM25 base, with the graph prior folded in */
+    int    surfaced;         /* 1 if this section is here only via graph expansion */
+    int    via_note;         /* file index of the seed neighbour that surfaced it, or -1 */
 } Sec;
 
 /* Append a section unit to a growable array. Takes ownership of anchor/full/abs. */
@@ -347,10 +349,19 @@ static void sec_push(Sec **v, int *n, int *cap, int note, char *anchor,
     s->full_tokens = receipt_estimate_tokens(full, strlen(full));
     s->abstract_tokens = receipt_estimate_tokens(abstract, strlen(abstract));
     s->score = 0.0;
+    s->surfaced = 0;
+    s->via_note = -1;
 }
 
-/* Strength of the graph prior relative to a section's own BM25 score. */
+/* Graph-expansion retrieval knobs. The link graph is a relevance signal in two
+ * ways: it boosts notes linked to strong matches (the prior), and it *surfaces*
+ * a note that no keyword/embedding matched but that is linked, within KHOP hops,
+ * to strong matches (the gap a pure chunk-RAG cannot close). ALPHA attenuates the
+ * propagated weight per hop; both are overridable via env for ablation. */
+#define CTX_GRAPH_KHOP  2
 #define CTX_GRAPH_ALPHA 0.25
+/* Below this, a propagated weight is treated as noise and does not surface a note. */
+#define CTX_GRAPH_SURFACE_MIN 1e-9
 /* Embedding dimension and the weight of the semantic signal in the fused score. */
 #define CTX_EMBED_DIM      256
 #define CTX_SEMANTIC_LAMBDA 1.0
@@ -469,8 +480,7 @@ int agent_context(const char *dir, const char *query, size_t budget, int semanti
         }
     }
 
-    /* Graph prior: a section is boosted by the best base score among sections in
-     * its note's 1-hop neighbours, so notes linked to strong matches rank up. */
+    /* Graph signal: build the link graph and map files <-> graph nodes. */
     Graph g;
     graph_build(dir, &g);
     double *file_best = calloc((size_t)(files.n ? files.n : 1), sizeof *file_best);
@@ -482,26 +492,60 @@ int agent_context(const char *dir, const char *query, size_t budget, int semanti
         for (int nidx = 0; nidx < g.nn; nidx++)
             if (!strcmp(g.node[nidx], files.v[k])) { file2node[k] = nidx; node2file[nidx] = k; break; }
     }
+    /* Best own (lexical + optional semantic) score per note — the activation source. */
     for (int s = 0; s < nsec; s++)
         if (sec[s].score > file_best[sec[s].note]) file_best[sec[s].note] = sec[s].score;
 
-    double *file_bonus = calloc((size_t)(files.n ? files.n : 1), sizeof *file_bonus);
+    /* Spread that activation across the link graph for KHOP hops (env-tunable so
+     * the eval can ablate), degree-normalized and attenuated by ALPHA per hop. */
+    int    khop  = CTX_GRAPH_KHOP;
+    double alpha = CTX_GRAPH_ALPHA;
+    { const char *e = getenv("GLANCE_GRAPH_KHOP");  if (e) khop  = atoi(e); }
+    { const char *e = getenv("GLANCE_GRAPH_ALPHA"); if (e) alpha = atof(e); }
+
+    double *seed_node   = calloc((size_t)(g.nn ? g.nn : 1), sizeof *seed_node);
+    double *expand_node = calloc((size_t)(g.nn ? g.nn : 1), sizeof *expand_node);
+    for (int nidx = 0; nidx < g.nn; nidx++)
+        if (node2file[nidx] >= 0) seed_node[nidx] = file_best[node2file[nidx]];
+    graph_expand(&g, seed_node, khop, alpha, expand_node);
+
+    double *file_expand = calloc((size_t)(files.n ? files.n : 1), sizeof *file_expand);
+    for (int k = 0; k < files.n; k++)
+        if (file2node[k] >= 0) file_expand[k] = expand_node[file2node[k]];
+
+    /* Prior: notes that already matched get boosted by what reached them. */
+    for (int s = 0; s < nsec; s++)
+        if (sec[s].score > 0.0) sec[s].score += file_expand[sec[s].note];
+
+    /* Expansion: a note that matched *nothing* on its own but received activation
+     * is surfaced through its first section (its intro/abstract — coarse-to-fine),
+     * tagged with the strongest seed neighbour as provenance. Direct matches keep
+     * outranking it because the propagated weight is attenuated per hop. This is
+     * the zero-lexical-neighbour recall a pure chunk-RAG cannot reach. */
+    int *file_rep = malloc((size_t)(files.n ? files.n : 1) * sizeof *file_rep);
+    for (int k = 0; k < files.n; k++) file_rep[k] = -1;
+    for (int s = 0; s < nsec; s++)
+        if (file_rep[sec[s].note] < 0) file_rep[sec[s].note] = s;
+
     for (int k = 0; k < files.n; k++) {
-        int nf = file2node[k];
-        if (nf < 0) continue;
-        double best = 0.0;
-        for (int e = 0; e < g.ne; e++) {
+        if (file_best[k] > 0.0) continue;                 /* already represented */
+        if (file_expand[k] <= CTX_GRAPH_SURFACE_MIN) continue;
+        int rep = file_rep[k];
+        if (rep < 0) continue;
+        sec[rep].score = file_expand[k];
+        sec[rep].surfaced = 1;
+        /* provenance: the 1-hop neighbour with the strongest own score. */
+        int nf = file2node[k], via = -1; double vbest = 0.0;
+        for (int e = 0; nf >= 0 && e < g.ne; e++) {
             int other = -1;
             if (g.edge[e].from == nf) other = g.edge[e].to;
             else if (g.edge[e].to == nf) other = g.edge[e].from;
             if (other < 0) continue;
             int of = node2file[other];
-            if (of >= 0 && file_best[of] > best) best = file_best[of];
+            if (of >= 0 && file_best[of] > vbest) { vbest = file_best[of]; via = of; }
         }
-        file_bonus[k] = CTX_GRAPH_ALPHA * best;
+        sec[rep].via_note = via;
     }
-    for (int s = 0; s < nsec; s++)
-        if (sec[s].score > 0.0) sec[s].score += file_bonus[sec[s].note];
 
     /* Candidates = sections with a positive score; plan under the budget. */
     CtxCand *cand = malloc((size_t)(nsec ? nsec : 1) * sizeof *cand);
@@ -526,8 +570,13 @@ int agent_context(const char *dir, const char *query, size_t budget, int semanti
         json_str(files.v[sec[s].note]);
         printf(",\"anchor\":");
         json_str(sec[s].anchor);
-        printf(",\"granularity\":\"%s\",\"score\":%.3f,\"text\":",
+        printf(",\"granularity\":\"%s\",\"score\":%.3f",
                abstract ? "abstract" : "section", sec[s].score);
+        if (sec[s].surfaced) {
+            printf(",\"surfaced\":\"graph\"");
+            if (sec[s].via_note >= 0) { printf(",\"via\":"); json_str(files.v[sec[s].via_note]); }
+        }
+        printf(",\"text\":");
         json_str(abstract ? sec[s].abstract : sec[s].full);
         printf(",\"tokens\":%zu}", plan.picks[i].tokens);
     }
@@ -548,7 +597,8 @@ int agent_context(const char *dir, const char *query, size_t budget, int semanti
     /* Cleanup. */
     context_plan_free(&plan);
     free(cand); free(cand2sec);
-    free(file_best); free(file_bonus); free(file2node); free(node2file);
+    free(file_best); free(file2node); free(node2file);
+    free(seed_node); free(expand_node); free(file_expand); free(file_rep);
     graph_free(&g);
     for (int s = 0; s < nsec; s++) { free(sec[s].anchor); free(sec[s].full); free(sec[s].abstract); }
     free(sec);

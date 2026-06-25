@@ -2,7 +2,7 @@
 
 > Orientation for anyone (including Claude) picking up the work. The durable
 > picture — not a changelog; history lives in git.
-> Last updated: 2026-06-19.
+> Last updated: 2026-06-25.
 
 ## What it is
 
@@ -128,9 +128,18 @@ validation, and `emit_id`/`emit_jstr` UTF-8 hardening.
   content-addressed **`.glance/` vector cache** (`embcache.c`) and model
   download-on-first-use to `~/.cache/glance`. Runtime locked after an on-device
   benchmark (M2 Pro: ~24 ms/chunk CPU, ~6 ms Metal, no thermal throttle; ship
-  fp16). Built on branch `feat/semantic-minilm`. Open next: **graph-expansion
-  retrieval** (surfacing zero-lexical 1-hop neighbours) and incremental cache
-  refresh via `fswatch`. Minor polish: ggml/Metal stderr logs on the `-ngl>0`
+  fp16). Built on branch `feat/semantic-minilm`. **Graph-expansion retrieval
+  shipped** (`graph_expand` in `graph.c`): k-hop spreading activation (degree-
+  normalized, attenuated by `α` per hop, env-tunable `GLANCE_GRAPH_KHOP` /
+  `GLANCE_GRAPH_ALPHA` for ablation) now *surfaces* a note that no keyword or
+  embedding matched but that is linked, within k hops, to strong matches — emitted
+  through its first section, tagged `"surfaced":"graph"` + a `"via"` provenance
+  field. This is the zero-lexical recall a chunk-RAG cannot reach. Open next:
+  **incremental cache refresh via `fswatch`** (mtime-gated + content-hash backstop
+  + prune of dead entries; lazy-on-query for the long-running MCP server), and the
+  multilingual embedder swap (EmbeddingGemma-300M @ 256-dim Matryoshka, replacing
+  the English-only MiniLM-L6) + an opt-in `--rerank` flag (jina-reranker-v2-base-
+  multilingual). Minor polish: ggml/Metal stderr logs on the `-ngl>0`
   path (harmless for JSON-on-stdout; CPU path is already silent).
 - **Review follow-ups (REVIEW.md §3):** low-severity cleanups and clarity nits.
 - **User-side residuals:** image decode-per-frame (a persistent-plane cache is the
