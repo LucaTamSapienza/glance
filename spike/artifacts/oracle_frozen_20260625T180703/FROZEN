@@ -1,0 +1,12 @@
+{
+  "timestamp": "20260625T180703",
+  "model": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+  "method": "NLI symmetric contradiction prob",
+  "label_source": "RULE-CONSTRUCTED ground truth (NOT human labels) \u2014 instrument P/R only; domain+human validation is the documented next step",
+  "n_pairs": 116,
+  "n_contradiction": 37,
+  "threshold": 0.95,
+  "precision": 0.974,
+  "recall": 1.0,
+  "f1": 0.987
+}

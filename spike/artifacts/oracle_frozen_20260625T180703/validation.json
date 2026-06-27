@@ -1,0 +1,712 @@
+{
+  "artifact": {
+    "timestamp": "20260625T180703",
+    "model": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+    "method": "NLI symmetric contradiction prob",
+    "label_source": "RULE-CONSTRUCTED ground truth (NOT human labels) \u2014 instrument P/R only; domain+human validation is the documented next step",
+    "n_pairs": 116,
+    "n_contradiction": 37,
+    "threshold": 0.95,
+    "precision": 0.974,
+    "recall": 1.0,
+    "f1": 0.987
+  },
+  "pairs": [
+    {
+      "a": "In 2020 the membership increased.",
+      "b": "In 2020 the membership decreased.",
+      "label": 1,
+      "score": 1.0
+    },
+    {
+      "a": "The bridge spans 2 km.",
+      "b": "The bridge has a span of two kilometres.",
+      "label": 0,
+      "score": 0.0
+    },
+    {
+      "a": "The vaccine is FDA-approved.",
+      "b": "The FDA has approved the vaccine.",
+      "label": 0,
+      "score": 0.0
+    },
+    {
+      "a": "The algorithm was founded in 1990.",
+      "b": "The algorithm is headquartered in Berlin.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "The company is open source.",
+      "b": "The company is written in C.",
+      "label": 0,
+      "score": 0.01
+    },
+    {
+      "a": "The library contains mercury.",
+      "b": "The library does not contains mercury.",
+      "label": 1,
+      "score": 0.999
+    },
+    {
+      "a": "The novel won the Booker Prize.",
+      "b": "The novel won a literary award.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "Support for the format was added in this release.",
+      "b": "Support for the format was dropped in this release.",
+      "label": 1,
+      "score": 1.0
+    },
+    {
+      "a": "The processor has 8 cores.",
+      "b": "The processor is multi-core.",
+      "label": 0,
+      "score": 0.002
+    },
+    {
+      "a": "As of the latest release, the browser supports Manifest V2 extensions.",
+      "b": "The latest release removed support for Manifest V2 extensions.",
+      "label": 1,
+      "score": 0.999
+    },
+    {
+      "a": "The vaccine is FDA-approved.",
+      "b": "The FDA has approved the vaccine.",
+      "label": 0,
+      "score": 0.0
+    },
+    {
+      "a": "Mount Everest is in the Himalayas.",
+      "b": "The treaty was signed in 1648.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "The bridge supports concurrency.",
+      "b": "The bridge does not supports concurrency.",
+      "label": 1,
+      "score": 0.999
+    },
+    {
+      "a": "The library is open source.",
+      "b": "The library is written in C.",
+      "label": 0,
+      "score": 0.0
+    },
+    {
+      "a": "The processor supports concurrency.",
+      "b": "The processor does not supports concurrency.",
+      "label": 1,
+      "score": 0.999
+    },
+    {
+      "a": "The vaccine was founded in 1990.",
+      "b": "The vaccine is headquartered in Berlin.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "The processor has 8 cores.",
+      "b": "The processor is multi-core.",
+      "label": 0,
+      "score": 0.002
+    },
+    {
+      "a": "The London office has 50 staff.",
+      "b": "The Berlin office has 80 staff.",
+      "label": 0,
+      "score": 0.901
+    },
+    {
+      "a": "The treaty entered into force in 1994.",
+      "b": "The treaty never entered into force.",
+      "label": 1,
+      "score": 1.0
+    },
+    {
+      "a": "Python 3.12 was released in 2023.",
+      "b": "The 2023 release was Python 3.12.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "The Eiffel Tower is 330 metres tall.",
+      "b": "Standing 330 metres, the Eiffel Tower is that tall.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "The Eiffel Tower is in Paris.",
+      "b": "Python is a programming language.",
+      "label": 0,
+      "score": 0.004
+    },
+    {
+      "a": "Python 2's print is a statement.",
+      "b": "Python 3's print is a function.",
+      "label": 0,
+      "score": 0.884
+    },
+    {
+      "a": "The river is written in C.",
+      "b": "The river is written in Rust.",
+      "label": 1,
+      "score": 0.999
+    },
+    {
+      "a": "Mount Everest is in the Himalayas.",
+      "b": "The treaty was signed in 1648.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "The novel passed the vote.",
+      "b": "The novel does not passed the vote.",
+      "label": 1,
+      "score": 0.999
+    },
+    {
+      "a": "A poodle is a dog.",
+      "b": "A poodle is an animal.",
+      "label": 0,
+      "score": 0.011
+    },
+    {
+      "a": "Mount Everest is open source.",
+      "b": "Mount Everest is written in C.",
+      "label": 0,
+      "score": 0.073
+    },
+    {
+      "a": "Mount Everest is written in C.",
+      "b": "Mount Everest is written in Rust.",
+      "label": 1,
+      "score": 0.998
+    },
+    {
+      "a": "The algorithm is still maintained.",
+      "b": "The algorithm does not still maintained.",
+      "label": 1,
+      "score": 0.997
+    },
+    {
+      "a": "Mount Everest is in the Himalayas.",
+      "b": "The treaty was signed in 1648.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "The river flows north.",
+      "b": "Northward is the direction the river flows.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "The vaccine was completed on time.",
+      "b": "The vaccine does not completed on time.",
+      "label": 1,
+      "score": 1.0
+    },
+    {
+      "a": "The processor is open source.",
+      "b": "The processor is written in C.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "The bridge was founded in 1990.",
+      "b": "The bridge is headquartered in Berlin.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "Mount Everest is in the Himalayas.",
+      "b": "The treaty was signed in 1648.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "The Eiffel Tower was founded in 1990.",
+      "b": "The Eiffel Tower is headquartered in Berlin.",
+      "label": 0,
+      "score": 0.39
+    },
+    {
+      "a": "The company was founded in 1990.",
+      "b": "The company is headquartered in Berlin.",
+      "label": 0,
+      "score": 0.0
+    },
+    {
+      "a": "The 2018 model had 4 cores.",
+      "b": "The 2022 model has 8 cores.",
+      "label": 0,
+      "score": 0.002
+    },
+    {
+      "a": "The Eiffel Tower is in Paris.",
+      "b": "Python is a programming language.",
+      "label": 0,
+      "score": 0.004
+    },
+    {
+      "a": "The treaty was completed on time.",
+      "b": "The treaty does not completed on time.",
+      "label": 1,
+      "score": 1.0
+    },
+    {
+      "a": "In 2019 revenue rose.",
+      "b": "In 2021 revenue fell.",
+      "label": 0,
+      "score": 0.595
+    },
+    {
+      "a": "In 2020 the temperature improved.",
+      "b": "In 2020 the temperature worsened.",
+      "label": 1,
+      "score": 1.0
+    },
+    {
+      "a": "The latest stable version is 4.2.",
+      "b": "The latest stable version is 5.0.",
+      "label": 1,
+      "score": 0.999
+    },
+    {
+      "a": "A poodle is a dog.",
+      "b": "A poodle is an animal.",
+      "label": 0,
+      "score": 0.011
+    },
+    {
+      "a": "Chapter 1 is set in winter.",
+      "b": "Chapter 2 is set in summer.",
+      "label": 0,
+      "score": 0.051
+    },
+    {
+      "a": "The bridge is the largest in Europe.",
+      "b": "The bridge is the smallest in Europe.",
+      "label": 1,
+      "score": 1.0
+    },
+    {
+      "a": "The vaccine is open source.",
+      "b": "The vaccine is written in C.",
+      "label": 0,
+      "score": 0.007
+    },
+    {
+      "a": "Python 3.12 was released in 2023.",
+      "b": "The 2023 release was Python 3.12.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "The treaty is approved by the FDA.",
+      "b": "The treaty is rejected by the FDA.",
+      "label": 1,
+      "score": 1.0
+    },
+    {
+      "a": "The company is open source.",
+      "b": "The company is proprietary.",
+      "label": 1,
+      "score": 0.999
+    },
+    {
+      "a": "The vaccine prevents measles.",
+      "b": "The bridge carries a railway.",
+      "label": 0,
+      "score": 0.323
+    },
+    {
+      "a": "The company contains mercury.",
+      "b": "The company does not contains mercury.",
+      "label": 1,
+      "score": 0.999
+    },
+    {
+      "a": "Python 3.12 is open source.",
+      "b": "Python 3.12 is written in C.",
+      "label": 0,
+      "score": 0.002
+    },
+    {
+      "a": "The river flows north.",
+      "b": "Northward is the direction the river flows.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "The library is 330 metres tall.",
+      "b": "The library is 450 metres tall.",
+      "label": 1,
+      "score": 1.0
+    },
+    {
+      "a": "Everest is 8,849 m high.",
+      "b": "Everest is over 8,000 m high.",
+      "label": 0,
+      "score": 0.003
+    },
+    {
+      "a": "A poodle is a dog.",
+      "b": "A poodle is an animal.",
+      "label": 0,
+      "score": 0.011
+    },
+    {
+      "a": "The Eiffel Tower is still maintained.",
+      "b": "The Eiffel Tower does not still maintained.",
+      "label": 1,
+      "score": 0.997
+    },
+    {
+      "a": "The vaccine prevents measles.",
+      "b": "The bridge carries a railway.",
+      "label": 0,
+      "score": 0.323
+    },
+    {
+      "a": "The novel was founded in 1990.",
+      "b": "The novel is headquartered in Berlin.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "The bridge is open source.",
+      "b": "The bridge is written in C.",
+      "label": 0,
+      "score": 0.008
+    },
+    {
+      "a": "Everest is 8,849 m high.",
+      "b": "Everest is over 8,000 m high.",
+      "label": 0,
+      "score": 0.003
+    },
+    {
+      "a": "The treaty is open source.",
+      "b": "The treaty is written in C.",
+      "label": 0,
+      "score": 0.002
+    },
+    {
+      "a": "The river flows north.",
+      "b": "Northward is the direction the river flows.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "Under the old policy, fees applied.",
+      "b": "Under the new policy, fees are waived.",
+      "label": 0,
+      "score": 0.015
+    },
+    {
+      "a": "Version 1 of the API is deprecated.",
+      "b": "Version 3 of the API is supported.",
+      "label": 0,
+      "score": 0.007
+    },
+    {
+      "a": "The current CEO is Jane Doe.",
+      "b": "The current CEO is John Smith.",
+      "label": 1,
+      "score": 1.0
+    },
+    {
+      "a": "The northern branch closed.",
+      "b": "The southern branch opened.",
+      "label": 0,
+      "score": 0.959
+    },
+    {
+      "a": "The algorithm is open source.",
+      "b": "The algorithm is written in C.",
+      "label": 0,
+      "score": 0.0
+    },
+    {
+      "a": "The vaccine prevents measles.",
+      "b": "The bridge carries a railway.",
+      "label": 0,
+      "score": 0.323
+    },
+    {
+      "a": "Mount Everest was founded in 1990.",
+      "b": "Mount Everest is headquartered in Berlin.",
+      "label": 0,
+      "score": 0.002
+    },
+    {
+      "a": "Mount Everest passed the vote.",
+      "b": "Mount Everest does not passed the vote.",
+      "label": 1,
+      "score": 0.999
+    },
+    {
+      "a": "The Eiffel Tower is 330 metres tall.",
+      "b": "Standing 330 metres, the Eiffel Tower is that tall.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "Project Alpha's deadline is Friday.",
+      "b": "Project Beta's deadline is Monday.",
+      "label": 0,
+      "score": 0.72
+    },
+    {
+      "a": "Python 3.12 was released in 2023.",
+      "b": "The 2023 release was Python 3.12.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "Python 3.12 supports concurrency.",
+      "b": "Python 3.12 does not supports concurrency.",
+      "label": 1,
+      "score": 0.999
+    },
+    {
+      "a": "The processor has 8 cores.",
+      "b": "The processor is multi-core.",
+      "label": 0,
+      "score": 0.002
+    },
+    {
+      "a": "The novel won the Booker Prize.",
+      "b": "The novel won a literary award.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "The 2010 census counted 5 million.",
+      "b": "The 2020 census counted 7 million.",
+      "label": 0,
+      "score": 0.008
+    },
+    {
+      "a": "The vaccine is located in France.",
+      "b": "The vaccine is located in Italy.",
+      "label": 1,
+      "score": 0.999
+    },
+    {
+      "a": "The Eiffel Tower is in Paris.",
+      "b": "Python is a programming language.",
+      "label": 0,
+      "score": 0.004
+    },
+    {
+      "a": "The novel won the Booker Prize.",
+      "b": "The novel won a literary award.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "The Eiffel Tower is open source.",
+      "b": "The Eiffel Tower is written in C.",
+      "label": 0,
+      "score": 0.034
+    },
+    {
+      "a": "The river contains mercury.",
+      "b": "The river does not contains mercury.",
+      "label": 1,
+      "score": 1.0
+    },
+    {
+      "a": "The company reported a profit in fiscal 2023.",
+      "b": "The company reported a loss in fiscal 2023.",
+      "label": 1,
+      "score": 1.0
+    },
+    {
+      "a": "In 2020 the price rose.",
+      "b": "In 2020 the price fell.",
+      "label": 1,
+      "score": 1.0
+    },
+    {
+      "a": "The library was founded in 1990.",
+      "b": "The library is headquartered in Berlin.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "In 2020 the population rose.",
+      "b": "In 2020 the population fell.",
+      "label": 1,
+      "score": 1.0
+    },
+    {
+      "a": "The novel is founded in 1990.",
+      "b": "The novel is founded in 2005.",
+      "label": 1,
+      "score": 0.999
+    },
+    {
+      "a": "The bridge spans 2 km.",
+      "b": "The bridge has a span of two kilometres.",
+      "label": 0,
+      "score": 0.0
+    },
+    {
+      "a": "Everest's officially recognized height is 8,848 m.",
+      "b": "Everest's officially recognized height is 8,849 m.",
+      "label": 1,
+      "score": 0.965
+    },
+    {
+      "a": "The Eiffel Tower is 330 metres tall.",
+      "b": "Standing 330 metres, the Eiffel Tower is that tall.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "Everest is 8,849 m high.",
+      "b": "Everest is over 8,000 m high.",
+      "label": 0,
+      "score": 0.003
+    },
+    {
+      "a": "The beta supports Linux.",
+      "b": "The stable release supports Windows.",
+      "label": 0,
+      "score": 0.19
+    },
+    {
+      "a": "The Eiffel Tower is approved by the FDA.",
+      "b": "The Eiffel Tower is rejected by the FDA.",
+      "label": 1,
+      "score": 1.0
+    },
+    {
+      "a": "The river was founded in 1990.",
+      "b": "The river is headquartered in Berlin.",
+      "label": 0,
+      "score": 0.002
+    },
+    {
+      "a": "The novel is open source.",
+      "b": "The novel is written in C.",
+      "label": 0,
+      "score": 0.007
+    },
+    {
+      "a": "The processor was founded in 1990.",
+      "b": "The processor is headquartered in Berlin.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "The bridge spans 2 km.",
+      "b": "The bridge has a span of two kilometres.",
+      "label": 0,
+      "score": 0.0
+    },
+    {
+      "a": "The Eiffel Tower is in Paris.",
+      "b": "Python is a programming language.",
+      "label": 0,
+      "score": 0.004
+    },
+    {
+      "a": "The processor is written in C.",
+      "b": "The processor is written in Rust.",
+      "label": 1,
+      "score": 1.0
+    },
+    {
+      "a": "Python 3.12 is approved by the FDA.",
+      "b": "Python 3.12 is rejected by the FDA.",
+      "label": 1,
+      "score": 1.0
+    },
+    {
+      "a": "Firefox 50 was released in 2016.",
+      "b": "Firefox 120 was released in 2023.",
+      "label": 0,
+      "score": 0.095
+    },
+    {
+      "a": "The vaccine prevents measles.",
+      "b": "The bridge carries a railway.",
+      "label": 0,
+      "score": 0.323
+    },
+    {
+      "a": "The algorithm is open source.",
+      "b": "The algorithm is proprietary.",
+      "label": 1,
+      "score": 1.0
+    },
+    {
+      "a": "The browser's current engine is Gecko.",
+      "b": "The browser's current engine is Blink.",
+      "label": 1,
+      "score": 0.999
+    },
+    {
+      "a": "The processor has 8 cores.",
+      "b": "The processor is multi-core.",
+      "label": 0,
+      "score": 0.002
+    },
+    {
+      "a": "A poodle is a dog.",
+      "b": "A poodle is an animal.",
+      "label": 0,
+      "score": 0.011
+    },
+    {
+      "a": "The novel won the Booker Prize.",
+      "b": "The novel won a literary award.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "Python 3.12 was founded in 1990.",
+      "b": "Python 3.12 is headquartered in Berlin.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "In 2020 the deficit opened.",
+      "b": "In 2020 the deficit closed.",
+      "label": 1,
+      "score": 0.999
+    },
+    {
+      "a": "The river is open source.",
+      "b": "The river is written in C.",
+      "label": 0,
+      "score": 0.16
+    },
+    {
+      "a": "The treaty was founded in 1990.",
+      "b": "The treaty is headquartered in Berlin.",
+      "label": 0,
+      "score": 0.001
+    },
+    {
+      "a": "The vaccine is FDA-approved.",
+      "b": "The FDA has approved the vaccine.",
+      "label": 0,
+      "score": 0.0
+    },
+    {
+      "a": "Everest is 8,849 m high.",
+      "b": "Everest is over 8,000 m high.",
+      "label": 0,
+      "score": 0.003
+    }
+  ]
+}
