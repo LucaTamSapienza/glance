@@ -1,12 +1,14 @@
 """Spike 0 — gate measurement harness.
 
-Runs all three gates and prints PASS / KILL / UNREADABLE for each, then
-an overall go/no-go. Gate thresholds are pre-registered in the work order:
-  Gate 1: alpha <= 0.6 and p95 <= 15/edit -> PASS; alpha >= 1.0 or p95 > 40 -> KILL
+Confirmatory run (2026-06-29): Gate 1 power-law fit retired; replaced with direct
+degree-vs-reauth curve (pre-registered in amended_preregistration.md before any
+new corpus was fetched). Gate 2 and Gate 3 thresholds unchanged.
+
+  Gate 1 (direct): max_reauth/edit <= 10 AND slope not sig positive -> PASS;
+                   max_reauth/edit > 30 OR slope > 0 p < 0.05 -> KILL
   Gate 2: >= 95% violation-free -> PASS; > 10% violations -> KILL
-  Gate 3: emergent contradiction-rate reduction >= 20pp, McNemar p < 0.05 -> PASS;
-           < 10pp or not significant or vanishes under oracle -> KILL;
-           scope-F1 < 0.5 -> UNREADABLE
+  Gate 3: emergent reduction >= 20pp AND McNemar p < 0.05 -> PASS;
+           < 10pp or p >= 0.05 -> KILL; scope-F1 < 0.5 -> UNREADABLE
 """
 import os, sys, json, collections, math, random, statistics
 import numpy as np
@@ -38,95 +40,85 @@ def _claims_by_article(claims):
     return d
 
 
-# ---- Gate 1 — merge-propagation amplification ----
+# ---- Gate 1 — direct degree-vs-reauth curve (power-law fit retired 2026-06-29) ----
+#
+# Pre-registered thresholds (amended_preregistration.md, before any new corpus fetched):
+#   PASS:        max_reauth_per_edit <= 10  AND  (slope <= 0 OR OLS p >= 0.10)
+#   KILL:        max_reauth_per_edit > 30   OR   (slope > 0 AND OLS p < 0.05)
+#   between:     KILL (fail-safe)
+#   UNREADABLE:  < 4 distinct k values across top-10, OR < 6 groups total
 
 def gate1(store, oracle, claims):
-    """For each high-degree scope group, count how many same-scope active claims
-    would need semantic re-authoring if that scope's canonical claim changed.
-    Fit re-auth ~ k^alpha. Report CI, raw counts for top-3 nodes, p95.
+    """Direct degree-vs-reauth curve for top-10 scope groups.
+    Reports full table (rank/scope/k/reauth/rpe) and OLS trend across the 10 points.
     """
     print("\n" + "="*60)
-    print("GATE 1 — Merge-propagation amplification")
+    print("GATE 1 — Merge-propagation amplification (direct curve)")
     print("="*60)
 
-    # Degree = number of active claims per scope key
     active = store.active_claims()
     by_scope = collections.defaultdict(list)
     for c in active:
         by_scope[_scope_key(c["scope"])].append(c)
 
-    # (scope_key, claims_list) sorted by degree descending
     sorted_scopes = sorted(by_scope.items(), key=lambda x: -len(x[1]))
-    # Need at least 5 different degrees for a fit; cap at 30 scopes
-    scopes_to_analyze = sorted_scopes[:30]
+    top10 = sorted_scopes[:10]
 
-    # For each scope, "k" = # claims in that scope group.
-    # "re-auth count" = # claims in the group that are NOT semantically identical
-    # to the most common claim body (proxy: oracle contradiction pairs within group).
-    # If k=1, re-auth=0 by definition.
-    k_vals = []
-    reauth_vals = []
-    raw_top3 = []
-
-    for i, (sk, group) in enumerate(scopes_to_analyze):
+    rows = []
+    for rank, (sk, group) in enumerate(top10, 1):
         k = len(group)
-        if k < 2:
-            k_vals.append(k)
-            reauth_vals.append(0)
-            continue
-        # Count oracle contradictions within the group (proxy for re-authoring needed)
-        contra_count = 0
-        for a in range(len(group)):
-            for b in range(a+1, len(group)):
-                is_c, _ = oracle.contradicts(group[a]["body"], group[b]["body"])
-                if is_c:
-                    contra_count += 1
-        k_vals.append(k)
-        reauth_vals.append(contra_count)
-        if i < 3:
-            raw_top3.append({"scope": sk[:50], "k": k, "reauth": contra_count,
-                             "reauth_per_edit": round(contra_count / max(k-1, 1), 2)})
+        reauth = 0
+        if k >= 2:
+            for a in range(len(group)):
+                for b in range(a + 1, len(group)):
+                    is_c, _ = oracle.contradicts(group[a]["body"], group[b]["body"])
+                    if is_c:
+                        reauth += 1
+        rpe = reauth / max(k - 1, 1)
+        rows.append({"rank": rank, "scope": sk, "k": k, "reauth": reauth, "rpe": rpe})
 
-    print(f"\nTop-3 high-degree nodes (raw counts):")
-    for r in raw_top3:
-        print(f"  scope={r['scope']!r:50s}  k={r['k']:3d}  "
-              f"reauth={r['reauth']:3d}  reauth/edit={r['reauth_per_edit']:.2f}")
+    print(f"\n{'Rank':>4}  {'k':>4}  {'reauth':>6}  {'rpe':>6}  scope")
+    for r in rows:
+        print(f"  {r['rank']:2d}   {r['k']:4d}  {r['reauth']:6d}  {r['rpe']:6.2f}  {r['scope'][:50]}")
 
-    # Fit power law: log(reauth+1) ~ alpha * log(k) + c
-    xs = np.array([math.log(k) for k in k_vals if k >= 2])
-    ys = np.array([math.log(r+1) for k, r in zip(k_vals, reauth_vals) if k >= 2])
+    rpes = np.array([r["rpe"] for r in rows])
+    ks   = np.array([r["k"]   for r in rows])
 
-    if len(xs) < 4:
+    dist_stats = {
+        "min": float(np.min(rpes)), "median": float(np.median(rpes)),
+        "p75": float(np.percentile(rpes, 75)), "p95": float(np.percentile(rpes, 95)),
+        "max": float(np.max(rpes)),
+    }
+    print(f"\n  Distribution of reauth/edit across top-10:")
+    print(f"  min={dist_stats['min']:.2f}  median={dist_stats['median']:.2f}  "
+          f"p75={dist_stats['p75']:.2f}  p95={dist_stats['p95']:.2f}  max={dist_stats['max']:.2f}")
+
+    # OLS trend: reauth_per_edit ~ k
+    distinct_k = len(set(int(x) for x in ks))
+    n_groups = len(rows)
+    if distinct_k < 4 or n_groups < 6:
         verdict = "UNREADABLE"
-        print(f"\n  Too few data points ({len(xs)}) for reliable fit.")
+        print(f"\n  Only {distinct_k} distinct k values across {n_groups} groups — "
+              f"cannot characterize trend (need >= 4 distinct k, >= 6 groups)")
         print(f"\nGATE 1: {verdict}")
-        return verdict, None
+        return verdict, {"rows": rows, "dist": dist_stats}
 
-    slope, intercept, r_val, p_val, stderr = stats.linregress(xs, ys)
-    alpha = slope
-    ci95_lo = alpha - 1.96 * stderr
-    ci95_hi = alpha + 1.96 * stderr
+    slope, intercept, r_val, p_val, stderr = stats.linregress(ks, rpes)
+    trend_up = slope > 0 and p_val < 0.05
+    trend_warn = slope > 0 and p_val < 0.10
+    print(f"\n  OLS trend reauth/edit ~ k:  slope={slope:.4f}  p={p_val:.4f}  "
+          f"R2={r_val**2:.3f}  ({'significant upward trend' if trend_up else 'no significant upward trend'})")
 
-    # p95 of reauth_per_edit for top-degree nodes
-    reauth_per_edit = [r / max(k-1, 1) for k, r in zip(k_vals, reauth_vals) if k >= 2]
-    p95 = np.percentile(reauth_per_edit, 95) if reauth_per_edit else 0.0
-
-    print(f"\n  alpha={alpha:.3f}  CI95=[{ci95_lo:.3f}, {ci95_hi:.3f}]  "
-          f"p95_reauth_per_edit={p95:.2f}  R2={r_val**2:.3f}")
-
-    ci_width = ci95_hi - ci95_lo
-    if ci_width > 0.6:
-        verdict = "UNREADABLE"
-        print(f"  CI too wide ({ci_width:.2f} > 0.6) — trust raw counts, re-measure with more nodes")
-    elif alpha >= 1.0 or p95 > 40:
+    max_rpe = dist_stats["max"]
+    if max_rpe > 30 or trend_up:
         verdict = "KILL"
-    elif alpha <= 0.6 and p95 <= 15:
+    elif max_rpe <= 10 and not trend_warn:
         verdict = "PASS"
     else:
-        verdict = "KILL"  # between thresholds -> fail-safe
+        verdict = "KILL"  # between thresholds: max_rpe 10-30 or borderline trend
 
     print(f"\nGATE 1: {verdict}")
-    return verdict, {"alpha": alpha, "ci95": [ci95_lo, ci95_hi], "p95": p95}
+    return verdict, {"rows": rows, "dist": dist_stats, "slope": slope, "p": p_val}
 
 
 # ---- Gate 2 — view faithfulness ----

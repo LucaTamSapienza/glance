@@ -2,19 +2,30 @@
 snapshots per article (old -> current). The old->current pair is a genuine human
 edit stream; emergent contradictions are whatever real editors changed (numbers,
 dates, statuses). No synthetic edits here (injected contradictions are added
-later, separately, and counted in their own Gate-3 column)."""
+later, separately, and counted in their own Gate-3 column).
+
+Confirmatory run (2026-06-29): expanded to Category:Internet protocols and
+Category:Web standards, excluding the 76 Category:Web browsers articles already
+in Spike 0. Pre-registered before any fetch in amended_preregistration.md."""
 import os, re, json, time, html, sys
 import requests
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
 API = "https://en.wikipedia.org/w/api.php"
-CATEGORY = "Category:Web browsers"   # version/date facts churn -> real drift
+# Confirmatory corpus: adjacent tech categories, non-overlapping with web-browsers set
+CATEGORIES = [
+    "Category:Internet protocols",
+    "Category:Web standards",
+]
 OLD_BEFORE = "2021-01-01T00:00:00Z"  # ~5y old snapshot
-N_ARTICLES = 60
+N_ARTICLES = 200
 MAXCHARS = 6000
 S = requests.Session()
 S.headers["User-Agent"] = "glance-spike0/0.1 (research; edoardo.simonettispallotta@gmail.com)"
+
+# Titles from the Category:Web browsers corpus (76 articles) — excluded by pre-registration
+EXCLUDED_TITLES_FILE = os.path.join(HERE, "data", "corpus_webbrowsers_titles.json")
 
 
 def _get(params, _retries=5):
@@ -37,22 +48,22 @@ def strip_html(h):
     h = re.sub(r"(?is)<(script|style|table|sup|ref)[^>]*>.*?</\1>", " ", h)
     h = re.sub(r"(?is)<[^>]+>", " ", h)
     h = html.unescape(h)
-    h = re.sub(r"\[\d+\]", " ", h)          # [1] citation marks
+    h = re.sub(r"\[\d+\]", " ", h)
     h = re.sub(r"\s+\n", "\n", h)
     h = re.sub(r"[ \t]{2,}", " ", h)
     return h.strip()
 
 
-def member_titles():
+def member_titles_from_category(cat, limit=500):
     out, cont = [], {}
-    while len(out) < N_ARTICLES:
-        j = _get({"action": "query", "list": "categorymembers", "cmtitle": CATEGORY,
+    while True:
+        j = _get({"action": "query", "list": "categorymembers", "cmtitle": cat,
                   "cmtype": "page", "cmlimit": "100", **cont})
         out += [m["title"] for m in j["query"]["categorymembers"]]
-        if "continue" not in j:
+        if "continue" not in j or len(out) >= limit:
             break
         cont = j["continue"]
-    return out[:N_ARTICLES]
+    return out[:limit]
 
 
 def latest_revid(title):
@@ -79,10 +90,28 @@ def revision_text(revid):
 
 def main():
     os.makedirs(DATA, exist_ok=True)
-    titles = member_titles()
-    print(f"{len(titles)} candidate titles from {CATEGORY}")
+
+    # Load exclusion list (Category:Web browsers titles already in Spike 0)
+    excluded = set()
+    if os.path.exists(EXCLUDED_TITLES_FILE):
+        excluded = set(json.load(open(EXCLUDED_TITLES_FILE)))
+        print(f"Excluding {len(excluded)} Category:Web browsers titles from Spike 0")
+
+    # Collect candidate titles from all categories, deduplicating and excluding
+    seen, titles = set(), []
+    for cat in CATEGORIES:
+        cat_titles = member_titles_from_category(cat)
+        print(f"{len(cat_titles)} candidates from {cat}")
+        for t in cat_titles:
+            if t not in seen and t not in excluded:
+                seen.add(t)
+                titles.append(t)
+    print(f"{len(titles)} unique non-excluded candidates total")
+
     corpus = []
     for i, t in enumerate(titles):
+        if len(corpus) >= N_ARTICLES:
+            break
         try:
             new_id, new_ts = latest_revid(t)
             old_id, old_ts = old_revid(t)
@@ -90,14 +119,15 @@ def main():
                 continue
             snaps = [{"revid": old_id, "timestamp": old_ts, "text": revision_text(old_id)},
                      {"revid": new_id, "timestamp": new_ts, "text": revision_text(new_id)}]
-            if min(len(s["text"]) for s in snaps) < 800:   # too short to stress extraction
+            if min(len(s["text"]) for s in snaps) < 800:
                 continue
             corpus.append({"title": t, "snapshots": snaps})
-            print(f"  [{len(corpus):2d}] {t}  old={old_ts[:10]} new={new_ts[:10]} "
+            print(f"  [{len(corpus):3d}] {t}  old={old_ts[:10]} new={new_ts[:10]} "
                   f"chars={len(snaps[0]['text'])}/{len(snaps[1]['text'])}")
             time.sleep(1.5)
         except Exception as e:
             print(f"  skip {t}: {e}", file=sys.stderr)
+
     out = os.path.join(DATA, "corpus.json")
     with open(out, "w") as f:
         json.dump(corpus, f)
