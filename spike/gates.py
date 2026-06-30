@@ -31,7 +31,11 @@ def _scope_key(s):
     return s.lower().strip()
 
 def _load_claims():
-    return json.load(open(os.path.join(DATA, "claims.json")))
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--claims", default=os.path.join(DATA, "claims.json"))
+    args, _ = p.parse_known_args()
+    return json.load(open(args.claims))
 
 def _claims_by_article(claims):
     d = collections.defaultdict(lambda: [[], []])
