@@ -149,7 +149,7 @@ image, `Alt`/`Ctrl`+`←`/`→` word jump, `Ctrl-A`/`Ctrl-E` line start/end.
 
 ```sh
 make                  # glance (TUI) + glance-render (CLI)
-make test             # all module unit tests, ASan/UBSan (27 suites)
+make test             # all module unit tests under UBSan (+ ASan where it runs; 27 suites)
 make install          # -> $(PREFIX)/bin (default /usr/local; honours PREFIX/DESTDIR)
 ./glance --help       # full usage + every key binding (user + agent)
 ```
@@ -162,6 +162,12 @@ theme, highlight, image_size, render, doc_html, vault, graph; and the agent laye
 context, section, embed, json, edit, export, agent (JSON exports + a write roundtrip),
 mcp (a full initialize → tools/list → tools/call session + the error paths). The
 notcurses front-end needs a real terminal and is verified interactively.
+
+> `make test` chooses its sanitizers at run time: AddressSanitizer + UBSan where a
+> trivial asan binary can start, UBSan alone where it can't. AddressSanitizer's
+> runtime deadlocks at init on macOS 26 (its shadow-memory setup re-enters malloc
+> through the dyld shared cache and spins on its own init lock), which would
+> otherwise hang the run at 100% CPU on the first suite instead of testing.
 
 ## Known limitations / future
 
