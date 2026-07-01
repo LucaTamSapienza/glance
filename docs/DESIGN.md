@@ -290,3 +290,14 @@ Everything we build either serves this loop or waits.
 - **% tokens saved** (the receipt) versus raw reads — the headline number.
 - **Answer quality / recall** versus reading raw files for the same question.
 - **Adoption** — installs, GitHub stars, presence in MCP directories.
+
+## 13. Sources
+
+(the market/positioning research behind §§1–4; formerly in AGENT_FEATURES.md)
+
+- [adamsdesk] https://www.adamsdesk.com/posts/linux-markdown-viewers/
+- [dev.to] https://dev.to/dunkinfrunkin/i-built-a-markdown-pager-for-the-terminal-because-i-live-in-the-cli-and-nothing-else-worked-h95
+- [techtimes] https://www.techtimes.com/articles/315717/20260407/why-use-obsidian-note-taking-graph-view-linked-notes-powerful-knowledge-management.htm
+- [medium-graphmd] https://medium.com/@mail_36332/introducing-graphmd-turning-markdown-documents-into-executable-knowledge-graphs-6925d936423f
+- [dev.to-kg] https://dev.to/gimalay/markdown-knowledge-graph-for-humans-and-agents-43c4
+- [starmorph] https://blog.starmorph.com/blog/karpathy-llm-wiki-knowledge-base-guide
