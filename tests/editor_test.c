@@ -114,12 +114,28 @@ static void test_word_motion(void) {
     Editor e;
     editor_init(&e, "the quick  brown", 16);
     e.cy = 0; e.cx = 0;
-    editor_word_right(&e); assert(e.cx == 4);   /* start of "quick" */
-    editor_word_right(&e); assert(e.cx == 11);  /* skips the double space to "brown" */
-    editor_word_right(&e); assert(e.cx == 16);  /* end of line */
+    editor_word_right(&e); assert(e.cx == 3);   /* end of "the" */
+    editor_word_right(&e); assert(e.cx == 9);   /* end of "quick" (double space next) */
+    editor_word_right(&e); assert(e.cx == 16);  /* end of "brown" = end of line */
     editor_word_left(&e);  assert(e.cx == 11);  /* back to start of "brown" */
     editor_word_left(&e);  assert(e.cx == 4);   /* start of "quick" */
     editor_word_left(&e);  assert(e.cx == 0);   /* start of "the" */
+    editor_free(&e);
+
+    editor_init(&e, "ciao, x (qui)", 13);       /* punctuation separates words */
+    e.cy = 0; e.cx = 0;
+    editor_word_right(&e); assert(e.cx == 4);   /* end of "ciao", before the comma */
+    editor_word_right(&e); assert(e.cx == 7);   /* end of "x" */
+    editor_word_right(&e); assert(e.cx == 12);  /* end of "qui", inside the parens */
+    editor_word_left(&e);  assert(e.cx == 9);   /* start of "qui" */
+    editor_word_left(&e);  assert(e.cx == 6);   /* start of "x" */
+    editor_word_left(&e);  assert(e.cx == 0);   /* start of "ciao" */
+    editor_free(&e);
+
+    editor_init(&e, "pi\xc3\xb9 due", 8);       /* accented letters stay in the word */
+    e.cy = 0; e.cx = 0;
+    editor_word_right(&e); assert(e.cx == 4);   /* end of "più" (multibyte ù) */
+    editor_word_left(&e);  assert(e.cx == 0);   /* back to its start */
     editor_free(&e);
 
     editor_init(&e, "ab\ncd", 5);               /* word motion wraps across lines */

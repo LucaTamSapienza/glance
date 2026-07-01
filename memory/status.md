@@ -1,6 +1,6 @@
 # Status
 
-> Last updated: 2026-07-01. What's done, what's in flight, what's open.
+> Last updated: 2026-07-02. What's done, what's in flight, what's open.
 > Rules and invariants live in AGENTS.md, not here.
 
 ## On main
@@ -15,6 +15,14 @@ highlighting; bordered aligned tables; inline images with clipboard-image
 paste; key-legend sidebar (`?`); trackpad scrolling + progress HUD; exact
 offset-based reader↔editor cursor sync; HTML export (`glance-render --html`)
 and PDF via a detected converter (`glance --export`).
+
+UX batch merged 2026-07-02 (all confirmed live): a piped stdin renders to
+stdout (`cat x.md | glance`, like glance-render); trackpad/wheel scrolling
+works in all three modes; word motion is punctuation-aware (macOS
+end-of-word semantics) in the editor **and** the Reader (Alt/Ctrl+arrows =
+word, Cmd+arrows / Ctrl-A/E = line start/end); `keyboard = enhanced` config
+key opts into the kitty protocol where a terminal needs it, with a
+stack-clearing teardown (see [[lessons]] for the iTerm2 story).
 
 **Agent-side** (M1–M4 of docs/DESIGN.md) is shipped: bounded reads
 (`--outline`, `--section`, `--neighbors`, `--backlinks`, `--since`,
@@ -47,10 +55,10 @@ probes AddressSanitizer and falls back to UBSan alone where asan can't start
 ## Open
 
 - **User-side residuals:** inline images decode on every frame (a
-  persistent-plane cache is the right fix); `Option`+arrow word-jump under the
-  legacy keyboard protocol; remote (`http`) images aren't fetched; wide tables
-  overflow rather than wrap; display width is one column per codepoint
-  (wide/zero-width chars TBD).
+  persistent-plane cache is the right fix); flip the enhanced keyboard
+  protocol on by default once `keyboard = enhanced` has seen field testing;
+  remote (`http`) images aren't fetched; wide tables overflow rather than
+  wrap; display width is one column per codepoint (wide/zero-width chars TBD).
 - **Agent-side:** the token receipt is a heuristic (`max(bytes/4, words)`) —
   a real tokenizer or a calibration would make the saved-% exact; the MCP
   server advertises only `tools` (no `resources`/`prompts`).

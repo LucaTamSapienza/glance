@@ -57,6 +57,12 @@ int theme_load_config(const char *text);
 /* The configured default theme name, or "auto" if none was set. */
 const char *theme_default_name(void);
 
+/* The configured keyboard mode from the top-level `keyboard = …` config key:
+ * "enhanced" opts the TUI into the kitty keyboard protocol (real modifier bits
+ * for Option/Cmd chords on terminals that support it); anything else means the
+ * legacy default. Returns "legacy" when the key is absent. */
+const char *theme_config_keyboard(void);
+
 /* Produce config text into out (NUL-terminated) with the top-level
  * `theme = <name>` line set: an existing theme line is replaced in place, else
  * one is appended; all other lines (comments, [theme:…] blocks) are preserved.

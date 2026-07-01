@@ -68,7 +68,7 @@ make clean           # remove binaries and build artifacts
 ./glance --help                         # full usage + every key binding (both sides)
 ./glance testdata/sample.md             # user-side: open in the TUI
 ./glance-render -w 80 testdata/sample.md   # render to ANSI on stdout (-l = light)
-cat note.md | ./glance                  # read from stdin
+cat note.md | ./glance                  # piped stdin: render to stdout
 
 # agent-side (JSON on stdout; retrieval carries a token receipt)
 ./glance --context "Q" ./testdata/vault --budget 4000   # budgeted retrieval bundle
@@ -161,10 +161,12 @@ testdata/        sample.md showcase + an example vault/
   polled beside input; on wake it calls `notcurses_refresh` and reflows once.
   Don't hand resize back to notcurses — its `NCKEY_RESIZE` never reaches an
   external poll loop (see `memory/lessons.md`).
-- **Legacy keyboard mode is intentional.** `tui.c` disables the kitty
-  keyboard protocol at init (`term_kbd_reset`); this fixes an escape-sequence
-  leak on exit in some terminals. Don't re-enable enhanced keyboard modes
-  without testing exit.
+- **Legacy keyboard mode is the default; enhanced is opt-in.** `tui.c`
+  disables the kitty keyboard protocol at init (`term_kbd_reset`) because some
+  terminals leaked its sequences on exit. `keyboard = enhanced` in the config
+  (or `GLANCE_KEYBOARD=enhanced`) keeps the protocol active so Option/Cmd
+  chords carry real modifier bits; teardown always pops it either way. Don't
+  flip the default without testing exit in real terminals (iTerm2 especially).
 - **`atomic_write` is never called with an empty path** (stdin input has no
   path; the UI prevents saving in that case).
 

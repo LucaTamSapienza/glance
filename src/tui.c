@@ -26,6 +26,7 @@
 #include "image_size.h"
 
 #include <notcurses/notcurses.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -149,6 +150,7 @@ static int doc_src_line(const Doc *d, int line);          /* defined below */
 static int src_doc_line(const Doc *d, int srcline);       /* defined below */
 static void open_graph(App *a);                           /* defined below */
 static void resolve_reload_conflict(App *a, int reload);  /* defined below */
+static void load_theme_config(void);                      /* defined below */
 
 /* ---- terminal teardown (kitty keyboard protocol, see slice-2 fix) --------- */
 
@@ -173,11 +175,33 @@ static void on_sigwinch(int sig) {
  * to the shell). Running the whole session in legacy input mode sidesteps that:
  * the terminal delivers final composed characters directly, which is all an
  * editor needs. Also used at teardown as a belt-and-suspenders. Non-supporting
- * terminals ignore the unknown CSI. */
+ * terminals ignore the unknown CSI.
+ *
+ * `keyboard = enhanced` in the config (or GLANCE_KEYBOARD=enhanced) skips the
+ * init-time resets and keeps the kitty protocol active for the session, so
+ * Option/Cmd + arrow chords arrive with real modifier bits on terminals that
+ * speak it (see kbd_enhanced). Teardown still pops the protocol either way.
+ *
+ * The pop carries a count (CSI < 64 u): a session can push more than one
+ * kitty-stack entry (observed on iTerm2 — leftover pushes survived two plain
+ * pops and CSI-u reports kept streaming into the shell after exit), and a
+ * counted pop clears the whole stack in one write. Popping an empty stack is
+ * a no-op, so over-popping is safe. */
 static void term_kbd_reset(void) {
-    const char *seq = "\033[<u\033[=0u\033[>4;0m";
+    const char *seq = "\033[<64u\033[=0u\033[>4;0m";
     ssize_t w = write(STDOUT_FILENO, seq, strlen(seq));
     (void)w;
+}
+
+/* True when the user opted into the enhanced (kitty) keyboard protocol, via
+ * `keyboard = enhanced` in ~/.config/glance/config or GLANCE_KEYBOARD=enhanced
+ * (the env var wins). Legacy stays the default: some terminals leaked protocol
+ * sequences on exit — the reason term_kbd_reset exists — so enhanced is opt-in
+ * until it has seen more field testing. Callers must load the config first. */
+static int kbd_enhanced(void) {
+    const char *env = getenv("GLANCE_KEYBOARD");
+    const char *want = (env && *env) ? env : theme_config_keyboard();
+    return want && strcasecmp(want, "enhanced") == 0;
 }
 
 /* Swallow terminal query responses (OSC colour reports and the like) that can
@@ -261,6 +285,56 @@ static void reader_clamp_cursor(App *a) {
     int w = a->doc->lines[a->rcur_line].cols;
     if (a->rcur_col < 0) a->rcur_col = 0;
     if (a->rcur_col > w) a->rcur_col = w;
+}
+
+/* Move the Reader's block cursor to the end of the next word (dir > 0) or the
+ * start of the previous one (dir < 0) on the current visual line — the same
+ * word/separator classes as the editor's word motion (alnum, '_', and any
+ * non-ASCII byte are word characters). Columns count codepoints, matching the
+ * display. At a line edge the cursor steps to the neighbouring line. */
+static void reader_word_jump(App *a, int dir) {
+    Doc *d = a->doc;
+    if (!d || d->nline == 0) return;
+    if (a->rcur_line < 0 || a->rcur_line >= (int)d->nline) return;
+    char *t = line_text(&d->lines[a->rcur_line]);
+    if (!t) return;
+    size_t n = 0;                       /* one class flag per codepoint */
+    for (const char *p = t; *p; p++)
+        if (((unsigned char)*p & 0xC0) != 0x80) n++;
+    unsigned char *cls = malloc(n ? n : 1);
+    if (!cls) { free(t); return; }
+    size_t k = 0;
+    for (const char *p = t; *p; p++) {
+        unsigned char b = (unsigned char)*p;
+        if ((b & 0xC0) != 0x80)
+            cls[k++] = (b >= 0x80 || isalnum(b) || b == '_');
+    }
+    int c = a->rcur_col;
+    if (c < 0) c = 0;
+    if (c > (int)n) c = (int)n;
+    if (dir > 0) {
+        if (c >= (int)n) {              /* at the end: wrap to the next line */
+            if (a->rcur_line < (int)d->nline - 1) { a->rcur_line++; a->rcur_col = 0; }
+        } else {
+            while (c < (int)n && !cls[c]) c++;
+            while (c < (int)n && cls[c])  c++;
+            a->rcur_col = c;
+        }
+    } else {
+        if (c <= 0) {                   /* at the start: wrap to the previous line end */
+            if (a->rcur_line > 0) {
+                a->rcur_line--;
+                a->rcur_col = a->doc->lines[a->rcur_line].cols;
+            }
+        } else {
+            while (c > 0 && !cls[c - 1]) c--;
+            while (c > 0 && cls[c - 1])  c--;
+            a->rcur_col = c;
+        }
+    }
+    a->rcur_goal = a->rcur_col;
+    free(cls);
+    free(t);
 }
 
 /* scroll the viewport so the Reader cursor line stays visible */
@@ -1763,6 +1837,17 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
         else snprintf(a->msg, sizeof a->msg, "no link under cursor");
     }
     else if (id == '-' || (ctrl_is(id, ni, 'o')))  go_back(a);
+    else if ((id == NCKEY_LEFT || id == NCKEY_RIGHT) &&
+             (ncinput_alt_p(ni) || ncinput_meta_p(ni) || ncinput_ctrl_p(ni)))
+        reader_word_jump(a, id == NCKEY_RIGHT ? 1 : -1);   /* Option/Ctrl+arrow: word */
+    else if (ctrl_is(id, ni, 'a') || (id == NCKEY_LEFT && ncinput_super_p(ni)))
+        { a->rcur_col = 0; a->rcur_goal = 0; }             /* Cmd+Left / Ctrl-A: line start */
+    else if (ctrl_is(id, ni, 'e') || (id == NCKEY_RIGHT && ncinput_super_p(ni))) {
+        if (a->doc->nline) {                               /* Cmd+Right / Ctrl-E: line end */
+            a->rcur_col = a->doc->lines[a->rcur_line < (int)a->doc->nline ? a->rcur_line : 0].cols;
+            a->rcur_goal = a->rcur_col;
+        }
+    }
     else if (id == 'j' || id == NCKEY_DOWN)      { a->rcur_line++; a->rcur_col = a->rcur_goal; }
     else if (id == 'k' || id == NCKEY_UP)        { a->rcur_line--; a->rcur_col = a->rcur_goal; }
     else if (id == 'h' || id == NCKEY_LEFT)      { a->rcur_col--; a->rcur_goal = a->rcur_col; }
@@ -1886,6 +1971,8 @@ static int handle_insert(App *a, uint32_t id, const ncinput *ni) {
     if (id == NCKEY_ESC) leave_editor(a);
     else if (ctrl_is(id, ni, 's')) { sync_source(a); save_file(a); }
     else if (ctrl_is(id, ni, 'v')) paste_image(a);
+    else if (id == NCKEY_SCROLL_UP)   editor_up(&a->ed);     /* trackpad/wheel: the */
+    else if (id == NCKEY_SCROLL_DOWN) editor_down(&a->ed);   /* viewport follows the cursor */
     else apply_edit_key(&a->ed, id, ni);
     return 1;
 }
@@ -1895,25 +1982,30 @@ static int handle_split(App *a, uint32_t id, const ncinput *ni) {
     if (id == NCKEY_ESC) leave_editor(a);
     else if (ctrl_is(id, ni, 's')) { sync_source(a); save_file(a); }
     else if (ctrl_is(id, ni, 'v')) { paste_image(a); render_preview(a); }
+    else if (id == NCKEY_SCROLL_UP)   editor_up(&a->ed);     /* trackpad/wheel: pure motion, */
+    else if (id == NCKEY_SCROLL_DOWN) editor_down(&a->ed);   /* no preview re-render needed */
     else { apply_edit_key(&a->ed, id, ni); render_preview(a); }
     return 1;
 }
 
 /* Diagnostic loop printing each key's raw fields; see tui.h. */
 int tui_keyprobe(void) {
-    term_kbd_reset();
+    load_theme_config();           /* the keyboard= config key decides the mode */
+    int enh = kbd_enhanced();
+    if (!enh) term_kbd_reset();
     notcurses_options opts;
     memset(&opts, 0, sizeof opts);
     opts.flags = NCOPTION_SUPPRESS_BANNERS;
     struct notcurses *nc = notcurses_init(&opts, NULL);
     if (!nc) return 1;
     g_nc = nc;
-    term_kbd_reset();              /* legacy keyboard mode (see term_kbd_reset) */
-    atexit(term_kbd_reset);
+    if (!enh) term_kbd_reset();    /* legacy keyboard mode (see term_kbd_reset) */
+    atexit(term_kbd_reset);        /* either way, leave the shell clean on exit */
 
     struct ncplane *p = notcurses_stdplane(nc);
     unsigned rows, cols; ncplane_dim_yx(p, &rows, &cols);
-    const char *hdr = " key probe — press keys (try Option+3, etc).  Esc to quit ";
+    const char *hdr = enh ? " key probe (enhanced keyboard) — press keys.  Esc to quit "
+                          : " key probe (legacy keyboard) — press keys (try Option+3).  Esc to quit ";
     ncplane_erase(p);
     ncplane_putstr_yx(p, 0, 0, hdr);
     notcurses_render(nc);
@@ -2090,8 +2182,9 @@ static const Theme *resolve_theme(const char *want, int detected_dark) {
  * dispatch, redraw. See tui.h. Owns a mutable copy of the source. */
 int tui_run(const char *src, unsigned long len, const char *path, const char *title,
             const char *theme_name) {
-    term_kbd_reset();   /* normalize before notcurses probes (slice-2 fix) */
-    load_theme_config();
+    load_theme_config();           /* needed first: the keyboard= key picks the mode */
+    int enh = kbd_enhanced();
+    if (!enh) term_kbd_reset();    /* normalize before notcurses probes (slice-2 fix) */
 
     notcurses_options opts;
     memset(&opts, 0, sizeof opts);
@@ -2121,8 +2214,8 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
     notcurses_mice_enable(a.nc, NCMICE_BUTTON_EVENT);
 
     g_nc = a.nc;
-    term_kbd_reset();              /* run in legacy keyboard mode (see above) */
-    atexit(term_kbd_reset);        /* and restore on any normal exit path */
+    if (!enh) term_kbd_reset();    /* default: run in legacy keyboard mode (see above) */
+    atexit(term_kbd_reset);        /* either way, restore/pop on any normal exit path */
 
     if (rerender(&a) != 0) { shutdown_tui(); free(a.src); return 1; }
     redraw(&a);

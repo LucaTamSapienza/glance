@@ -67,6 +67,11 @@ int main(void) {
     }
     expect(theme_index_of("mine") >= 8, 1, "custom theme indexable for cycling");
 
+    /* the top-level keyboard key: absent -> legacy, parsed when present */
+    expect(strcmp(theme_config_keyboard(), "legacy"), 0, "keyboard defaults to legacy");
+    theme_load_config("keyboard = enhanced\n");
+    expect(strcmp(theme_config_keyboard(), "enhanced"), 0, "keyboard = enhanced parsed");
+
     /* persisting the default: set/replace the theme line, preserve the rest */
     char out[512];
     expect(theme_config_set_default("", "nord", out, sizeof out) > 0, 1, "set on empty ok");

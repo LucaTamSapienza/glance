@@ -28,7 +28,7 @@ machine.
 glance file.md                 # open in the reader TUI
 glance new.md                  # a path that doesn't exist opens empty; :w creates it
 glance-render -w 80 file.md    # render to ANSI on stdout (-l for a light theme)
-cat note.md | glance           # read from stdin
+cat note.md | glance           # piped stdin: render to stdout (like glance-render)
 glance --help                  # full usage and every key binding
 ```
 
@@ -44,6 +44,7 @@ editor), **Split** (editor + live preview).
 | Key | Action | Key | Action |
 |-----|--------|-----|--------|
 | `h j k l` / arrows | move cursor | `i` | insert mode (full-screen editor) |
+| `Alt`/`Ctrl` + `←`/`→` | jump by word | `Cmd`+`←`/`→` (`Ctrl-A`/`E`) | line start / end |
 | `g` / `G` | top / bottom | `e` | split: editor + live preview |
 | `Ctrl-D` / `Ctrl-U` | half page | `v` / `V` | select chars / lines |
 | `/` `n` `N` | search, next, prev | `y` | yank selection → system clipboard |
@@ -63,13 +64,18 @@ glance session editing the same file syncs through. With unsaved edits it instea
 shows a conflict prompt: `r` to reload (take the disk copy) or `k` to keep yours.
 
 Press `?` to slide out a **key legend** on the right; the document reflows into
-the space beside it. **Trackpad / mouse-wheel scrolling** works (the cursor rides
-along), with a small reading-progress readout in the top-right corner.
+the space beside it. **Trackpad / mouse-wheel scrolling** works in every mode
+(the cursor rides along), with a small reading-progress readout in the top-right
+corner of the reader.
 
 **Insert / Split** — type to edit, `Esc` returns to the reader, `Ctrl-S` saves,
 `Ctrl-V` pastes a clipboard image (saved in a `<name>_media/` folder beside the
 document). Brackets `[ ( {` auto-close; you type fences by hand. The editor
-soft-wraps long lines to the pane width.
+soft-wraps long lines to the pane width. `Alt`/`Ctrl`+`←`/`→` jump by word and
+`Ctrl-A`/`Ctrl-E` go to line start/end; if `Option`/`Cmd`+arrows type letters
+instead of moving, your terminal hides those modifiers in legacy mode — set
+`keyboard = enhanced` in the config (below) to use the kitty keyboard protocol,
+and verify what your terminal sends with `glance --keys`.
 
 In the **graph explorer** (`Ctrl-G`) the current note sits in the centre, notes
 that link *to* it on the left and notes it links *to* on the right; `Space`
@@ -87,6 +93,9 @@ it, `Esc` reverts). Set a default and define custom palettes in
 
 ```ini
 theme = nord
+# opt in to the kitty keyboard protocol: Option/Cmd + arrow chords carry real
+# modifier bits on terminals that support it (default is legacy mode)
+keyboard = enhanced
 
 [theme:mine]
 base = dracula
@@ -254,9 +263,9 @@ AGENTS.md       how to work in this repo — humans and agents (CLAUDE.md import
 
 ## Roadmap / known limitations
 
-User-side: sharper inline images (persistent image planes), `Option`+arrow
-word-jump under the legacy keyboard protocol, remote-image fetch, wide-table
-wrapping. Agent-side: the real MiniLM semantic tier (persistent `.glance/`
+User-side: sharper inline images (persistent image planes), flipping the
+enhanced keyboard protocol on by default (today `keyboard = enhanced` is
+opt-in), remote-image fetch, wide-table wrapping. Agent-side: the real MiniLM semantic tier (persistent `.glance/`
 embedding cache + graph-expansion retrieval) is complete on the
 `feat/semantic-minilm` branch, pending merge. The living list is
 [memory/status.md](memory/status.md).

@@ -7,6 +7,7 @@
 #include "editor.h"
 #include "util.h"
 
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -259,7 +260,13 @@ void editor_end(Editor *e)  { e->cx = (int)cur(e)->len; e->goal_col = -1; }
 /* A word separator: ASCII space or tab. Multibyte runes are continuation/lead
  * bytes (>= 0x80), never separators, so word jumps stop on real boundaries and
  * the cursor stays on a rune boundary. */
-static int ed_wordsep(unsigned char b) { return b == ' ' || b == '\t'; }
+/* True for bytes that separate words: whitespace and ASCII punctuation. A word
+ * is a run of alphanumerics, '_', or non-ASCII (UTF-8) bytes, so accented
+ * letters stay inside a word while punctuation stops the jump. */
+static int ed_wordsep(unsigned char b) {
+    if (b >= 0x80) return 0;
+    return !(isalnum(b) || b == '_');
+}
 
 /* Move to the start of the previous word (skip separators, then the word);
  * wraps to the end of the previous line when already at column 0. */
@@ -273,14 +280,15 @@ void editor_word_left(Editor *e) {
     e->goal_col = -1;
 }
 
-/* Move to the start of the next word (skip the word, then separators); wraps to
- * the start of the next line when already at the end. */
+/* Move to the end of the current or next word (skip separators, then the
+ * word) — the macOS/emacs Option-arrow convention; wraps to the start of the
+ * next line when already at the end. */
 void editor_word_right(Editor *e) {
     ELine *L = cur(e);
     if ((size_t)e->cx >= L->len) { editor_right(e); return; }
     int p = e->cx, n = (int)L->len;
-    while (p < n && !ed_wordsep((unsigned char)L->b[p])) p++;
     while (p < n && ed_wordsep((unsigned char)L->b[p])) p++;
+    while (p < n && !ed_wordsep((unsigned char)L->b[p])) p++;
     e->cx = p;
     e->goal_col = -1;
 }
