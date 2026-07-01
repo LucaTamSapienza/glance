@@ -59,6 +59,7 @@ static void print_help(void) {
 "\n"
 "KEYS — Reader\n"
 "  h j k l / arrows     move the cursor          g / G        top / bottom\n"
+"  Alt/Ctrl + arrows    jump word left / right   Cmd + arrows / Ctrl-A / Ctrl-E  line start / end\n"
 "  Ctrl-D / Ctrl-U      half page down / up      PgDn / PgUp  page down / up\n"
 "  i                    insert mode (edit)       e            split: edit + preview\n"
 "  t                    table of contents        / n N        search, next, prev\n"

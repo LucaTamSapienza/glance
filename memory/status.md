@@ -37,10 +37,15 @@ probes AddressSanitizer and falls back to UBSan alone where asan can't start
   glance`, like glance-render); trackpad/wheel scrolling in Insert and Split;
   opt-in `keyboard = enhanced` config key (kitty keyboard protocol) so
   Option/Cmd+arrow chords carry real modifier bits. Stdin filter and editor
-  scroll confirmed live by Luca; enhanced keyboard confirmed *active* on his
-  iTerm2 (`--keys` shows the lone NCKEY_LALT), but an iTerm2 profile key
-  mapping still swallows Option+arrow (see [[lessons]]) — remaining step:
-  delete those two mappings, retest, then PR/merge.
+  scroll confirmed live by Luca. Keyboard resolved end-to-end: the iTerm2
+  ⌥←/⌥→ profile mappings were deleted (zsh word-jump moved to bindkey in
+  .zshrc), after which plain legacy mode already delivers alt+arrows — no
+  kitty needed on iTerm2; the teardown now clears the whole kitty stack with
+  a counted pop after a live leak (see [[lessons]]). Follow-ups in the same
+  branch: word motion is punctuation-aware (macOS/emacs end-of-word
+  semantics, unit-tested) and the Reader gained word jump + line start/end
+  (Alt/Ctrl+arrows, Cmd+arrows / Ctrl-A/E). Awaiting final live pass, then
+  PR/merge.
 - **feat/semantic-minilm — complete on the branch, not merged.** The real
   semantic tier: all-MiniLM-L6-v2 (fp16, via llama.cpp) behind the `Embedder`
   seam, persistent `.glance/` embedding cache, model download-on-first-use,

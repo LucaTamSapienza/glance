@@ -44,6 +44,7 @@ editor), **Split** (editor + live preview).
 | Key | Action | Key | Action |
 |-----|--------|-----|--------|
 | `h j k l` / arrows | move cursor | `i` | insert mode (full-screen editor) |
+| `Alt`/`Ctrl` + `←`/`→` | jump by word | `Cmd`+`←`/`→` (`Ctrl-A`/`E`) | line start / end |
 | `g` / `G` | top / bottom | `e` | split: editor + live preview |
 | `Ctrl-D` / `Ctrl-U` | half page | `v` / `V` | select chars / lines |
 | `/` `n` `N` | search, next, prev | `y` | yank selection → system clipboard |

@@ -26,6 +26,7 @@
 #include "image_size.h"
 
 #include <notcurses/notcurses.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -284,6 +285,56 @@ static void reader_clamp_cursor(App *a) {
     int w = a->doc->lines[a->rcur_line].cols;
     if (a->rcur_col < 0) a->rcur_col = 0;
     if (a->rcur_col > w) a->rcur_col = w;
+}
+
+/* Move the Reader's block cursor to the end of the next word (dir > 0) or the
+ * start of the previous one (dir < 0) on the current visual line — the same
+ * word/separator classes as the editor's word motion (alnum, '_', and any
+ * non-ASCII byte are word characters). Columns count codepoints, matching the
+ * display. At a line edge the cursor steps to the neighbouring line. */
+static void reader_word_jump(App *a, int dir) {
+    Doc *d = a->doc;
+    if (!d || d->nline == 0) return;
+    if (a->rcur_line < 0 || a->rcur_line >= (int)d->nline) return;
+    char *t = line_text(&d->lines[a->rcur_line]);
+    if (!t) return;
+    size_t n = 0;                       /* one class flag per codepoint */
+    for (const char *p = t; *p; p++)
+        if (((unsigned char)*p & 0xC0) != 0x80) n++;
+    unsigned char *cls = malloc(n ? n : 1);
+    if (!cls) { free(t); return; }
+    size_t k = 0;
+    for (const char *p = t; *p; p++) {
+        unsigned char b = (unsigned char)*p;
+        if ((b & 0xC0) != 0x80)
+            cls[k++] = (b >= 0x80 || isalnum(b) || b == '_');
+    }
+    int c = a->rcur_col;
+    if (c < 0) c = 0;
+    if (c > (int)n) c = (int)n;
+    if (dir > 0) {
+        if (c >= (int)n) {              /* at the end: wrap to the next line */
+            if (a->rcur_line < (int)d->nline - 1) { a->rcur_line++; a->rcur_col = 0; }
+        } else {
+            while (c < (int)n && !cls[c]) c++;
+            while (c < (int)n && cls[c])  c++;
+            a->rcur_col = c;
+        }
+    } else {
+        if (c <= 0) {                   /* at the start: wrap to the previous line end */
+            if (a->rcur_line > 0) {
+                a->rcur_line--;
+                a->rcur_col = a->doc->lines[a->rcur_line].cols;
+            }
+        } else {
+            while (c > 0 && !cls[c - 1]) c--;
+            while (c > 0 && cls[c - 1])  c--;
+            a->rcur_col = c;
+        }
+    }
+    a->rcur_goal = a->rcur_col;
+    free(cls);
+    free(t);
 }
 
 /* scroll the viewport so the Reader cursor line stays visible */
@@ -1786,6 +1837,17 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
         else snprintf(a->msg, sizeof a->msg, "no link under cursor");
     }
     else if (id == '-' || (ctrl_is(id, ni, 'o')))  go_back(a);
+    else if ((id == NCKEY_LEFT || id == NCKEY_RIGHT) &&
+             (ncinput_alt_p(ni) || ncinput_meta_p(ni) || ncinput_ctrl_p(ni)))
+        reader_word_jump(a, id == NCKEY_RIGHT ? 1 : -1);   /* Option/Ctrl+arrow: word */
+    else if (ctrl_is(id, ni, 'a') || (id == NCKEY_LEFT && ncinput_super_p(ni)))
+        { a->rcur_col = 0; a->rcur_goal = 0; }             /* Cmd+Left / Ctrl-A: line start */
+    else if (ctrl_is(id, ni, 'e') || (id == NCKEY_RIGHT && ncinput_super_p(ni))) {
+        if (a->doc->nline) {                               /* Cmd+Right / Ctrl-E: line end */
+            a->rcur_col = a->doc->lines[a->rcur_line < (int)a->doc->nline ? a->rcur_line : 0].cols;
+            a->rcur_goal = a->rcur_col;
+        }
+    }
     else if (id == 'j' || id == NCKEY_DOWN)      { a->rcur_line++; a->rcur_col = a->rcur_goal; }
     else if (id == 'k' || id == NCKEY_UP)        { a->rcur_line--; a->rcur_col = a->rcur_goal; }
     else if (id == 'h' || id == NCKEY_LEFT)      { a->rcur_col--; a->rcur_goal = a->rcur_col; }
