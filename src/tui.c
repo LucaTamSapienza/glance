@@ -32,6 +32,8 @@
 #include <stdio.h>
 #include <errno.h>
 #include <poll.h>
+#include <signal.h>
+#include <fcntl.h>
 #include <time.h>
 #include <libgen.h>
 #include <dirent.h>
@@ -151,6 +153,18 @@ static void resolve_reload_conflict(App *a, int reload);  /* defined below */
 /* ---- terminal teardown (kitty keyboard protocol, see slice-2 fix) --------- */
 
 static struct notcurses *g_nc = NULL;
+
+/* We own SIGWINCH ourselves (NCOPTION_NO_WINCH_SIGHANDLER) rather than consuming
+ * notcurses' NCKEY_RESIZE: that event is only surfaced when notcurses' input
+ * thread next wakes, which is unreliable behind our external poll() loop and can
+ * miss a resize entirely (so the reader never reflows on a window resize or a
+ * Cmd +/- font zoom). This self-pipe is the classic fix: the handler just writes
+ * one byte (async-signal-safe); the poll loop drains it and re-queries geometry. */
+static int g_winch_w = -1;                   /* self-pipe write end, or -1 */
+static void on_sigwinch(int sig) {
+    (void)sig;
+    if (g_winch_w >= 0) { char b = 1; ssize_t n = write(g_winch_w, &b, 1); (void)n; }
+}
 
 /* Disable enhanced keyboard input modes. CSI < u pops the kitty keyboard stack;
  * CSI = 0 u forces all its flags off; CSI > 4 ; 0 m clears xterm modifyOtherKeys.
@@ -1161,6 +1175,18 @@ static void redraw(App *a) {
     if (a->helpmode) { draw_help(a); notcurses_render(a->nc); }
 }
 
+/* Adopt a new terminal geometry after a SIGWINCH (window resize or a Cmd +/- font
+ * zoom, which changes only the pixel-per-cell geometry). notcurses_refresh
+ * re-queries the size (TIOCGWINSZ) and resizes the standard plane, so the reflow
+ * below reads the new dimensions instead of the stale ones a plain rerender would
+ * see (notcurses only resizes the plane during a render, i.e. after we'd already
+ * laid out). The caller redraws once, so a burst of resizes coalesces to one. */
+static void handle_resize(App *a) {
+    notcurses_refresh(a->nc, NULL, NULL);
+    if (a->mode == MODE_READER) rerender(a);
+    else update_dims(a);
+}
+
 /* ---- input ---------------------------------------------------------------- */
 
 /* Insert the key's effective text — the character the user actually meant,
@@ -1943,11 +1969,7 @@ static int dispatch_key(App *a, uint32_t id, ncinput *ni) {
         resolve_reload_conflict(a, 0);           /* any other real keypress keeps yours, then acts */
     }
     if (a->helpmode) { a->helpmode = 0; return 1; }   /* any key closes help */
-    if (id == NCKEY_RESIZE) {
-        if (a->mode == MODE_READER) rerender(a);
-        else update_dims(a);
-        return 1;
-    }
+    if (id == NCKEY_RESIZE) { handle_resize(a); return 1; }  /* if notcurses still emits it */
     if (a->cmdmode)    return handle_command(a, id, ni);
     if (a->searchmode) return handle_search(a, id, ni);
     if (a->themepick)  return handle_themepick(a, id, ni);
@@ -2073,7 +2095,9 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
 
     notcurses_options opts;
     memset(&opts, 0, sizeof opts);
-    opts.flags = NCOPTION_SUPPRESS_BANNERS;   /* let notcurses own signal cleanup */
+    /* Own SIGWINCH ourselves (see on_sigwinch); notcurses still owns quit-signal
+     * cleanup. Banners suppressed. */
+    opts.flags = NCOPTION_SUPPRESS_BANNERS | NCOPTION_NO_WINCH_SIGHANDLER;
 
     App a;
     memset(&a, 0, sizeof a);
@@ -2110,6 +2134,20 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
     a.wfd = watch_open(&a.watch, a.path);
     int infd = notcurses_inputready_fd(a.nc);
 
+    /* Own SIGWINCH via a self-pipe polled alongside input (see on_sigwinch). */
+    int winchfd = -1, winch_wpipe = -1;
+    { int wp[2];
+      if (pipe(wp) == 0) {
+          for (int k = 0; k < 2; k++) {
+              fcntl(wp[k], F_SETFL, fcntl(wp[k], F_GETFL) | O_NONBLOCK);
+              fcntl(wp[k], F_SETFD, fcntl(wp[k], F_GETFD) | FD_CLOEXEC);
+          }
+          winchfd = wp[0]; winch_wpipe = wp[1]; g_winch_w = wp[1];
+          struct sigaction sa; memset(&sa, 0, sizeof sa);
+          sa.sa_handler = on_sigwinch; sigemptyset(&sa.sa_mask); sa.sa_flags = SA_RESTART;
+          sigaction(SIGWINCH, &sa, NULL);
+      } }
+
     int running = 1;
     ncinput ni; uint32_t id;
     while (running) {
@@ -2120,10 +2158,11 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
             if (running) redraw(&a);
             continue;
         }
-        struct pollfd fds[2];
-        fds[0].fd = infd; fds[0].events = POLLIN; fds[0].revents = 0;
-        int nfds = 1;
-        if (a.wfd >= 0) { fds[1].fd = a.wfd; fds[1].events = POLLIN; fds[1].revents = 0; nfds = 2; }
+        struct pollfd fds[3];
+        int i_watch = -1, i_winch = -1, nfds = 0;
+        fds[nfds].fd = infd;   fds[nfds].events = POLLIN; fds[nfds].revents = 0; int i_in = nfds++;
+        if (a.wfd >= 0)   { fds[nfds].fd = a.wfd;   fds[nfds].events = POLLIN; fds[nfds].revents = 0; i_watch = nfds++; }
+        if (winchfd >= 0) { fds[nfds].fd = winchfd; fds[nfds].events = POLLIN; fds[nfds].revents = 0; i_winch = nfds++; }
         /* While the scroll spinner is settling, poll with a short timeout so we
          * can tick its frames; otherwise block until input or a file event. */
         int timeout = -1;
@@ -2140,10 +2179,14 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
             redraw(&a);
             continue;
         }
-        if (nfds == 2 && (fds[1].revents & POLLIN)) {
+        if (i_winch >= 0 && (fds[i_winch].revents & POLLIN)) {   /* terminal resized */
+            char drainw[64]; while (read(winchfd, drainw, sizeof drainw) > 0) { }
+            handle_resize(&a); redraw(&a);
+        }
+        if (i_watch >= 0 && (fds[i_watch].revents & POLLIN)) {
             watch_drain(&a.watch); reload_file(&a); redraw(&a);
         }
-        if (!(fds[0].revents & POLLIN)) continue;
+        if (!(fds[i_in].revents & POLLIN)) continue;
         /* drain all available key events, then redraw once */
         while ((id = notcurses_get_nblock(a.nc, &ni)) != 0 && id != (uint32_t)-1) {
             running = dispatch_key(&a, id, &ni);
@@ -2152,6 +2195,11 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
         if (running) redraw(&a);
     }
     watch_close(&a.watch);
+    /* Stop the handler before closing the pipe so it can't write to a reused fd. */
+    signal(SIGWINCH, SIG_IGN);
+    g_winch_w = -1;
+    if (winchfd >= 0) close(winchfd);
+    if (winch_wpipe >= 0) close(winch_wpipe);
 
     /* drain anything the terminal already queued so leftover bytes don't spill
      * onto the shell prompt after we exit */

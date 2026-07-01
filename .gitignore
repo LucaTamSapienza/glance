@@ -3,6 +3,7 @@
 /glance-render
 /build/
 /build-t-*
+/.san-probe*
 /dist/
 *.o
 *.test

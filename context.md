@@ -2,7 +2,7 @@
 
 > Orientation for anyone (including Claude) picking up the work. The durable
 > picture — not a changelog; history lives in git.
-> Last updated: 2026-06-19.
+> Last updated: 2026-07-01.
 
 ## What it is
 
@@ -39,7 +39,7 @@ milestones there (M1 reads → M2 MCP → M3 semantic → M4 write) are all ship
 
 ```sh
 make                 # build ./glance (TUI) and ./glance-render (CLI)
-make test            # all unit tests (27 suites) under AddressSanitizer + UBSan
+make test            # all unit tests (27 suites) under UBSan (+ ASan where it runs)
 make install         # copy both binaries to PREFIX/bin (default /usr/local)
 
 ./glance testdata/sample.md                                  # user-side
@@ -55,8 +55,30 @@ Requires `md4c`, `notcurses`, `pkg-config` (`brew install md4c notcurses pkg-con
 
 ## Current status
 
-Everything below is on `main`, built clean, **27 test suites green** under
-ASan/UBSan.
+Everything below is on `main`, built clean, **27 test suites green**. Tests run
+under UBSan plus AddressSanitizer *where asan's runtime can initialize*: the
+`make test` recipe probes a trivial asan binary under a 5s watchdog and falls back
+to UBSan alone when it can't start (asan deadlocks at init on macOS 26 — its
+shadow-memory setup re-enters malloc through the dyld shared cache and spins on
+its own init lock, so a hard-coded `-fsanitize=address` would hang `make test`).
+
+### Recent fixes (2026-07-01)
+- **`make test` no longer hangs on macOS 26.** AddressSanitizer's runtime
+  deadlocks during init on macOS 26 (reproduced on both Apple clang 17 and
+  Homebrew clang 20), so `make test` spun forever at 100% CPU on the first suite —
+  it looked like an infinite build loop. The recipe now probes asan and drops to
+  UBSan-only when it can't start, so the suites always run (`Makefile`).
+- **Reader didn't reflow on resize / font zoom.** A window resize or a `Cmd +/-`
+  font zoom left the reader frame stale (garbled, wrong height, sometimes
+  unresponsive). Root cause: glance consumed notcurses' `NCKEY_RESIZE`, which its
+  input thread only surfaces when it next wakes — unreliable behind glance's
+  external `poll()` loop, so resizes were missed. Fix: glance now owns `SIGWINCH`
+  itself (`NCOPTION_NO_WINCH_SIGHANDLER` + a self-pipe polled beside input); on
+  wake it re-queries geometry with `notcurses_refresh` (TIOCGWINSZ + stdplane
+  resize) and reflows once (bursts coalesce). Validated under a PTY harness: the
+  reader reflows to the exact new size on every resize and quits cleanly after
+  (`tui.c`). *(An earlier attempt — calling `notcurses_refresh` on `NCKEY_RESIZE`
+  — was reverted: `NCKEY_RESIZE` never arrived, so it couldn't help.)*
 
 ### User-side — done
 Full reader/editor: three modes; editor soft-wraps long lines; charwise (`v`) and
