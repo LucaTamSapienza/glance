@@ -55,6 +55,17 @@ alt+Left/Right (in enhanced mode via kitty; in legacy as CSI `1;3C/D`).
 Cmd+Left/Right arrive as Ctrl-A/Ctrl-E and are already bound to line
 start/end. Terminal.app doesn't speak the kitty protocol at all.
 
+## The kitty keyboard stack can outlive the app (iTerm2)
+
+Reproduced live 2026-07-01: after an enhanced-mode glance session on iTerm2,
+CSI-u key reports — including release events (`…;1:3u`) — kept streaming
+into the shell as literal text: the kitty stack held more pushes than our
+two plain pops (resize/refresh cycles may re-push). Fix shipped: the
+teardown pop carries a count (`CSI < 64 u`), clearing the whole stack in one
+write; popping past the top is a no-op, so over-popping is safe. Un-wedge a
+stuck tab with `printf '\x1b[<10u\x1b[=0u'` (or close it). This leak is why
+legacy remains the default keyboard mode.
+
 ## NCBLIT_PIXEL needs an aspect-tight plane
 
 Blank letterbox cells under a pixel sprixel "annihilate" the text around

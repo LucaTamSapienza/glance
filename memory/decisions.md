@@ -13,9 +13,10 @@ enhanced` config key (or `GLANCE_KEYBOARD=enhanced`) now keeps notcurses'
 kitty protocol active for the session, so those chords carry real modifier
 bits and the existing word-jump / line start-end bindings light up; `glance
 --keys` honours the mode. Legacy remains the default because the protocol
-once leaked sequences onto the shell at exit on iTerm2 (the reason
-`term_kbd_reset` exists); teardown now always pops the protocol either way.
-Flip the default only after field testing on real terminals.
+leaks sequences onto the shell at exit on iTerm2 — reproduced live
+2026-07-01, see [[lessons]] — so teardown now clears the whole kitty stack
+with a counted pop (`CSI < 64 u`) in both modes. Flip the default only after
+field testing on real terminals.
 
 ## 2026-07-01 — Docs reorganized: one source per fact + this memory vault
 

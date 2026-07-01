@@ -179,9 +179,15 @@ static void on_sigwinch(int sig) {
  * `keyboard = enhanced` in the config (or GLANCE_KEYBOARD=enhanced) skips the
  * init-time resets and keeps the kitty protocol active for the session, so
  * Option/Cmd + arrow chords arrive with real modifier bits on terminals that
- * speak it (see kbd_enhanced). Teardown still pops the protocol either way. */
+ * speak it (see kbd_enhanced). Teardown still pops the protocol either way.
+ *
+ * The pop carries a count (CSI < 64 u): a session can push more than one
+ * kitty-stack entry (observed on iTerm2 — leftover pushes survived two plain
+ * pops and CSI-u reports kept streaming into the shell after exit), and a
+ * counted pop clears the whole stack in one write. Popping an empty stack is
+ * a no-op, so over-popping is safe. */
 static void term_kbd_reset(void) {
-    const char *seq = "\033[<u\033[=0u\033[>4;0m";
+    const char *seq = "\033[<64u\033[=0u\033[>4;0m";
     ssize_t w = write(STDOUT_FILENO, seq, strlen(seq));
     (void)w;
 }
