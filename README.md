@@ -220,7 +220,7 @@ brew install md4c notcurses pkg-config
 git clone https://github.com/LucaTamSapienza/glance
 cd glance
 make                 # builds ./glance (TUI) and ./glance-render (CLI)
-make test            # unit tests under AddressSanitizer/UBSan
+make test            # unit tests (UBSan + AddressSanitizer where it can start)
 make install         # copy onto your PATH (/usr/local/bin; honours PREFIX/DESTDIR)
 ```
 
@@ -246,21 +246,20 @@ that let Claude *use* glance to navigate and render a vault.
 src/            the C app: renderer + TUI (user-side) + the agent-memory layer
 tests/          unit tests, one per pure module (make test)
 testdata/       sample.md showcase + a small example vault/
-docs/           DESIGN.md (agent-memory north-star) · MCP.md · HANDOFF.md · REVIEW.md
+memory/         the repo's own agent-curated memory (status · decisions · lessons · history)
+docs/           DESIGN.md (agent-memory north-star) · MCP.md · specs/ · archive/
 .claude-plugin/ commands/ skills/   the Claude Code plugin
-STATUS.md       module map + the full user-side / agent-side feature list
-AGENT_FEATURES.md   why the agent-memory layer exists
-AGENTS.md       guide for running this repo with a coding agent
+AGENTS.md       how to work in this repo — humans and agents (CLAUDE.md imports it)
 ```
 
 ## Roadmap / known limitations
 
 User-side: sharper inline images (persistent image planes), `Option`+arrow
 word-jump under the legacy keyboard protocol, remote-image fetch, wide-table
-wrapping. Agent-side: a MiniLM-class semantic encoder behind the embedder
-interface (with an on-device benchmark), a persistent `.glance/` index cache, and
-graph-expansion retrieval. See [STATUS.md](STATUS.md) and
-[docs/REVIEW.md](docs/REVIEW.md) for the full list.
+wrapping. Agent-side: the real MiniLM semantic tier (persistent `.glance/`
+embedding cache + graph-expansion retrieval) is complete on the
+`feat/semantic-minilm` branch, pending merge. The living list is
+[memory/status.md](memory/status.md).
 
 ## License
 

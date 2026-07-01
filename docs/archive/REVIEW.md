@@ -1,5 +1,12 @@
 # glance Agent-Native Memory Layer (M1–M4) — Review Report
 
+> **Archived 2026-07-01.** Adversarial review of the M1–M4 layer as of
+> 2026-06-18. Every confirmed finding below was fixed on main in the follow-up
+> hardening pass (JSON depth cap, setext-aware edits, fence tracking,
+> frontmatter escaping, surrogate-pair decoding, number-grammar validation,
+> emit hardening). Kept as the record of the untrusted-input boundary
+> analysis. Current state: [`memory/status.md`](../../memory/status.md).
+
 ## 1. Verdict
 
 The memory layer is well-structured and the "one model, two sinks" discipline holds: retrieval, section addressing, JSON, and edit are cleanly separated and individually testable. Health is good but the **untrusted-input boundary is soft**. The single serious defect is an unbounded JSON parser recursion that crash-DoSes the MCP server; clustered around it is a family of JSON/MCP conformance gaps (surrogate pairs, `strtod` leniency, non-UTF-8 passthrough, `id` echo) and a write-path integrity gap (raw frontmatter, ATX-only edit scanning, unknown-op→append). None corrupt the happy path, most need crafted or malformed input, and the OOM-class findings are effectively unreachable under macOS overcommit. The bulk of the remaining findings are honest low-severity cleanups and clarity nits.

@@ -1,5 +1,11 @@
 # Handoff — agent-native memory layer (M1–M4), for a review & level-up pass
 
+> **Archived 2026-07-01.** Historical: the stacked PRs #9–#12 described below
+> merged long ago, the suite count and "M3 is infrastructure-only" are
+> outdated, and the review it asked for happened (see `REVIEW.md` beside this
+> file). Kept as the record of how M1–M4 were built. Current state:
+> [`memory/status.md`](../../memory/status.md).
+
 You are picking up the **agent-native memory layer**: glance as the protocol
 layer between an AI agent and a Markdown vault. Four milestones (M1–M4) were
 built in one session as **stacked branches/PRs**. This file is the single entry
