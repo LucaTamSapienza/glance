@@ -1,6 +1,6 @@
 # Status
 
-> Last updated: 2026-07-01. What's done, what's in flight, what's open.
+> Last updated: 2026-07-02. What's done, what's in flight, what's open.
 > Rules and invariants live in AGENTS.md, not here.
 
 ## On main
@@ -15,6 +15,14 @@ highlighting; bordered aligned tables; inline images with clipboard-image
 paste; key-legend sidebar (`?`); trackpad scrolling + progress HUD; exact
 offset-based reader↔editor cursor sync; HTML export (`glance-render --html`)
 and PDF via a detected converter (`glance --export`).
+
+UX batch merged 2026-07-02 (all confirmed live): a piped stdin renders to
+stdout (`cat x.md | glance`, like glance-render); trackpad/wheel scrolling
+works in all three modes; word motion is punctuation-aware (macOS
+end-of-word semantics) in the editor **and** the Reader (Alt/Ctrl+arrows =
+word, Cmd+arrows / Ctrl-A/E = line start/end); `keyboard = enhanced` config
+key opts into the kitty protocol where a terminal needs it, with a
+stack-clearing teardown (see [[lessons]] for the iTerm2 story).
 
 **Agent-side** (M1–M4 of docs/DESIGN.md) is shipped: bounded reads
 (`--outline`, `--section`, `--neighbors`, `--backlinks`, `--since`,
@@ -32,20 +40,6 @@ probes AddressSanitizer and falls back to UBSan alone where asan can't start
 
 ## In flight (branches)
 
-- **fix/stdin-scroll-wordjump — committed 2026-07-01, awaiting Luca's live
-  test.** Three UX fixes: a piped stdin renders to stdout (`cat x.md |
-  glance`, like glance-render); trackpad/wheel scrolling in Insert and Split;
-  opt-in `keyboard = enhanced` config key (kitty keyboard protocol) so
-  Option/Cmd+arrow chords carry real modifier bits. Stdin filter and editor
-  scroll confirmed live by Luca. Keyboard resolved end-to-end: the iTerm2
-  ⌥←/⌥→ profile mappings were deleted (zsh word-jump moved to bindkey in
-  .zshrc), after which plain legacy mode already delivers alt+arrows — no
-  kitty needed on iTerm2; the teardown now clears the whole kitty stack with
-  a counted pop after a live leak (see [[lessons]]). Follow-ups in the same
-  branch: word motion is punctuation-aware (macOS/emacs end-of-word
-  semantics, unit-tested) and the Reader gained word jump + line start/end
-  (Alt/Ctrl+arrows, Cmd+arrows / Ctrl-A/E). Awaiting final live pass, then
-  PR/merge.
 - **feat/semantic-minilm — complete on the branch, not merged.** The real
   semantic tier: all-MiniLM-L6-v2 (fp16, via llama.cpp) behind the `Embedder`
   seam, persistent `.glance/` embedding cache, model download-on-first-use,
