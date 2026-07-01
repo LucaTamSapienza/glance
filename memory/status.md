@@ -32,6 +32,14 @@ probes AddressSanitizer and falls back to UBSan alone where asan can't start
 
 ## In flight (branches)
 
+- **fix/stdin-scroll-wordjump — committed 2026-07-01, awaiting Luca's live
+  test.** Three UX fixes: a piped stdin renders to stdout (`cat x.md |
+  glance`, like glance-render); trackpad/wheel scrolling in Insert and Split;
+  opt-in `keyboard = enhanced` config key (kitty keyboard protocol) so
+  Option/Cmd+arrow chords carry real modifier bits. Verified headless (suite
+  green; PTY harness drove both keyboard modes through Insert + scroll to a
+  clean exit). Needs interactive confirmation — scroll feel, enhanced mode on
+  iTerm2 (`glance --keys`), clean exit — before PR/merge.
 - **feat/semantic-minilm — complete on the branch, not merged.** The real
   semantic tier: all-MiniLM-L6-v2 (fp16, via llama.cpp) behind the `Embedder`
   seam, persistent `.glance/` embedding cache, model download-on-first-use,
@@ -47,10 +55,10 @@ probes AddressSanitizer and falls back to UBSan alone where asan can't start
 ## Open
 
 - **User-side residuals:** inline images decode on every frame (a
-  persistent-plane cache is the right fix); `Option`+arrow word-jump under the
-  legacy keyboard protocol; remote (`http`) images aren't fetched; wide tables
-  overflow rather than wrap; display width is one column per codepoint
-  (wide/zero-width chars TBD).
+  persistent-plane cache is the right fix); flip the enhanced keyboard
+  protocol on by default once `keyboard = enhanced` has seen field testing;
+  remote (`http`) images aren't fetched; wide tables overflow rather than
+  wrap; display width is one column per codepoint (wide/zero-width chars TBD).
 - **Agent-side:** the token receipt is a heuristic (`max(bytes/4, words)`) —
   a real tokenizer or a calibration would make the saved-% exact; the MCP
   server advertises only `tools` (no `resources`/`prompts`).

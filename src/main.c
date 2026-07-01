@@ -1,6 +1,7 @@
 /* main.c — glance TUI entry point.
  *
- *   glance [file.md]      open a file (or stdin) in the Reader/Insert TUI
+ *   glance [file.md]      open a file in the Reader/Insert TUI
+ *   cat x.md | glance     piped stdin, no file: render to stdout (a rendered cat)
  *   glance --help         full usage and key bindings
  *   glance --keys         diagnostic: print raw key events (see tui_keyprobe)
  *   glance --outline FILE  JSON heading tree   (agent-facing)
@@ -10,6 +11,7 @@
 #include "tui.h"
 #include "agent.h"
 #include "mcp.h"
+#include "render.h"
 #include "theme.h"
 #include "export.h"
 #include "util.h"
@@ -19,6 +21,8 @@
 #include <string.h>
 #include <libgen.h>
 #include <errno.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
 
 /* Print the full usage: invocation forms, subcommands, and every key binding,
  * so `glance --help` is the single place that documents the whole program. */
@@ -29,7 +33,7 @@ static void print_help(void) {
 "USAGE\n"
 "  glance [FILE]            open FILE in the TUI (a missing path starts a new,\n"
 "                           empty file, created on first save)\n"
-"  cat FILE | glance        read Markdown from stdin\n"
+"  cat FILE | glance        render the piped Markdown to stdout (like glance-render)\n"
 "  glance --keys            diagnostic: print raw key events, Esc to quit\n"
 "  glance --outline FILE    print the heading tree as JSON (--depth N, --abstract)\n"
 "  glance --section F#H     print the section under heading H as JSON (+ token receipt)\n"
@@ -70,7 +74,11 @@ static void print_help(void) {
 "KEYS — Insert / Split\n"
 "  Esc                  back to reader           Ctrl-S       save\n"
 "  Ctrl-V               paste a clipboard image into a <name>_media/ folder\n"
-"  Alt/Ctrl + arrows    jump word left / right   Cmd + arrows / Ctrl-A / Ctrl-E  line start / end\n",
+"  Alt/Ctrl + arrows    jump word left / right   Cmd + arrows / Ctrl-A / Ctrl-E  line start / end\n"
+"\n"
+"  If Option/Cmd + arrows type letters instead of moving, your terminal doesn't\n"
+"  report those modifiers in legacy mode: set `keyboard = enhanced` in\n"
+"  ~/.config/glance/config (kitty keyboard protocol; check with glance --keys).\n",
         stdout);
 }
 
@@ -81,6 +89,20 @@ static char *load(const char *path, size_t *len) {
     char *s = read_file(f, len);
     fclose(f);
     return s;
+}
+
+/* Load ~/.config/glance/config (if present) into the theme registry, so the
+ * configured default and any custom themes are known. */
+static void load_user_config(void) {
+    const char *home = getenv("HOME");
+    if (!home) return;
+    char path[4096];
+    snprintf(path, sizeof path, "%s/.config/glance/config", home);
+    FILE *f = fopen(path, "rb");
+    if (!f) return;
+    size_t n; char *b = read_file(f, &n);
+    fclose(f);
+    if (b) { theme_load_config(b); free(b); }
 }
 
 /* Run an agent-facing JSON export over a file. Returns the process exit code. */
@@ -115,14 +137,7 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "--list-themes")) {
-        const char *home = getenv("HOME");
-        if (home) {                       /* load config so custom themes show too */
-            char path[4096];
-            snprintf(path, sizeof path, "%s/.config/glance/config", home);
-            FILE *cf = fopen(path, "rb");
-            if (cf) { size_t n; char *b = read_file(cf, &n); fclose(cf);
-                      if (b) { theme_load_config(b); free(b); } }
-        }
+        load_user_config();               /* so custom themes show too */
         for (int i = 0; i < theme_count(); i++) printf("%s\n", theme_at(i)->name);
         return 0;
     }
@@ -225,6 +240,32 @@ int main(int argc, char **argv) {
             else dir = argv[i];
         }
         return agent_context(dir, query, budget, semantic);
+    }
+
+    /* Piped stdin with no file argument: act as a filter — render the document
+     * to stdout, like glance-render — instead of opening the TUI. A pipe can't
+     * drive the interactive UI, and `cat notes.md | glance` should read as a
+     * rendered `cat`. A file argument still opens the TUI. */
+    if (argc <= 1 && !isatty(STDIN_FILENO)) {
+        size_t slen = 0;
+        char *ssrc = read_file(stdin, &slen);
+        if (!ssrc) { fprintf(stderr, "read failed\n"); return 1; }
+        struct winsize ws;
+        int width = (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
+                        ? ws.ws_col : 80;
+        load_user_config();                    /* honour the configured default theme */
+        const char *want = theme_name ? theme_name : theme_default_name();
+        const Theme *th = (want && strcmp(want, "auto")) ? theme_by_name(want) : NULL;
+        if (!th) th = theme_auto(1);           /* a pipe can't report polarity: dark */
+        Doc *doc = render_doc_themed(ssrc, slen, width, th, NULL);
+        free(ssrc);
+        if (!doc) { fprintf(stderr, "render failed\n"); return 1; }
+        char *out = doc_to_ansi(doc);
+        doc_free(doc);
+        if (!out) { fprintf(stderr, "serialize failed\n"); return 1; }
+        fputs(out, stdout);
+        free(out);
+        return 0;
     }
 
     FILE *f = stdin;

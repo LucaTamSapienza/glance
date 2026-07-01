@@ -5,6 +5,18 @@
 > headings are glance's retrieval unit. Drop an entry once it stops
 > informing anything.
 
+## 2026-07-01 — Enhanced keyboard is opt-in; legacy stays the default
+
+Option/Cmd+arrow chords are invisible in legacy keyboard mode on terminals
+that collapse them to bare letters (see [[lessons]]). The `keyboard =
+enhanced` config key (or `GLANCE_KEYBOARD=enhanced`) now keeps notcurses'
+kitty protocol active for the session, so those chords carry real modifier
+bits and the existing word-jump / line start-end bindings light up; `glance
+--keys` honours the mode. Legacy remains the default because the protocol
+once leaked sequences onto the shell at exit on iTerm2 (the reason
+`term_kbd_reset` exists); teardown now always pops the protocol either way.
+Flip the default only after field testing on real terminals.
+
 ## 2026-07-01 — Docs reorganized: one source per fact + this memory vault
 
 Six root-level prose docs (README, CLAUDE, AGENTS, STATUS, context,

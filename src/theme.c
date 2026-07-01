@@ -193,6 +193,12 @@ int theme_index_of(const char *name) {
 
 const char *theme_default_name(void) { return g_default; }
 
+/* The configured keyboard mode from the top-level `keyboard = …` config key.
+ * "enhanced" opts the TUI into the kitty keyboard protocol; anything else is
+ * the legacy default. */
+static char g_keyboard[16] = "legacy";
+const char *theme_config_keyboard(void) { return g_keyboard; }
+
 /* ---- hex parsing ---------------------------------------------------------- */
 
 static int hexval(int c) {
@@ -308,6 +314,8 @@ int theme_load_config(const char *text) {
         if (!cur) {
             if (!strcmp(key, "theme"))
                 snprintf(g_default, sizeof g_default, "%s", val);
+            else if (!strcmp(key, "keyboard"))
+                snprintf(g_keyboard, sizeof g_keyboard, "%s", val);
             continue;
         }
         if (!strcmp(key, "base")) {

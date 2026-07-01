@@ -149,6 +149,7 @@ static int doc_src_line(const Doc *d, int line);          /* defined below */
 static int src_doc_line(const Doc *d, int srcline);       /* defined below */
 static void open_graph(App *a);                           /* defined below */
 static void resolve_reload_conflict(App *a, int reload);  /* defined below */
+static void load_theme_config(void);                      /* defined below */
 
 /* ---- terminal teardown (kitty keyboard protocol, see slice-2 fix) --------- */
 
@@ -173,11 +174,27 @@ static void on_sigwinch(int sig) {
  * to the shell). Running the whole session in legacy input mode sidesteps that:
  * the terminal delivers final composed characters directly, which is all an
  * editor needs. Also used at teardown as a belt-and-suspenders. Non-supporting
- * terminals ignore the unknown CSI. */
+ * terminals ignore the unknown CSI.
+ *
+ * `keyboard = enhanced` in the config (or GLANCE_KEYBOARD=enhanced) skips the
+ * init-time resets and keeps the kitty protocol active for the session, so
+ * Option/Cmd + arrow chords arrive with real modifier bits on terminals that
+ * speak it (see kbd_enhanced). Teardown still pops the protocol either way. */
 static void term_kbd_reset(void) {
     const char *seq = "\033[<u\033[=0u\033[>4;0m";
     ssize_t w = write(STDOUT_FILENO, seq, strlen(seq));
     (void)w;
+}
+
+/* True when the user opted into the enhanced (kitty) keyboard protocol, via
+ * `keyboard = enhanced` in ~/.config/glance/config or GLANCE_KEYBOARD=enhanced
+ * (the env var wins). Legacy stays the default: some terminals leaked protocol
+ * sequences on exit — the reason term_kbd_reset exists — so enhanced is opt-in
+ * until it has seen more field testing. Callers must load the config first. */
+static int kbd_enhanced(void) {
+    const char *env = getenv("GLANCE_KEYBOARD");
+    const char *want = (env && *env) ? env : theme_config_keyboard();
+    return want && strcasecmp(want, "enhanced") == 0;
 }
 
 /* Swallow terminal query responses (OSC colour reports and the like) that can
@@ -1886,6 +1903,8 @@ static int handle_insert(App *a, uint32_t id, const ncinput *ni) {
     if (id == NCKEY_ESC) leave_editor(a);
     else if (ctrl_is(id, ni, 's')) { sync_source(a); save_file(a); }
     else if (ctrl_is(id, ni, 'v')) paste_image(a);
+    else if (id == NCKEY_SCROLL_UP)   editor_up(&a->ed);     /* trackpad/wheel: the */
+    else if (id == NCKEY_SCROLL_DOWN) editor_down(&a->ed);   /* viewport follows the cursor */
     else apply_edit_key(&a->ed, id, ni);
     return 1;
 }
@@ -1895,25 +1914,30 @@ static int handle_split(App *a, uint32_t id, const ncinput *ni) {
     if (id == NCKEY_ESC) leave_editor(a);
     else if (ctrl_is(id, ni, 's')) { sync_source(a); save_file(a); }
     else if (ctrl_is(id, ni, 'v')) { paste_image(a); render_preview(a); }
+    else if (id == NCKEY_SCROLL_UP)   editor_up(&a->ed);     /* trackpad/wheel: pure motion, */
+    else if (id == NCKEY_SCROLL_DOWN) editor_down(&a->ed);   /* no preview re-render needed */
     else { apply_edit_key(&a->ed, id, ni); render_preview(a); }
     return 1;
 }
 
 /* Diagnostic loop printing each key's raw fields; see tui.h. */
 int tui_keyprobe(void) {
-    term_kbd_reset();
+    load_theme_config();           /* the keyboard= config key decides the mode */
+    int enh = kbd_enhanced();
+    if (!enh) term_kbd_reset();
     notcurses_options opts;
     memset(&opts, 0, sizeof opts);
     opts.flags = NCOPTION_SUPPRESS_BANNERS;
     struct notcurses *nc = notcurses_init(&opts, NULL);
     if (!nc) return 1;
     g_nc = nc;
-    term_kbd_reset();              /* legacy keyboard mode (see term_kbd_reset) */
-    atexit(term_kbd_reset);
+    if (!enh) term_kbd_reset();    /* legacy keyboard mode (see term_kbd_reset) */
+    atexit(term_kbd_reset);        /* either way, leave the shell clean on exit */
 
     struct ncplane *p = notcurses_stdplane(nc);
     unsigned rows, cols; ncplane_dim_yx(p, &rows, &cols);
-    const char *hdr = " key probe — press keys (try Option+3, etc).  Esc to quit ";
+    const char *hdr = enh ? " key probe (enhanced keyboard) — press keys.  Esc to quit "
+                          : " key probe (legacy keyboard) — press keys (try Option+3).  Esc to quit ";
     ncplane_erase(p);
     ncplane_putstr_yx(p, 0, 0, hdr);
     notcurses_render(nc);
@@ -2090,8 +2114,9 @@ static const Theme *resolve_theme(const char *want, int detected_dark) {
  * dispatch, redraw. See tui.h. Owns a mutable copy of the source. */
 int tui_run(const char *src, unsigned long len, const char *path, const char *title,
             const char *theme_name) {
-    term_kbd_reset();   /* normalize before notcurses probes (slice-2 fix) */
-    load_theme_config();
+    load_theme_config();           /* needed first: the keyboard= key picks the mode */
+    int enh = kbd_enhanced();
+    if (!enh) term_kbd_reset();    /* normalize before notcurses probes (slice-2 fix) */
 
     notcurses_options opts;
     memset(&opts, 0, sizeof opts);
@@ -2121,8 +2146,8 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
     notcurses_mice_enable(a.nc, NCMICE_BUTTON_EVENT);
 
     g_nc = a.nc;
-    term_kbd_reset();              /* run in legacy keyboard mode (see above) */
-    atexit(term_kbd_reset);        /* and restore on any normal exit path */
+    if (!enh) term_kbd_reset();    /* default: run in legacy keyboard mode (see above) */
+    atexit(term_kbd_reset);        /* either way, restore/pop on any normal exit path */
 
     if (rerender(&a) != 0) { shutdown_tui(); free(a.src); return 1; }
     redraw(&a);
