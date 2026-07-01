@@ -41,11 +41,19 @@ the 2026-07-01 resize fix was validated without a terminal.
 The same Ctrl-V can arrive as the raw control code (0x16), or as `v`/`V`
 with the ctrl flag set. glance's `ctrl_is()` (tui.c) accepts all of them —
 route every new chord through it, and diagnose real keys with
-`./glance --keys`. Related: on Luca's iTerm2 in legacy keyboard mode,
-Option+arrow arrives as a BARE `b`/`f` (no modifier bit — indistinguishable
-from typing), so in-app Option-word-jump is impossible; Cmd+Left/Right
-arrive as Ctrl-A/Ctrl-E and are bound to line start/end. Re-enabling
-kitty/CSI-u would fix it but reopens the exit escape-leak — declined.
+`./glance --keys`.
+
+Related, probe-confirmed 2026-07-01: **terminal profile key mappings fire
+before any keyboard protocol.** On Luca's iTerm2, Option+arrow arrives as a
+BARE `b`/`f` even with the kitty protocol active (`keyboard = enhanced`) —
+an iTerm2 profile mapping (Natural-Text-Editing-style preset) sends its text
+before protocol encoding, and no app can see through it. The tell: the lone
+Option keydown arrives as `NCKEY_LALT` with `alt=1` (proof kitty is on), yet
+the combo arrives as plain text. Fix is terminal-side: delete the ⌥←/⌥→
+rows in iTerm2's Key Mappings, after which the arrows arrive as
+alt+Left/Right (in enhanced mode via kitty; in legacy as CSI `1;3C/D`).
+Cmd+Left/Right arrive as Ctrl-A/Ctrl-E and are already bound to line
+start/end. Terminal.app doesn't speak the kitty protocol at all.
 
 ## NCBLIT_PIXEL needs an aspect-tight plane
 

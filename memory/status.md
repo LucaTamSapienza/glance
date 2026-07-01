@@ -36,10 +36,11 @@ probes AddressSanitizer and falls back to UBSan alone where asan can't start
   test.** Three UX fixes: a piped stdin renders to stdout (`cat x.md |
   glance`, like glance-render); trackpad/wheel scrolling in Insert and Split;
   opt-in `keyboard = enhanced` config key (kitty keyboard protocol) so
-  Option/Cmd+arrow chords carry real modifier bits. Verified headless (suite
-  green; PTY harness drove both keyboard modes through Insert + scroll to a
-  clean exit). Needs interactive confirmation — scroll feel, enhanced mode on
-  iTerm2 (`glance --keys`), clean exit — before PR/merge.
+  Option/Cmd+arrow chords carry real modifier bits. Stdin filter and editor
+  scroll confirmed live by Luca; enhanced keyboard confirmed *active* on his
+  iTerm2 (`--keys` shows the lone NCKEY_LALT), but an iTerm2 profile key
+  mapping still swallows Option+arrow (see [[lessons]]) — remaining step:
+  delete those two mappings, retest, then PR/merge.
 - **feat/semantic-minilm — complete on the branch, not merged.** The real
   semantic tier: all-MiniLM-L6-v2 (fp16, via llama.cpp) behind the `Embedder`
   seam, persistent `.glance/` embedding cache, model download-on-first-use,
