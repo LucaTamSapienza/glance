@@ -16,7 +16,7 @@ import argparse
 _args = argparse.ArgumentParser()
 _args.add_argument("--model", default="gpt-4o-mini")
 _args.add_argument("--out", default=None, help="output claims file (default: data/claims_<model>.json)")
-_ARGS = _args.parse_args()
+_ARGS, _ = _args.parse_known_args()
 MODEL = _ARGS.model
 MAX_CLAIMS = 12
 WORKERS = 5
