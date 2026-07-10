@@ -138,8 +138,8 @@ static const char WIRE_TPL[] =
 "flags. Distill, don't append.\n";
 
 static const char DONE_TPL[] =
-"glance --doctor {vault} reports summary {todos:0, dangling:0, orphans:0, "
-"oversized:0} — the seeded TODO(seed) markers are the fill checklist";
+"glance --doctor {vault} exits 0 (summary.clean true) — the seeded "
+"TODO(seed) markers are the fill checklist";
 
 static const SeedStep PLAN[] = {
     { "Fill status.md — the present truth",
@@ -154,15 +154,21 @@ static const SeedStep PLAN[] = {
       "{vault}/history.md",
       NULL,
       "git log --reverse --date=short --format='%ad %s'",
-      "add one `## YYYY-MM-DD — milestone` section per era (3-8 total), oldest "
-      "first, then rewrite the seeded entry's body so no TODO(seed) remains",
+      "glance --edit {vault}/history.md before \"{date} — Memory vault seeded\" "
+      "\"## YYYY-MM-DD — milestone ...\" — one section per era (3-8 total), in "
+      "chronological order so the log stays oldest-first; then rewrite the "
+      "seeded entry's body so no TODO(seed) remains",
       "The arc, not a changelog — what a newcomer must know happened." },
     { "Record the decisions that still bind",
       "{vault}/decisions.md",
       NULL,
       "git log, the docs, the code's own shape (architecture, tooling, conventions)",
-      "one dated `##` entry per settled choice, newest first, each with its "
-      "why; then rewrite the seeded entry's body so no TODO(seed) remains",
+      "glance --edit {vault}/decisions.md append \"{date} — This brain was "
+      "seeded by glance\" \"## YYYY-MM-DD — choice ...\" — one entry per settled "
+      "choice with its why, inserting in chronological order (each append lands "
+      "directly under the seeded entry, so the newest ends up on top and the "
+      "note reads newest-first); then rewrite the seeded entry's body so no "
+      "TODO(seed) remains",
       "Only choices a future session could second-guess." },
     { "Wire the brain into the repo's agent instructions",
       "AGENTS.md (and/or CLAUDE.md)",
@@ -175,8 +181,8 @@ static const SeedStep PLAN[] = {
       "{vault}",
       NULL,
       NULL,
-      "glance --doctor {vault} — fix every flag, repeat until the summary is "
-      "all zeros",
+      "glance --doctor {vault} — fix every flag and repeat until it exits 0 "
+      "(summary.clean true)",
       "The seeded TODO(seed) markers are the fill checklist; done_when states "
       "the finish line." },
 };

@@ -99,3 +99,10 @@ vault additively and emits repo facts + a fill plan, with doctor-clean as
 the done-check (DESIGN.md §9/M5, the 29th suite). Phase 2 — the plugin skill
 that executes the fill — is next.
 
+## 2026-07-11 — The dogfood pass
+
+Doctor used in anger (adversarial vault + seed's own fill plan): five
+false-positive/negative classes fixed, distinct-note degree, `unreadable`
+flag, `summary.clean` + exit codes, and `--edit before`. The rehearsal now
+runs seed → fill → doctor exit 0 end to end; the why: [[decisions]].
+

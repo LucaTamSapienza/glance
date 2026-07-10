@@ -1,8 +1,8 @@
 # Status
 
-> Last updated: 2026-07-10 (feat/seed: the brain scaffold — 35 modules, 29
-> suites). What's done, what's in flight, what's open. Rules and invariants
-> live in AGENTS.md, not here.
+> Last updated: 2026-07-11 (feat/seed: brain scaffold + the dogfood
+> hardening — 35 modules, 29 suites). What's done, what's in flight, what's
+> open. Rules and invariants live in AGENTS.md, not here.
 
 ## On main
 
@@ -41,14 +41,18 @@ clipboard.c, the two entry points. The release artefact is darwin_arm64 only.
 
 - **feat/doctor → feat/seed (stacked) — complete, PRs pending.** The memory
   protocol, mechanized (DESIGN.md §9/M5). feat/doctor: `--doctor` /
-  `vault_doctor`, the vault hygiene report (28th suite; trigger table in
-  memory/MEMORY.md). feat/seed on top: `--seed` / `vault_seed`, the
-  one-command brain scaffold — additive `memory/` skeleton (index + protocol,
-  status/decisions/lessons/history with seed fill-markers), repo facts +
-  fill plan + `wire_snippet` as JSON, doctor-clean as the done-check (29th
-  suite); ships with the tightened TODO-marker rule (colon or paren required,
-  so prose mentions don't flag), see [[decisions]]. Phase 2 open: the plugin
-  skill that executes the fill plan.
+  `vault_doctor`, the vault hygiene report (28th suite), hardened by the
+  2026-07-11 dogfood pass — marker rule (colon/paren, fences skipped),
+  dangling without false positives (embeds, `#anchors`, dead relative `.md`
+  links), distinct-note degree, `unreadable` flag, sorted output,
+  `summary.clean` + exit 0/2/1 (a CI gate), see [[decisions]]. feat/seed on
+  top: `--seed` / `vault_seed`, the one-command brain scaffold — additive
+  `memory/` skeleton (index + protocol, status/decisions/lessons/history
+  with seed fill-markers), repo facts + fill plan + `wire_snippet` as JSON,
+  doctor exit 0 as the done-check (29th suite) — plus `--edit before`, which
+  makes the plan's dated-log backfills surgical (rehearsed end to end: seed
+  → fill → doctor exit 0). Phase 2 open: the plugin skill that executes the
+  fill plan.
 - **feat/semantic-minilm — complete on the branch, not merged.** The real
   semantic tier: all-MiniLM-L6-v2 (fp16, via llama.cpp) behind the `Embedder`
   seam, persistent `.glance/` embedding cache, model download-on-first-use,

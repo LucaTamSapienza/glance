@@ -11,13 +11,15 @@
  * Doc — so the round-trip is exact. Writing the result to disk atomically is the
  * caller's job (agent.c -> atomic_write). Pure and unit-tested. */
 
-typedef enum { EDIT_APPEND, EDIT_INSERT, EDIT_REPLACE } EditOp;
+typedef enum { EDIT_APPEND, EDIT_INSERT, EDIT_REPLACE, EDIT_BEFORE } EditOp;
 
 /* Apply `op` to the section under heading `anchor` (matched by text or slug) in
  * the `len`-byte Markdown `src`, with `text` as the payload:
  *   EDIT_APPEND  — add `text` at the end of the section (before the next heading)
  *   EDIT_INSERT  — add `text` right after the heading line
  *   EDIT_REPLACE — replace the section body (keeping the heading) with `text`
+ *   EDIT_BEFORE  — add `text` immediately above the heading line (the way to
+ *                  insert a new sibling section into a dated, ordered log)
  * ATX headings only; lines inside fenced code blocks are not treated as
  * headings. Returns a malloc'd new document (caller frees), or NULL if the
  * heading is not found or on OOM. */

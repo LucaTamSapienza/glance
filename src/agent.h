@@ -59,9 +59,9 @@ int agent_doctor(const char *dir, long now);
 int agent_seed(const char *dir, long now);
 
 /* Surgically edit the section under heading `anchor` in `file` and write it back
- * atomically. `op` is an EditOp (0=append, 1=insert, 2=replace). Prints
- * {ok,file,anchor,bytes,section} (the updated section) or {ok:false,error} as
- * JSON. Returns 0 on success, non-zero on failure. */
+ * atomically. `op` is an EditOp (0=append, 1=insert, 2=replace, 3=before).
+ * Prints {ok,file,anchor,bytes,section} (the updated section) or
+ * {ok:false,error} as JSON. Returns 0 on success, non-zero on failure. */
 int agent_edit(const char *file, const char *anchor, int op, const char *text);
 
 /* Set YAML frontmatter `key` to `value` in `file` and write it back atomically.

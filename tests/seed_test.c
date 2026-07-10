@@ -158,9 +158,13 @@ int main(void) {
            "step 1 names the status sections");
     expect(nsteps == 5 && plan[4].how && strstr(plan[4].how, "--doctor") != NULL,
            "last step is the lint loop");
+    expect(nsteps == 5 && plan[1].how && strstr(plan[1].how, "before \"") != NULL,
+           "history backfill uses the before op");
+    expect(nsteps == 5 && plan[2].how && strstr(plan[2].how, "append \"") != NULL,
+           "decisions backfill appends under the seeded entry");
     expect(strstr(seed_wire_snippet(), "{vault}/MEMORY.md") != NULL,
            "wire snippet points at the index");
-    expect(strstr(seed_done_when(), "todos:0") != NULL, "done-check is doctor-clean");
+    expect(strstr(seed_done_when(), "exits 0") != NULL, "done-check is doctor exit 0");
 
     /* ---- agent_seed end-to-end: scaffold on disk + JSON bundle ---- */
     int rc = -1;
@@ -216,6 +220,8 @@ int main(void) {
         expect(strstr(doc, "\"oversized\":0") && strstr(doc, "\"stale\":0") &&
                strstr(doc, "\"orphans\":0") && strstr(doc, "\"dangling\":0"),
                "doctor: nothing else flagged on a fresh seed");
+        expect(strstr(doc, "\"clean\":false") != NULL,
+               "doctor: a fresh seed is honestly not clean yet");
         free(doc);
     }
 

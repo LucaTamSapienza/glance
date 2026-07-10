@@ -5,6 +5,20 @@
 > headings are glance's retrieval unit. Drop an entry once it stops
 > informing anything.
 
+## 2026-07-11 — Doctor's contract set by dogfood: measure meaning, gate on clean
+
+An adversarial-vault pass plus executing seed's fill plan settled doctor's
+semantics. A marker needs `:`/`(` and sits outside code fences (prose,
+quotes and samples don't flag — the third self-flag incarnation in two
+days). Dangling covers `#anchor` targets (stripped in vault_stem — also
+fixes the graph edge, backlinks and TUI follow), attachments by file
+existence, and dead relative `.md` Markdown links; URLs aren't ours. Degree
+counts distinct notes; unreadable notes get their own flag and no
+judgement. `summary.clean` + exit 0/2/1 turn doctor into a CI gate and
+seed's done-check. `--edit` gained `before` (insert above a heading):
+history's backfill was otherwise impossible surgically; decisions backfill
+appends under the seeded entry — both in chronological insertion order.
+
 ## 2026-07-10 — --seed: the brain scaffold is a command; structure ≠ knowledge
 
 `glance --seed` (MCP: `vault_seed`) gives any repo a brain: walk to the repo
@@ -17,9 +31,7 @@ fill needs no new verification code. The templates are the generic instance
 of this very vault, i.e. the one-shot instantiation of Karpathy's LLM-wiki
 pattern. Named `--seed`, not `--init`, so the "vault is a folder" invariant
 keeps its exact meaning: reading never needs setup, seeding plants plain
-notes. With it, doctor's TODO-marker rule tightened to require a colon or
-paren after the word, so prose that documents the protocol (or, as this
-entry learned firsthand, quotes a marker) no longer self-flags.
+notes.
 
 ## 2026-07-10 — The memory protocol got a mechanical half: --doctor
 
@@ -55,26 +67,20 @@ If pursued: run the hot-node test, then demand the bolt-on baseline.
 
 ## 2026-07-01 — Enhanced keyboard is opt-in; legacy stays the default
 
-Option/Cmd+arrow chords are invisible in legacy keyboard mode on terminals
-that collapse them to bare letters. `keyboard = enhanced` in the config (or
-`GLANCE_KEYBOARD=enhanced`) keeps notcurses' kitty protocol active so those
-chords carry real modifier bits; `glance --keys` honours the mode. Legacy
-stays the default because the protocol leaked onto the shell at exit on
-iTerm2 — mechanics and un-wedge recipe in [[lessons]] — and teardown now
-clears the whole kitty stack (counted pop) in both modes. Flip the default
-only after field testing on real terminals.
+`keyboard = enhanced` keeps the kitty protocol active so Option/Cmd chords
+carry real modifier bits. Legacy stays the default because the protocol once
+leaked onto the shell at exit (iTerm2 — mechanics and un-wedge recipe:
+[[lessons]]); teardown now clears the whole kitty stack in both modes. Flip
+the default only after field testing on real terminals.
 
 ## 2026-07-01 — Docs reorganized: one source per fact + this memory vault
 
-Six root-level prose docs (README, CLAUDE, AGENTS, STATUS, context,
-AGENT_FEATURES) repeated the module map and status in 3–4 places each and
-measurably drifted (AGENTS.md still said 23 suites and "proportional" cursor
-sync long after both changed). Now: README = product, AGENTS.md = the one
-working guide (CLAUDE.md just imports it), memory/ = living state, docs/ =
-DESIGN + MCP + specs/ + archive/. STATUS.md, context.md and AGENT_FEATURES.md
-were absorbed and deleted; HANDOFF and REVIEW archived. Heads-up:
-feat/semantic-minilm still edits the deleted STATUS.md/context.md and will
-conflict at merge — fold its deltas into [[status]].
+Six root-level prose docs repeated the module map and status and measurably
+drifted. Now: README = product, AGENTS.md = the one working guide (CLAUDE.md
+just imports it), memory/ = living state, docs/ = DESIGN + MCP + specs +
+archive; STATUS.md, context.md and AGENT_FEATURES.md deleted. Heads-up:
+feat/semantic-minilm still edits the deleted files and will conflict at
+merge — fold its deltas into [[status]].
 
 ## 2026-07-01 — spike/ and third_party/ are local-only on main
 
@@ -82,10 +88,8 @@ conflict at merge — fold its deltas into [[status]].
 gitignored so `git status` stays honest and a `git clean -fd` can't destroy
 them. feat/semantic-minilm tracks `third_party/llama.cpp` as a submodule —
 ignoring the path on main is harmless because gitignore never affects
-tracked paths. (Heads-up 2026-07-10: `feature/claim-store` commits its own
-`spike/` files; merging it would put tracked files under an ignored path —
-harmless for those, but anything *new* under `spike/` would stop showing in
-`git status`. Revisit the ignore line then.)
+tracked paths. (Heads-up: `feature/claim-store` commits its own `spike/`
+files — revisit the ignore line if it merges.)
 
 ## 2026-06-25 — Paper direction: the contribution is accuracy-per-token
 
@@ -106,11 +110,10 @@ they are complementary: consistency is *what you read*, the budget frontier
 
 ## 2026-06-19 — MiniLM semantic tier: GO; fp16; cache mandatory
 
-On-device spike (`spike/minilm`, local-only): ~150–180 ms model load +
-~24 ms/chunk on CPU via llama.cpp, ~4× faster cache builds on Metal, no
-thermal throttle. Ship **fp16** (44 MB; quantization = complexity for no
-gain), a persistent `.glance/` vector cache (re-embedding the vault per
-query is a non-starter), ~5 threads. Implemented on feat/semantic-minilm.
+On-device spike (`spike/minilm`, local-only): ~150–180 ms model load,
+~24 ms/chunk on CPU, no thermal throttle → ship **fp16** + a persistent
+`.glance/` vector cache, ~5 threads. Implemented on feat/semantic-minilm
+(embedder model since revised — see the 2026-06-25 entry).
 
 ## 2026-06-19 — WYSIWYG Live mode parked after trial
 
@@ -129,9 +132,8 @@ rebuild it.
 
 A terminal reader alone doesn't differentiate; the durable edge is serving
 the human and the agent over the same vault — bounded reads, budgeted
-retrieval with a token receipt, surgical writes, MCP. Specced in
-docs/DESIGN.md and shipped as four stacked milestones (M1–M4, PRs #9–#14),
-with MCP tools reusing the exact CLI exports so the two surfaces can't drift.
+retrieval with a receipt, surgical writes, MCP. Specced in docs/DESIGN.md;
+shipped as M1–M4 (PRs #9–#14), MCP tools reusing the exact CLI exports.
 
 ## 2026-06-16 — PR workflow on a protected main; sole-author commits
 

@@ -55,8 +55,9 @@ static void print_help(void) {
 "                           repo root (index + status/decisions/lessons/history)\n"
 "                           and prints repo facts + a fill plan as JSON;\n"
 "                           --doctor going clean is the done-check\n"
-"  glance --edit F OP H T   edit section H of file F (OP=append|insert|replace,\n"
-"                           T=text), saved atomically; prints the new section\n"
+"  glance --edit F OP H T   edit section H of file F (OP=append|insert|replace\n"
+"                           |before, T=text), saved atomically; prints the new\n"
+"                           section (before = insert T just above the heading)\n"
 "  glance --set-frontmatter F K V   set YAML frontmatter key K to value V in F\n"
 "  glance --export F [OUT]   export F to HTML (or PDF if OUT ends in .pdf);\n"
 "                           OUT defaults to F with a .html extension\n"
@@ -191,13 +192,14 @@ int main(int argc, char **argv) {
         return agent_since(argv[3], ts);
     }
     if (argc > 5 && !strcmp(argv[1], "--edit")) {
-        /* glance --edit FILE OP "Heading" "text"  (OP = append|insert|replace) */
+        /* glance --edit FILE OP "Heading" "text"  (OP = append|insert|replace|before) */
         const char *file = argv[2], *opname = argv[3], *anchor = argv[4], *text = argv[5];
         int op;
         if (!strcmp(opname, "append")) op = 0;
         else if (!strcmp(opname, "insert")) op = 1;
         else if (!strcmp(opname, "replace")) op = 2;
-        else { fprintf(stderr, "glance --edit: OP must be append, insert, or replace\n"); return 2; }
+        else if (!strcmp(opname, "before")) op = 3;
+        else { fprintf(stderr, "glance --edit: OP must be append, insert, replace, or before\n"); return 2; }
         return agent_edit(file, anchor, op, text);
     }
     if (argc > 4 && !strcmp(argv[1], "--set-frontmatter")) {

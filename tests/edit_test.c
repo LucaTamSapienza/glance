@@ -49,6 +49,26 @@ int main(void) {
         free(out);
     }
 
+    /* BEFORE: a new sibling section lands above the anchor heading. */
+    {
+        char *out = edit_section(doc, strlen(doc), "Notes", EDIT_BEFORE,
+                                 "## Between\n\nbetween body");
+        assert(out);
+        long between = idx(out, "## Between"), notes = idx(out, "## Notes");
+        assert(between >= 0 && notes >= 0 && between < notes);   /* above Notes */
+        assert(idx(out, "- two") < between);                     /* below Tasks body */
+        assert(idx(out, "note body") > notes);                   /* Notes intact */
+        free(out);
+    }
+
+    /* BEFORE the first heading prepends at the top of the document. */
+    {
+        char *out = edit_section(doc, strlen(doc), "Title", EDIT_BEFORE, "preface");
+        assert(out && strncmp(out, "preface", 7) == 0);
+        assert(idx(out, "# Title") > idx(out, "preface"));
+        free(out);
+    }
+
     /* slug anchor resolves too. */
     {
         char *out = edit_section(doc, strlen(doc), "tasks", EDIT_APPEND, "- via slug");
@@ -64,6 +84,7 @@ int main(void) {
         const char *fenced =
             "# Real\n\n```\n## Fake\ncode\n```\n\nbody\n";
         assert(edit_section(fenced, strlen(fenced), "Fake", EDIT_APPEND, "x") == NULL);
+        assert(edit_section(fenced, strlen(fenced), "Fake", EDIT_BEFORE, "x") == NULL);
         char *out = edit_section(fenced, strlen(fenced), "Real", EDIT_APPEND, "added");
         assert(out && idx(out, "added") >= 0);
         assert(idx(out, "## Fake") >= 0);   /* fenced text preserved verbatim */
