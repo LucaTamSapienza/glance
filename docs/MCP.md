@@ -61,6 +61,7 @@ Every read is **bounded** so it stays token-cheap; `vault_context` and
 | `vault_links`     | `file`                    | a file's outbound links |
 | `vault_graph`     | `dir`                     | the whole vault's link graph |
 | `vault_doctor`    | `dir`                     | vault hygiene report: per-note size, age, distinct link degree, dangling links (wikilinks, embeds, relative `.md` links), TODO/FIXME markers, and maintenance flags (unreadable/oversized/stale/orphan); the summary carries `clean` |
+| `vault_seed`      | `dir`                     | scaffold a memory vault ("brain") for the repo containing `dir`, additively; returns repo facts, a step-by-step fill plan, a `wire_snippet` for the host AGENTS.md, and the done-check (`vault_doctor` clean) |
 | `vault_edit`      | `file`, `heading`, `op`, `text` | surgically edit a section (`op` = append/insert/replace), saved atomically; echoes the new section |
 | `vault_set_frontmatter` | `file`, `key`, `value` | set a YAML frontmatter key, saved atomically |
 

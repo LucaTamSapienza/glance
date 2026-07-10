@@ -50,6 +50,11 @@ static void print_help(void) {
 "                           or stale (>45 days) notes, orphans, unreadable notes,\n"
 "                           dangling links, TODO:/FIXME: markers — fix what it\n"
 "                           flags; exit 0 clean, 2 findings, 1 unreadable DIR\n"
+"  glance --seed [DIR]      scaffold a memory vault (a \"brain\") for the repo\n"
+"                           containing DIR: additively creates memory/ at the\n"
+"                           repo root (index + status/decisions/lessons/history)\n"
+"                           and prints repo facts + a fill plan as JSON;\n"
+"                           --doctor going clean is the done-check\n"
 "  glance --edit F OP H T   edit section H of file F (OP=append|insert|replace,\n"
 "                           T=text), saved atomically; prints the new section\n"
 "  glance --set-frontmatter F K V   set YAML frontmatter key K to value V in F\n"
@@ -219,6 +224,10 @@ int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "--doctor")) {
         /* glance --doctor [DIR] — vault hygiene report; DIR defaults to ".". */
         return agent_doctor(argc > 2 ? argv[2] : ".", (long)time(NULL));
+    }
+    if (argc > 1 && !strcmp(argv[1], "--seed")) {
+        /* glance --seed [DIR] — scaffold a brain for the repo containing DIR. */
+        return agent_seed(argc > 2 ? argv[2] : ".", (long)time(NULL));
     }
     if (argc > 2 && !strcmp(argv[1], "--section")) {
         /* Argument is "FILE#anchor"; a bare "FILE" selects the whole document. */

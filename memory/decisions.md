@@ -5,6 +5,22 @@
 > headings are glance's retrieval unit. Drop an entry once it stops
 > informing anything.
 
+## 2026-07-10 — --seed: the brain scaffold is a command; structure ≠ knowledge
+
+`glance --seed` (MCP: `vault_seed`) gives any repo a brain: walk to the repo
+root, additively write `memory/` — an index doubling as the protocol +
+status/decisions/lessons/history with seed fill-markers — and print repo
+facts, a fill plan, a `wire_snippet` for the host AGENTS.md, the done-check.
+The split is deliberate: glance (no LLM) writes *structure*, the calling
+agent writes *knowledge*, and `--doctor` going clean means "brain ready" — the
+fill needs no new verification code. The templates are the generic instance
+of this very vault, i.e. the one-shot instantiation of Karpathy's LLM-wiki
+pattern. Named `--seed`, not `--init`, so the "vault is a folder" invariant
+keeps its exact meaning: reading never needs setup, seeding plants plain
+notes. With it, doctor's TODO-marker rule tightened to require a colon or
+paren after the word, so prose that documents the protocol (or, as this
+entry learned firsthand, quotes a marker) no longer self-flags.
+
 ## 2026-07-10 — The memory protocol got a mechanical half: --doctor
 
 The protocol's rules (update triggers, the ~150-line cap, distill-don't-
@@ -70,23 +86,6 @@ tracked paths. (Heads-up 2026-07-10: `feature/claim-store` commits its own
 `spike/` files; merging it would put tracked files under an ignored path —
 harmless for those, but anything *new* under `spike/` would stop showing in
 `git status`. Revisit the ignore line then.)
-
-## 2026-07-01 — make test probes ASan instead of assuming it
-
-asan's runtime deadlocks at init on macOS 26 (see [[lessons]]), so a
-hard-coded `-fsanitize=address` hung the suite at 100% CPU — it looked like
-an infinite build loop. The recipe now runs a trivial asan binary under a
-5 s watchdog and drops to UBSan-only when it can't start: full ASan stays on
-CI and healthy machines, and the suites always run.
-
-## 2026-07-01 — The TUI owns SIGWINCH (self-pipe), not notcurses
-
-Window resize and Cmd +/- font zoom left the reader stale because notcurses'
-`NCKEY_RESIZE` never reached glance's external poll loop (see [[lessons]]).
-glance now sets `NCOPTION_NO_WINCH_SIGHANDLER`, installs its own SIGWINCH
-handler writing to a self-pipe polled beside input, and on wake calls
-`notcurses_refresh` + one reflow (bursts coalesce). Don't hand resize
-handling back to notcurses.
 
 ## 2026-06-25 — Paper direction: the contribution is accuracy-per-token
 

@@ -75,6 +75,7 @@ cat note.md | ./glance                  # piped stdin: render to stdout
 ./glance --section "file.md#Heading"    # one section + receipt
 ./glance --outline file.md --depth 2 --abstract
 ./glance --edit file.md append "Tasks" "- new"          # surgical write (atomic)
+./glance --seed .                       # scaffold a memory vault (brain) + fill plan
 ./glance mcp                            # MCP server over stdio (Claude Desktop, etc.)
 ```
 
@@ -124,6 +125,7 @@ src/
   context.c      budget planner: score order, diversity, coarse-to-fine, manifest
   edit.c         surgical source edits: section append/insert/replace, frontmatter
   doctor.c       vault hygiene facts: note size/age, link degree, dangling links
+  seed.c         brain scaffolding: vault note templates, repo facts, fill plan
   json.c         a small dependency-free JSON parser (for the MCP server)
   mcp.c          MCP server over stdio (JSON-RPC 2.0): the agent-memory tools
   agent.c        JSON exports + retrieval/write orchestration (all --… subcommands)
@@ -147,9 +149,11 @@ testdata/        sample.md showcase + an example vault/
 - **The untrusted-input boundary is the MCP server.** `json.c` caps parse
   depth and `mcp.c` validates UTF-8 on output; keep new MCP input paths
   defensive (the audit that shaped this: `docs/archive/REVIEW.md`).
-- **The vault is a folder.** No `--init`, no index file. `vault.c` finds the
-  root by walking up to a `.git`/`.obsidian` marker and scans it recursively;
-  bare `[[names]]` resolve by stem across the whole tree.
+- **The vault is a folder.** Reading never requires setup: no index file, no
+  metadata. `vault.c` finds the root by walking up to a `.git`/`.obsidian`
+  marker and scans it recursively; bare `[[names]]` resolve by stem across the
+  whole tree. (`--seed` scaffolds plain notes for a new brain; it creates no
+  index and changes nothing about how a vault is read.)
 - **Cursor sync is offset-based and exact.** `render.c` records each visual
   line's source line during the parse (`src_line_at` → `Line.source_line`);
   `preprocess_map` recovers the original line across inserted blanks.

@@ -92,3 +92,10 @@ vault. `--doctor` / `vault_doctor` shipped as the memory protocol's
 mechanical check (28th suite), and [[MEMORY]] gained the explicit
 update/fill/delete trigger table.
 
+## 2026-07-10 — feat/seed: the brain gets a birth command
+
+Stacked on feat/doctor: `--seed` / `vault_seed` scaffolds a repo's `memory/`
+vault additively and emits repo facts + a fill plan, with doctor-clean as
+the done-check (DESIGN.md §9/M5, the 29th suite). Phase 2 — the plugin skill
+that executes the fill — is next.
+

@@ -12,14 +12,17 @@
 #include "vault.h"
 #include "graph.h"
 #include "doctor.h"
+#include "seed.h"
 #include "util.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <time.h>
 
 /* Read dir/rel into a NUL-terminated buffer; *len gets the byte length, or NULL
  * on failure. Shared by the vault-scanning exports below. */
@@ -381,6 +384,144 @@ int agent_doctor(const char *dir, long now) {
 
     doctor_free(&rep);
     return clean ? 0 : 2;
+}
+
+/* ---- brain seeding --------------------------------------------------------- */
+
+/* True if directory `dir` contains an entry named `name`. */
+static int dir_has(const char *dir, const char *name) {
+    char path[4096];
+    struct stat st;
+    snprintf(path, sizeof path, "%s/%s", dir, name);
+    return stat(path, &st) == 0;
+}
+
+/* Print ,"key":"..." with the template's {repo}/{vault}/{date} substituted. */
+static void seed_emit(const char *key, const char *tpl, const char *repo,
+                      const char *vault, const char *date) {
+    char *s = seed_expand(tpl, repo, vault, date);
+    printf(",\"%s\":", key);
+    json_str(s ? s : "");
+    free(s);
+}
+
+int agent_seed(const char *dir, long now) {
+    char abs[4096];
+    if (!realpath(dir, abs)) {
+        printf("{\"ok\":false,\"error\":\"cannot resolve directory\"}\n");
+        return 1;
+    }
+
+    /* vault_root expects a file path and starts from its directory, so probe
+     * with a child of `abs` to consider `abs` itself first. */
+    char probe[4352], root[4096];
+    snprintf(probe, sizeof probe, "%s/.", abs);
+    vault_root(probe, root, sizeof root);
+    const char *marker = dir_has(root, ".git")      ? ".git"
+                       : dir_has(root, ".obsidian") ? ".obsidian" : NULL;
+
+    SeedFacts facts;
+    if (seed_facts(root, &facts) != 0) {
+        printf("{\"ok\":false,\"error\":\"cannot read repo root\"}\n");
+        return 1;
+    }
+
+    char vault[4200];
+    snprintf(vault, sizeof vault, "%s/memory", root);
+    if (mkdir(vault, 0755) != 0 && errno != EEXIST) {
+        printf("{\"ok\":false,\"error\":\"cannot create vault directory\"}\n");
+        seed_facts_free(&facts);
+        return 1;
+    }
+
+    char date[16];
+    time_t t = (time_t)now;
+    struct tm tmv;
+    localtime_r(&t, &tmv);
+    strftime(date, sizeof date, "%Y-%m-%d", &tmv);
+
+    /* Additive scaffold: write only the notes that don't exist yet. */
+    SeedNote notes[SEED_NOTES];
+    seed_notes(facts.repo, "memory", date, notes);
+    int created[SEED_NOTES] = {0};
+    for (int i = 0; i < SEED_NOTES; i++) {
+        char path[4352];
+        snprintf(path, sizeof path, "%s/%s", vault, notes[i].name);
+        struct stat st;
+        if (stat(path, &st) == 0) continue;
+        if (!notes[i].text ||
+            atomic_write(path, notes[i].text, strlen(notes[i].text)) != 0) {
+            printf("{\"ok\":false,\"error\":\"cannot write note\",\"file\":");
+            json_str(path);
+            printf("}\n");
+            seed_notes_free(notes);
+            seed_facts_free(&facts);
+            return 1;
+        }
+        created[i] = 1;
+    }
+
+    printf("{\"ok\":true,\"root\":");
+    json_str(root);
+    printf(",\"marker\":");
+    if (marker) json_str(marker); else fputs("null", stdout);
+    printf(",\"vault\":");
+    json_str(vault);
+    for (int pass = 0; pass < 2; pass++) {   /* created, then skipped */
+        fputs(pass == 0 ? ",\"created\":[" : ",\"skipped\":[", stdout);
+        int first = 1;
+        for (int i = 0; i < SEED_NOTES; i++) {
+            if (created[i] != (pass == 0)) continue;
+            char rel[300];
+            snprintf(rel, sizeof rel, "memory/%s", notes[i].name);
+            if (!first) putchar(',');
+            json_str(rel);
+            first = 0;
+        }
+        putchar(']');
+    }
+
+    printf(",\"facts\":{\"repo\":");
+    json_str(facts.repo);
+    fputs(",\"languages\":[", stdout);
+    for (int i = 0; i < facts.nlang; i++) {
+        printf("%s{\"ext\":", i ? "," : "");
+        json_str(facts.lang[i].ext);
+        printf(",\"files\":%d}", facts.lang[i].files);
+    }
+    fputs("],\"toplevel\":[", stdout);
+    for (int i = 0; i < facts.ntop; i++) {
+        if (i) putchar(',');
+        json_str(facts.top[i]);
+    }
+    fputs("],\"docs_found\":[", stdout);
+    for (int i = 0; i < facts.ndocs; i++) {
+        if (i) putchar(',');
+        json_str(facts.docs[i]);
+    }
+    fputs("]}", stdout);
+
+    fputs(",\"plan\":[", stdout);
+    int nsteps = 0;
+    const SeedStep *plan = seed_plan(&nsteps);
+    for (int i = 0; i < nsteps; i++) {
+        printf("%s{\"step\":%d", i ? "," : "", i + 1);
+        if (plan[i].goal)     seed_emit("goal",     plan[i].goal,     facts.repo, "memory", date);
+        if (plan[i].file)     seed_emit("file",     plan[i].file,     facts.repo, "memory", date);
+        if (plan[i].sections) seed_emit("sections", plan[i].sections, facts.repo, "memory", date);
+        if (plan[i].sources)  seed_emit("sources",  plan[i].sources,  facts.repo, "memory", date);
+        if (plan[i].how)      seed_emit("how",      plan[i].how,      facts.repo, "memory", date);
+        if (plan[i].hint)     seed_emit("hint",     plan[i].hint,     facts.repo, "memory", date);
+        putchar('}');
+    }
+    putchar(']');
+    seed_emit("wire_snippet", seed_wire_snippet(), facts.repo, "memory", date);
+    seed_emit("done_when", seed_done_when(), facts.repo, "memory", date);
+    fputs("}\n", stdout);
+
+    seed_notes_free(notes);
+    seed_facts_free(&facts);
+    return 0;
 }
 
 /* ---- context retrieval ---------------------------------------------------- */

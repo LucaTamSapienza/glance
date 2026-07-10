@@ -125,6 +125,8 @@ static char *run_tool(const char *name, const Json *args) {
         agent_graph(json_str_or(json_get(args, "dir"), "."));
     } else if (!strcmp(name, "vault_doctor")) {
         agent_doctor(json_str_or(json_get(args, "dir"), "."), (long)time(NULL));
+    } else if (!strcmp(name, "vault_seed")) {
+        agent_seed(json_str_or(json_get(args, "dir"), "."), (long)time(NULL));
     } else if (!strcmp(name, "vault_section")) {
         const char *file = json_str_or(json_get(args, "file"), "");
         const char *heading = json_str_or(json_get(args, "heading"), NULL);
@@ -194,6 +196,9 @@ static const ToolDef TOOLS[] = {
     { "vault_doctor",
       "Vault hygiene report: per note, its size, age, link degree, dangling [[wikilinks]], TODO markers, and maintenance flags (oversized/stale/orphan) — run it after editing the vault and fix what it flags.",
       "{\"type\":\"object\",\"properties\":{\"dir\":{\"type\":\"string\",\"description\":\"vault directory\"}},\"required\":[\"dir\"]}" },
+    { "vault_seed",
+      "Scaffold a memory vault (a \"brain\") for the repo containing dir: additively creates memory/ at the repo root — an index with the maintenance protocol plus status/decisions/lessons/history notes; existing files are never touched. Returns repo facts, a step-by-step fill plan for the calling agent, a wire_snippet for the repo's agent instructions, and the done-check (vault_doctor clean).",
+      "{\"type\":\"object\",\"properties\":{\"dir\":{\"type\":\"string\",\"description\":\"any directory inside the repo (default .)\"}},\"required\":[\"dir\"]}" },
     { "vault_edit",
       "Surgically edit a section of a Markdown file and save it atomically: op=append adds text at the end of the section under the given heading, insert adds it right after the heading, replace swaps the section body. All other formatting is preserved.",
       "{\"type\":\"object\",\"properties\":{\"file\":{\"type\":\"string\"},\"heading\":{\"type\":\"string\"},\"op\":{\"type\":\"string\",\"enum\":[\"append\",\"insert\",\"replace\"]},\"text\":{\"type\":\"string\"}},\"required\":[\"file\",\"heading\",\"text\"]}" },

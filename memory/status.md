@@ -1,6 +1,6 @@
 # Status
 
-> Last updated: 2026-07-10 (full-code re-read: 34 modules, ~9.8k lines, 28
+> Last updated: 2026-07-10 (feat/seed: the brain scaffold — 35 modules, 29
 > suites). What's done, what's in flight, what's open. Rules and invariants
 > live in AGENTS.md, not here.
 
@@ -24,23 +24,31 @@ export (`glance-render --html`) and PDF via a detected converter
 (`--outline`, `--section`, `--neighbors`, `--backlinks`, `--since`,
 `--links`, `--graph`), budgeted retrieval (`--context` — BM25 + link-graph
 prior, diversity, coarse-to-fine, truncation manifest, token receipt),
-surgical writes (`--edit`, `--set-frontmatter`), the MCP server (`glance mcp`,
-11 tools reusing the exact CLI exports), and — new 2026-07-10 — the vault
-hygiene report `--doctor` / `vault_doctor`: per-note size, age, link degree,
-dangling `[[wikilinks]]`, TODO markers, and oversized/stale/orphan flags. The
-doctor is the mechanical half of the memory protocol (trigger table in
-memory/MEMORY.md). Hardened after an adversarial review
-(docs/archive/REVIEW.md): JSON parser depth cap, setext-aware edits, fence
-tracking, frontmatter escaping, surrogate-pair decoding, UTF-8-validated
-output.
+surgical writes (`--edit`, `--set-frontmatter`), and the MCP server
+(`glance mcp`, tools reusing the exact CLI exports). Hardened after an
+adversarial review (docs/archive/REVIEW.md): JSON parser depth cap,
+setext-aware edits, fence tracking, frontmatter escaping, surrogate-pair
+decoding, UTF-8-validated output. M5 (doctor + seed) is complete on the
+stacked branches below.
 
-**Verified by the 2026-07-10 re-read:** zero TODO/FIXME markers in src/; 28
-test suites green (UBSan; the ASan probe story: [[lessons]]) locally and in
-CI (macos-latest). Untested by design: tui.c (~2.3k lines, hand-verified),
+**Verified 2026-07-10:** 29 test suites green (UBSan; the ASan probe story:
+[[lessons]]) locally, 28 in CI until the M5 branches merge; no TODO/FIXME
+markers in src/ (seed.c's template fill-markers are string content, not
+source markers). Untested by design: tui.c (~2.3k lines, hand-verified),
 clipboard.c, the two entry points. The release artefact is darwin_arm64 only.
 
 ## In flight (branches)
 
+- **feat/doctor → feat/seed (stacked) — complete, PRs pending.** The memory
+  protocol, mechanized (DESIGN.md §9/M5). feat/doctor: `--doctor` /
+  `vault_doctor`, the vault hygiene report (28th suite; trigger table in
+  memory/MEMORY.md). feat/seed on top: `--seed` / `vault_seed`, the
+  one-command brain scaffold — additive `memory/` skeleton (index + protocol,
+  status/decisions/lessons/history with seed fill-markers), repo facts +
+  fill plan + `wire_snippet` as JSON, doctor-clean as the done-check (29th
+  suite); ships with the tightened TODO-marker rule (colon or paren required,
+  so prose mentions don't flag), see [[decisions]]. Phase 2 open: the plugin
+  skill that executes the fill plan.
 - **feat/semantic-minilm — complete on the branch, not merged.** The real
   semantic tier: all-MiniLM-L6-v2 (fp16, via llama.cpp) behind the `Embedder`
   seam, persistent `.glance/` embedding cache, model download-on-first-use,

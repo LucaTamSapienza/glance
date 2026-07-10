@@ -30,7 +30,7 @@ GUI := $(SRC)/main.c $(SRC)/tui.c $(SRC)/editor.c $(SRC)/fswatch.c \
        $(SRC)/clipboard.c $(SRC)/completion.c $(SRC)/agent.c $(SRC)/legend.c \
        $(SRC)/progress.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/bm25.c \
        $(SRC)/context.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/json.c $(SRC)/mcp.c \
-       $(SRC)/export.c $(SRC)/fuzzy.c $(SRC)/doctor.c
+       $(SRC)/export.c $(SRC)/fuzzy.c $(SRC)/doctor.c $(SRC)/seed.c
 glance: $(GUI) $(CORE) $(HDRS)
 	$(CC) $(CFLAGS) -o $@ $(GUI) $(CORE) $(MD4C_LIBS) $(NC_LIBS) -lm
 
@@ -80,7 +80,7 @@ test:
 	  $(SRC)/edit.c $(SRC)/section.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-edit; \
 	$$CX -lm -o build-t-json tests/json_test.c $(SRC)/json.c $(SRC)/util.c && ./build-t-json; \
 	$$CX $(shell pkg-config --cflags md4c) -o build-t-mcp tests/mcp_test.c \
-	  $(SRC)/mcp.c $(SRC)/json.c $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/doctor.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
+	  $(SRC)/mcp.c $(SRC)/json.c $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/doctor.c $(SRC)/seed.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
 	  $(shell pkg-config --libs md4c) -lm && ./build-t-mcp; \
 	$$CX $(shell pkg-config --cflags md4c) -o build-t-section tests/section_test.c \
 	  $(SRC)/section.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-section; \
@@ -96,13 +96,16 @@ test:
 	$$CX $(shell pkg-config --cflags md4c) -o build-t-vault tests/vault_test.c \
 	  $(SRC)/vault.c $(shell pkg-config --libs md4c) && ./build-t-vault; \
 	$$CX $(shell pkg-config --cflags md4c) -o build-t-agent tests/agent_test.c \
-	  $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/doctor.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
+	  $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/doctor.c $(SRC)/seed.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
 	  $(shell pkg-config --libs md4c) -lm && ./build-t-agent; \
 	$$CX $(shell pkg-config --cflags md4c) -o build-t-graph tests/graph_test.c \
 	  $(SRC)/graph.c $(SRC)/vault.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-graph; \
 	$$CX $(shell pkg-config --cflags md4c) -o build-t-doctor tests/doctor_test.c \
-	  $(SRC)/doctor.c $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
+	  $(SRC)/doctor.c $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/seed.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
 	  $(shell pkg-config --libs md4c) -lm && ./build-t-doctor; \
+	$$CX $(shell pkg-config --cflags md4c) -o build-t-seed tests/seed_test.c \
+	  $(SRC)/seed.c $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/doctor.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
+	  $(shell pkg-config --libs md4c) -lm && ./build-t-seed; \
 	rm -rf build-t-*
 
 # Install both binaries onto PATH (default /usr/local/bin; may need sudo).

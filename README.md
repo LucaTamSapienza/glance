@@ -179,6 +179,21 @@ It resolves the section by heading (text or slug), ignores headings inside fence
 code, and keeps the vault coherent — so an agent can *maintain* your notes, not
 just read them.
 
+### Seeding — give a repo a brain
+
+```sh
+glance --seed [DIR]      # scaffold memory/ at the repo root, additively
+```
+
+One command instantiates the whole loop on any repository: it finds the repo
+root (`.git`/`.obsidian`), creates `memory/` — an index that doubles as the
+maintenance protocol, plus `status` / `decisions` / `lessons` / `history` —
+and prints repo facts, a step-by-step **fill plan** for the calling agent, a
+`wire_snippet` for the repo's agent instructions, and the done-check. glance
+writes the structure; the agent fills in the knowledge; `--doctor` going
+clean means the brain is ready. Existing files are never touched, so
+re-running is always safe.
+
 ### MCP server — native in any agent
 
 ```sh
@@ -188,8 +203,8 @@ glance mcp
 `glance mcp` speaks JSON-RPC 2.0 over stdio and exposes the reads and writes as
 native [MCP](https://modelcontextprotocol.io) tools (`vault_context`,
 `vault_section`, `vault_outline`, `vault_neighbors`, `vault_backlinks`,
-`vault_since`, `vault_links`, `vault_graph`, `vault_doctor`, `vault_edit`,
-`vault_set_frontmatter`).
+`vault_since`, `vault_links`, `vault_graph`, `vault_doctor`, `vault_seed`,
+`vault_edit`, `vault_set_frontmatter`).
 Wire it into Claude Desktop / Cursor / the Agent SDK in three lines — see
 [docs/MCP.md](docs/MCP.md):
 

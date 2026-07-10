@@ -50,6 +50,14 @@ int agent_since(const char *dir, long since);
  * findings, 1 (with {ok:false,error}) if dir is unreadable. */
 int agent_doctor(const char *dir, long now);
 
+/* Scaffold a memory vault ("brain") for the repository containing `dir`:
+ * locate the repo root (nearest .git/.obsidian ancestor, else `dir` itself),
+ * create ROOT/memory/ and additively write the five protocol notes — existing
+ * files are never touched — then print a JSON bundle for the filling agent:
+ * {ok,root,marker,vault,created,skipped,facts,plan,wire_snippet,done_when}.
+ * `now` dates the seeded notes. Returns 0 on success, non-zero on failure. */
+int agent_seed(const char *dir, long now);
+
 /* Surgically edit the section under heading `anchor` in `file` and write it back
  * atomically. `op` is an EditOp (0=append, 1=insert, 2=replace). Prints
  * {ok,file,anchor,bytes,section} (the updated section) or {ok:false,error} as
