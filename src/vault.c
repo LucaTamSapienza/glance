@@ -13,6 +13,8 @@ void vault_stem(const char *name, char *out, size_t cap) {
     const char *base = strrchr(name, '/');
     base = base ? base + 1 : name;
     snprintf(out, cap, "%s", base);
+    char *hash = strchr(out, '#');   /* [[note#heading]] addresses the note */
+    if (hash) *hash = '\0';
     size_t n = strlen(out);
     if (n > 3 && strcasecmp(out + n - 3, ".md") == 0) out[n - 3] = '\0';
 }

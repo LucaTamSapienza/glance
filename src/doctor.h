@@ -11,17 +11,18 @@ typedef struct {
     char  *note;        /* path relative to the vault root, owned */
     int    lines;       /* source lines in the note */
     long   mtime;       /* last modification, Unix seconds */
-    int    inbound;     /* resolved links pointing here from other notes */
-    int    outbound;    /* resolved links leaving this note (self-links excluded) */
-    char **dangling;    /* [[wikilink]] targets with no matching file, owned, deduped */
+    int    inbound;     /* distinct notes linking here (self-links excluded) */
+    int    outbound;    /* distinct notes this note links to (self-links excluded) */
+    char **dangling;    /* link targets that resolve to nothing, owned, deduped */
     int    ndangling;
-    int    todos;       /* TODO / FIXME markers left in the text */
+    int    todos;       /* TODO:/TODO(/FIXME markers left in the text (fences skipped) */
+    int    unreadable;  /* the note could not be read; other facts are absent */
 } DoctorNote;
 
 typedef struct { DoctorNote *v; int n; } DoctorReport;
 
 /* Scan the vault at `root` and fill `out` (cleared first) with one entry per
- * note, in vault-scan order. Returns 0 on success, non-zero if `root` is
+ * note, sorted by path. Returns 0 on success, non-zero if `root` is
  * unreadable. */
 int doctor_scan(const char *root, DoctorReport *out);
 

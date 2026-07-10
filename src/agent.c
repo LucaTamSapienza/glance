@@ -323,15 +323,21 @@ int agent_since(const char *dir, long since) {
 
 /* Judgement thresholds over doctor.c's facts. A note is oversized past the
  * memory-protocol line cap, stale when untouched for over DOCTOR_STALE_DAYS,
- * and an orphan when nothing links in or out of it (in a multi-note vault). */
+ * and an orphan when nothing links in or out of it (in a multi-note vault;
+ * unreadable notes are reported as such and not judged). The summary carries
+ * "clean"; the exit code makes it scriptable: 0 clean, 2 findings, 1 error. */
 #define DOCTOR_LINE_CAP   150
 #define DOCTOR_STALE_DAYS 45
 
 int agent_doctor(const char *dir, long now) {
     DoctorReport rep;
-    if (doctor_scan(dir, &rep) != 0) return 1;
+    if (doctor_scan(dir, &rep) != 0) {
+        printf("{\"ok\":false,\"error\":\"cannot read vault directory\"}\n");
+        return 1;
+    }
 
-    int oversized = 0, stale = 0, orphans = 0, with_dangling = 0, with_todos = 0;
+    int oversized = 0, stale = 0, orphans = 0, with_dangling = 0, with_todos = 0,
+        unreadable = 0;
     printf("{\"vault\":");
     json_str(dir);
     printf(",\"notes\":[");
@@ -340,12 +346,14 @@ int agent_doctor(const char *dir, long now) {
         long age_days = dn->mtime > 0 && now > dn->mtime ? (now - dn->mtime) / 86400 : 0;
         int is_over   = dn->lines > DOCTOR_LINE_CAP;
         int is_stale  = age_days > DOCTOR_STALE_DAYS;
-        int is_orphan = rep.n > 1 && dn->inbound == 0 && dn->outbound == 0;
+        int is_orphan = rep.n > 1 && !dn->unreadable &&
+                        dn->inbound == 0 && dn->outbound == 0;
         oversized += is_over;
         stale += is_stale;
         orphans += is_orphan;
         with_dangling += dn->ndangling > 0;
         with_todos += dn->todos > 0;
+        unreadable += dn->unreadable;
 
         printf("%s{\"note\":", i ? "," : "");
         json_str(dn->note);
@@ -357,18 +365,22 @@ int agent_doctor(const char *dir, long now) {
         }
         printf("],\"flags\":[");
         int nf = 0;
+        if (dn->unreadable)   printf("%s\"unreadable\"", nf++ ? "," : "");
         if (is_over)          printf("%s\"oversized\"", nf++ ? "," : "");
         if (is_stale)         printf("%s\"stale\"", nf++ ? "," : "");
         if (is_orphan)        printf("%s\"orphan\"", nf++ ? "," : "");
         if (dn->ndangling)    printf("%s\"dangling-links\"", nf++ ? "," : "");
         printf("]}");
     }
+    int clean = !(oversized || stale || orphans || with_dangling || with_todos ||
+                  unreadable);
     printf("],\"summary\":{\"notes\":%d,\"oversized\":%d,\"stale\":%d,\"orphans\":%d,"
-           "\"dangling\":%d,\"todos\":%d},\"ok\":true}\n",
-           rep.n, oversized, stale, orphans, with_dangling, with_todos);
+           "\"dangling\":%d,\"todos\":%d,\"unreadable\":%d,\"clean\":%s},\"ok\":true}\n",
+           rep.n, oversized, stale, orphans, with_dangling, with_todos, unreadable,
+           clean ? "true" : "false");
 
     doctor_free(&rep);
-    return 0;
+    return clean ? 0 : 2;
 }
 
 /* ---- context retrieval ---------------------------------------------------- */
