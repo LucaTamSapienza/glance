@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #define MCP_NAME            "glance"
@@ -122,6 +123,8 @@ static char *run_tool(const char *name, const Json *args) {
                     (long)json_num_or(json_get(args, "since"), 0));
     } else if (!strcmp(name, "vault_graph")) {
         agent_graph(json_str_or(json_get(args, "dir"), "."));
+    } else if (!strcmp(name, "vault_doctor")) {
+        agent_doctor(json_str_or(json_get(args, "dir"), "."), (long)time(NULL));
     } else if (!strcmp(name, "vault_section")) {
         const char *file = json_str_or(json_get(args, "file"), "");
         const char *heading = json_str_or(json_get(args, "heading"), NULL);
@@ -188,6 +191,9 @@ static const ToolDef TOOLS[] = {
     { "vault_graph",
       "The whole vault's link graph as {nodes,edges}.",
       "{\"type\":\"object\",\"properties\":{\"dir\":{\"type\":\"string\"}},\"required\":[\"dir\"]}" },
+    { "vault_doctor",
+      "Vault hygiene report: per note, its size, age, link degree, dangling [[wikilinks]], TODO markers, and maintenance flags (oversized/stale/orphan) — run it after editing the vault and fix what it flags.",
+      "{\"type\":\"object\",\"properties\":{\"dir\":{\"type\":\"string\",\"description\":\"vault directory\"}},\"required\":[\"dir\"]}" },
     { "vault_edit",
       "Surgically edit a section of a Markdown file and save it atomically: op=append adds text at the end of the section under the given heading, insert adds it right after the heading, replace swaps the section body. All other formatting is preserved.",
       "{\"type\":\"object\",\"properties\":{\"file\":{\"type\":\"string\"},\"heading\":{\"type\":\"string\"},\"op\":{\"type\":\"string\",\"enum\":[\"append\",\"insert\",\"replace\"]},\"text\":{\"type\":\"string\"}},\"required\":[\"file\",\"heading\",\"text\"]}" },

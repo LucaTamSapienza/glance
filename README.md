@@ -149,6 +149,8 @@ glance --backlinks "Note" DIR [--context]                # who links here (+ the
 glance --since TS DIR                  # notes changed after a Unix timestamp
 glance --links FILE                    # a file's outbound links
 glance --graph DIR                     # the whole vault's link graph
+glance --doctor DIR                    # vault hygiene: oversized/stale notes,
+                                       #   orphans, dangling links, TODO markers
 ```
 
 `--context` is the wedge. It assembles the **optimal bundle under a token budget**:
@@ -186,7 +188,8 @@ glance mcp
 `glance mcp` speaks JSON-RPC 2.0 over stdio and exposes the reads and writes as
 native [MCP](https://modelcontextprotocol.io) tools (`vault_context`,
 `vault_section`, `vault_outline`, `vault_neighbors`, `vault_backlinks`,
-`vault_since`, `vault_links`, `vault_graph`, `vault_edit`, `vault_set_frontmatter`).
+`vault_since`, `vault_links`, `vault_graph`, `vault_doctor`, `vault_edit`,
+`vault_set_frontmatter`).
 Wire it into Claude Desktop / Cursor / the Agent SDK in three lines — see
 [docs/MCP.md](docs/MCP.md):
 

@@ -11,6 +11,7 @@
 #include "fs_save.h"
 #include "vault.h"
 #include "graph.h"
+#include "doctor.h"
 #include "util.h"
 
 #include <stdio.h>
@@ -315,6 +316,58 @@ int agent_since(const char *dir, long since) {
     }
     puts("]}");
     vfiles_free(&files);
+    return 0;
+}
+
+/* ---- vault hygiene -------------------------------------------------------- */
+
+/* Judgement thresholds over doctor.c's facts. A note is oversized past the
+ * memory-protocol line cap, stale when untouched for over DOCTOR_STALE_DAYS,
+ * and an orphan when nothing links in or out of it (in a multi-note vault). */
+#define DOCTOR_LINE_CAP   150
+#define DOCTOR_STALE_DAYS 45
+
+int agent_doctor(const char *dir, long now) {
+    DoctorReport rep;
+    if (doctor_scan(dir, &rep) != 0) return 1;
+
+    int oversized = 0, stale = 0, orphans = 0, with_dangling = 0, with_todos = 0;
+    printf("{\"vault\":");
+    json_str(dir);
+    printf(",\"notes\":[");
+    for (int i = 0; i < rep.n; i++) {
+        DoctorNote *dn = &rep.v[i];
+        long age_days = dn->mtime > 0 && now > dn->mtime ? (now - dn->mtime) / 86400 : 0;
+        int is_over   = dn->lines > DOCTOR_LINE_CAP;
+        int is_stale  = age_days > DOCTOR_STALE_DAYS;
+        int is_orphan = rep.n > 1 && dn->inbound == 0 && dn->outbound == 0;
+        oversized += is_over;
+        stale += is_stale;
+        orphans += is_orphan;
+        with_dangling += dn->ndangling > 0;
+        with_todos += dn->todos > 0;
+
+        printf("%s{\"note\":", i ? "," : "");
+        json_str(dn->note);
+        printf(",\"lines\":%d,\"age_days\":%ld,\"inbound\":%d,\"outbound\":%d,\"todos\":%d,\"dangling\":[",
+               dn->lines, age_days, dn->inbound, dn->outbound, dn->todos);
+        for (int d = 0; d < dn->ndangling; d++) {
+            if (d) putchar(',');
+            json_str(dn->dangling[d]);
+        }
+        printf("],\"flags\":[");
+        int nf = 0;
+        if (is_over)          printf("%s\"oversized\"", nf++ ? "," : "");
+        if (is_stale)         printf("%s\"stale\"", nf++ ? "," : "");
+        if (is_orphan)        printf("%s\"orphan\"", nf++ ? "," : "");
+        if (dn->ndangling)    printf("%s\"dangling-links\"", nf++ ? "," : "");
+        printf("]}");
+    }
+    printf("],\"summary\":{\"notes\":%d,\"oversized\":%d,\"stale\":%d,\"orphans\":%d,"
+           "\"dangling\":%d,\"todos\":%d},\"ok\":true}\n",
+           rep.n, oversized, stale, orphans, with_dangling, with_todos);
+
+    doctor_free(&rep);
     return 0;
 }
 
