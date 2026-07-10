@@ -92,3 +92,18 @@ vault. `--doctor` / `vault_doctor` shipped as the memory protocol's
 mechanical check (28th suite), and [[MEMORY]] gained the explicit
 update/fill/delete trigger table.
 
+## 2026-07-10 — feat/seed: the brain gets a birth command
+
+Stacked on feat/doctor: `--seed` / `vault_seed` scaffolds a repo's `memory/`
+vault additively and emits repo facts + a fill plan, with doctor-clean as
+the done-check (DESIGN.md §9/M5, the 29th suite). Phase 2 — the plugin skill
+that executes the fill — is next.
+
+## 2026-07-11 — The dogfood pass
+
+Doctor used in anger (adversarial vault + seed's own fill plan): five
+false-positive/negative classes fixed, distinct-note degree, `unreadable`
+flag, `summary.clean` + exit codes, and `--edit before`. The rehearsal now
+runs seed → fill → doctor exit 0 end to end; the why: [[decisions]].
+Landed on main via PRs #24 (doctor) and #25 (seed).
+

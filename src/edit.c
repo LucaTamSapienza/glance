@@ -30,7 +30,7 @@ static int buf_str(Buf *b, const char *s) { return buf_add(b, s, strlen(s)); }
  * line — so the insertion is cleanly spaced on both sides. Returns 0 / -1. */
 static int emit_block(Buf *b, const char *text) {
     while (b->len > 0 && b->p[b->len-1] == '\n') b->len--;
-    b->p[b->len] = '\0';
+    if (b->p) b->p[b->len] = '\0';   /* may be empty: BEFORE the first heading */
     if (b->len > 0 && buf_str(b, "\n\n")) return -1;
     if (buf_str(b, text)) return -1;
     if (b->len == 0 || b->p[b->len-1] != '\n') { if (buf_str(b, "\n")) return -1; }
@@ -186,7 +186,8 @@ char *edit_section(const char *src, size_t len, const char *anchor, EditOp op, c
 
     /* The line index before which the payload is inserted, and the body range
      * that REPLACE drops. A setext heading occupies tspan (2) lines. */
-    int insert_at = (op == EDIT_INSERT) ? target + tspan : end;   /* APPEND uses end */
+    int insert_at = (op == EDIT_INSERT) ? target + tspan
+                  : (op == EDIT_BEFORE) ? target : end;           /* APPEND uses end */
     int drop_from = -1, drop_to = -1;
     if (op == EDIT_REPLACE) { drop_from = target + tspan; drop_to = end; insert_at = target + tspan; }
 

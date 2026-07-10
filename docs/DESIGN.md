@@ -231,12 +231,27 @@ locked after an on-device latency/heat benchmark.**
   agreed to run together (§11). Lexical stays the default.
 - **M4 — surgical write API. ✅ shipped.** Structure-addressed edits on the raw
   source (formatting preserved), written atomically: `--edit FILE
-  append|insert|replace "Heading" "text"` and `--set-frontmatter FILE KEY VALUE`,
+  append|insert|replace|before "Heading" "text"` and `--set-frontmatter FILE KEY VALUE`,
   plus the MCP tools `vault_edit` and `vault_set_frontmatter`. The agent declares
   intent + location; glance does the surgery (finds the section by anchor,
   ignores headings inside fenced code, splices cleanly, writes via
   `atomic_write`) and echoes the updated section back. New module: `edit.c`
   (pure, unit-tested). Closes the loop; the moat.
+- **M5 — the protocol, mechanized: `--doctor` + `--seed`. ✅ shipped.** The
+  memory protocol stopped being prose. `--doctor DIR` (`vault_doctor`) measures
+  every note — size, age, distinct link degree, dangling links (wikilinks,
+  embeds, relative `.md` links), TODO/FIXME markers outside code fences — and
+  flags unreadable/oversized/stale/orphaned notes. `--seed [DIR]` (`vault_seed`) gives
+  any repo a brain in one command: it locates the root, additively scaffolds
+  `memory/` (an index that doubles as the protocol, plus
+  status/decisions/lessons/history with `TODO(seed)` markers where knowledge
+  belongs) and prints repo facts, a step-by-step fill plan for the calling
+  agent, a `wire_snippet` for the host AGENTS.md, and the done-check. glance
+  writes structure, the calling agent writes knowledge, and doctor exiting 0
+  (`summary.clean`) means "brain ready" — the one-shot instantiation of the
+  LLM-wiki pattern (raw sources → wiki → schema; ingest/query/lint). New
+  modules: `doctor.c`, `seed.c` (pure, unit-tested); `--edit` gained the
+  `before` op so the plan's dated-log backfills stay surgical.
 
 ### M1 — shipped command surface
 All print JSON to stdout; every read view is bounded so it stays token-cheap.

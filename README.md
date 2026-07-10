@@ -149,8 +149,9 @@ glance --backlinks "Note" DIR [--context]                # who links here (+ the
 glance --since TS DIR                  # notes changed after a Unix timestamp
 glance --links FILE                    # a file's outbound links
 glance --graph DIR                     # the whole vault's link graph
-glance --doctor DIR                    # vault hygiene: oversized/stale notes,
-                                       #   orphans, dangling links, TODO markers
+glance --doctor DIR                    # vault hygiene: oversized/stale/orphan/
+                                       #   unreadable notes, dangling links, TODO
+                                       #   markers; exit 0 clean / 2 findings
 ```
 
 `--context` is the wedge. It assembles the **optimal bundle under a token budget**:
@@ -171,13 +172,29 @@ The agent declares **intent + location**; glance does the surgery and writes
 atomically (temp file + rename), preserving all other formatting:
 
 ```sh
-glance --edit FILE append|insert|replace "Heading" "text"
+glance --edit FILE append|insert|replace|before "Heading" "text"
 glance --set-frontmatter FILE KEY VALUE
 ```
 
 It resolves the section by heading (text or slug), ignores headings inside fenced
 code, and keeps the vault coherent — so an agent can *maintain* your notes, not
-just read them.
+just read them. `before` inserts the text immediately above the heading: the
+surgical way to add a new sibling entry to a dated, ordered log.
+
+### Seeding — give a repo a brain
+
+```sh
+glance --seed [DIR]      # scaffold memory/ at the repo root, additively
+```
+
+One command instantiates the whole loop on any repository: it finds the repo
+root (`.git`/`.obsidian`), creates `memory/` — an index that doubles as the
+maintenance protocol, plus `status` / `decisions` / `lessons` / `history` —
+and prints repo facts, a step-by-step **fill plan** for the calling agent, a
+`wire_snippet` for the repo's agent instructions, and the done-check. glance
+writes the structure; the agent fills in the knowledge; `--doctor` exiting 0
+(`summary.clean`) means the brain is ready. Existing files are never touched,
+so re-running is always safe.
 
 ### MCP server — native in any agent
 
@@ -188,8 +205,8 @@ glance mcp
 `glance mcp` speaks JSON-RPC 2.0 over stdio and exposes the reads and writes as
 native [MCP](https://modelcontextprotocol.io) tools (`vault_context`,
 `vault_section`, `vault_outline`, `vault_neighbors`, `vault_backlinks`,
-`vault_since`, `vault_links`, `vault_graph`, `vault_doctor`, `vault_edit`,
-`vault_set_frontmatter`).
+`vault_since`, `vault_links`, `vault_graph`, `vault_doctor`, `vault_seed`,
+`vault_edit`, `vault_set_frontmatter`).
 Wire it into Claude Desktop / Cursor / the Agent SDK in three lines — see
 [docs/MCP.md](docs/MCP.md):
 

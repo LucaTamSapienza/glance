@@ -1,8 +1,8 @@
 # Status
 
-> Last updated: 2026-07-10 (full-code re-read: 34 modules, ~9.8k lines, 28
-> suites). What's done, what's in flight, what's open. Rules and invariants
-> live in AGENTS.md, not here.
+> Last updated: 2026-07-11 (M5 merged: doctor + seed + the dogfood
+> hardening — 35 modules, 29 suites). What's done, what's in flight, what's
+> open. Rules and invariants live in AGENTS.md, not here.
 
 ## On main
 
@@ -24,20 +24,24 @@ export (`glance-render --html`) and PDF via a detected converter
 (`--outline`, `--section`, `--neighbors`, `--backlinks`, `--since`,
 `--links`, `--graph`), budgeted retrieval (`--context` — BM25 + link-graph
 prior, diversity, coarse-to-fine, truncation manifest, token receipt),
-surgical writes (`--edit`, `--set-frontmatter`), the MCP server (`glance mcp`,
-11 tools reusing the exact CLI exports), and — new 2026-07-10 — the vault
-hygiene report `--doctor` / `vault_doctor`: per-note size, age, link degree,
-dangling `[[wikilinks]]`, TODO markers, and oversized/stale/orphan flags. The
-doctor is the mechanical half of the memory protocol (trigger table in
-memory/MEMORY.md). Hardened after an adversarial review
-(docs/archive/REVIEW.md): JSON parser depth cap, setext-aware edits, fence
-tracking, frontmatter escaping, surrogate-pair decoding, UTF-8-validated
-output.
+surgical writes (`--edit`, `--set-frontmatter`), and the MCP server
+(`glance mcp`, tools reusing the exact CLI exports). Hardened after an
+adversarial review (docs/archive/REVIEW.md): JSON parser depth cap,
+setext-aware edits, fence tracking, frontmatter escaping, surrogate-pair
+decoding, UTF-8-validated output. M5 (2026-07-11, PRs #24/#25) mechanized
+the memory protocol: `--doctor` / `vault_doctor` — the hygiene report with
+dogfood-set semantics (colon/paren markers outside fences, dangling across
+embeds/anchors/relative `.md` links, distinct-note degree, `unreadable`),
+`summary.clean` and exit 0/2/1 (a CI gate) — and `--seed` / `vault_seed`,
+the one-command brain scaffold (additive `memory/` skeleton, repo facts +
+fill plan + `wire_snippet` as JSON, doctor exit 0 as the done-check), plus
+`--edit before` for surgical dated-log backfills.
 
-**Verified by the 2026-07-10 re-read:** zero TODO/FIXME markers in src/; 28
-test suites green (UBSan; the ASan probe story: [[lessons]]) locally and in
-CI (macos-latest). Untested by design: tui.c (~2.3k lines, hand-verified),
-clipboard.c, the two entry points. The release artefact is darwin_arm64 only.
+**Verified 2026-07-11:** 29 test suites green (UBSan; the ASan probe story:
+[[lessons]]) locally and in CI (macos-latest); no TODO/FIXME markers in src/
+(seed.c's template fill-markers are string content, not source markers).
+Untested by design: tui.c (~2.3k lines, hand-verified), clipboard.c, the two
+entry points. The release artefact is darwin_arm64 only.
 
 ## In flight (branches)
 
@@ -77,7 +81,9 @@ clipboard.c, the two entry points. The release artefact is darwin_arm64 only.
   ASCII-only, so non-ASCII text is invisible to the lexical tier (the
   `Embedder` seam is the planned way out); with `--semantic` nearly every
   section scores > 0, inflating the `truncated` manifest; `HL_TYPE` is never
-  emitted (every `LangSpec.ty` is NULL) though every theme defines its color.
+  emitted (every `LangSpec.ty` is NULL) though every theme defines its color;
+  brain-scaffold phase 2 is open — the plugin skill that executes seed's
+  fill plan (seed → fill via `--edit` → doctor exit 0).
 - **Doc rot (found by the 2026-07-10 re-read):** DESIGN.md §9/M3 still says
   "model pending the benchmark" (superseded by feat/semantic-minilm — update
   at merge); tui.c's header comment still describes the pre-vi two-mode UI;

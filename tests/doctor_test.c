@@ -73,9 +73,10 @@ int main(void) {
         fclose(f);
     }
 
-    /* c: no links in or out — an orphan. */
+    /* c: no links in or out — an orphan. Mentions TODO markers in prose,
+     * which must not count as a marker (only "TODO:" / "TODO(" do). */
     snprintf(p, sizeof p, "%s/c.md", dir);
-    writef(p, "just text, no links\n");
+    writef(p, "just text, no links, TODO markers only discussed\n");
 
     /* pic: an image embed whose file exists — not dangling, still an orphan
      * (an attachment is not a note-graph edge). */
@@ -123,7 +124,7 @@ int main(void) {
     }
     if (c) {
         expect(c->inbound == 0 && c->outbound == 0, "c: disconnected");
-        expect(c->todos == 0, "c: prose-only note has no markers");
+        expect(c->todos == 0, "c: a prose mention of TODO is not a marker");
     }
     if (pic) {
         expect(pic->ndangling == 0, "pic: an existing attachment is not dangling");
