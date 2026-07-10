@@ -41,6 +41,15 @@ int agent_backlinks(const char *dir, const char *note, int want_context);
  * success, non-zero if dir is unreadable. */
 int agent_since(const char *dir, long since);
 
+/* Print a hygiene report of the vault at `dir` as {vault,notes,summary,ok}:
+ * per note, its size, age relative to `now` (Unix seconds), distinct link
+ * degree, dangling links (wikilinks, embeds, relative .md links), TODO/FIXME
+ * markers, and maintenance flags (unreadable/oversized/stale/orphan/
+ * dangling-links) — the mechanical check behind a memory protocol. The
+ * summary carries "clean". Returns 0 when clean, 2 when the report has
+ * findings, 1 (with {ok:false,error}) if dir is unreadable. */
+int agent_doctor(const char *dir, long now);
+
 /* Surgically edit the section under heading `anchor` in `file` and write it back
  * atomically. `op` is an EditOp (0=append, 1=insert, 2=replace). Prints
  * {ok,file,anchor,bytes,section} (the updated section) or {ok:false,error} as

@@ -74,3 +74,21 @@ download-on-first-use, k-hop graph-expansion retrieval. Paper direction set
 The `make test` asan probe and the SIGWINCH self-pipe resize fix (PR #21);
 docs reorganized to one source per fact and this memory vault created
 ([[status]]).
+
+## 2026-07-02 — Eddie's claim-store spike lands on a branch
+
+`feature/claim-store`: a pre-registered research spike (Python, purely
+additive) testing knowledge-as-claims against a flat document pile over real
+Wikipedia edit streams. Gate 3 replicated (the store cuts in-context
+contradictions 15–26pp under a stale pile, at 0.62–0.76× tokens); the
+hot-node gate never produced a measurement. Analyzed end-to-end 2026-07-10 —
+verdict in [[decisions]]: research to finish, not a brain replacement.
+
+## 2026-07-10 — Full-code re-read + the vault doctor
+
+All 34 modules re-read end to end (four parallel reviews: rendering, TUI,
+agent layer, tests/docs/plugin) and the state distilled back into this
+vault. `--doctor` / `vault_doctor` shipped as the memory protocol's
+mechanical check (28th suite), and [[MEMORY]] gained the explicit
+update/fill/delete trigger table.
+

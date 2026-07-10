@@ -1,7 +1,8 @@
 # Status
 
-> Last updated: 2026-07-02. What's done, what's in flight, what's open.
-> Rules and invariants live in AGENTS.md, not here.
+> Last updated: 2026-07-10 (full-code re-read: 34 modules, ~9.8k lines, 28
+> suites). What's done, what's in flight, what's open. Rules and invariants
+> live in AGENTS.md, not here.
 
 ## On main
 
@@ -10,59 +11,80 @@ search (`/ n N`); TOC (`t`); atomic save + kqueue live-reload (clean buffers
 adopt external edits, dirty ones get an `r`/`k` conflict prompt); charwise and
 linewise selection with clipboard yank; `[[wikilinks]]` / backlinks (`b`) /
 graph explorer (`Ctrl-G`) / fuzzy switcher (`Ctrl-P`); twelve themes with a
-live picker (`T`) and `~/.config/glance/config`; per-language syntax
-highlighting; bordered aligned tables; inline images with clipboard-image
-paste; key-legend sidebar (`?`); trackpad scrolling + progress HUD; exact
-offset-based reader↔editor cursor sync; HTML export (`glance-render --html`)
-and PDF via a detected converter (`glance --export`).
-
-UX batch merged 2026-07-02 (all confirmed live): a piped stdin renders to
-stdout (`cat x.md | glance`, like glance-render); trackpad/wheel scrolling
-works in all three modes; word motion is punctuation-aware (macOS
-end-of-word semantics) in the editor **and** the Reader (Alt/Ctrl+arrows =
-word, Cmd+arrows / Ctrl-A/E = line start/end); `keyboard = enhanced` config
-key opts into the kitty protocol where a terminal needs it, with a
-stack-clearing teardown (see [[lessons]] for the iTerm2 story).
+live picker (`T`) and `~/.config/glance/config`; syntax highlighting for 9
+languages; bordered aligned tables; inline images with clipboard-image paste
+(`Ctrl-V`); key-legend sidebar (`?`); trackpad scrolling + progress HUD; exact
+offset-based reader↔editor cursor sync; piped stdin renders to stdout;
+punctuation-aware word motion in editor **and** Reader; `keyboard = enhanced`
+opt-in (kitty protocol) with a stack-clearing teardown ([[lessons]]); HTML
+export (`glance-render --html`) and PDF via a detected converter
+(`glance --export`).
 
 **Agent-side** (M1–M4 of docs/DESIGN.md) is shipped: bounded reads
 (`--outline`, `--section`, `--neighbors`, `--backlinks`, `--since`,
 `--links`, `--graph`), budgeted retrieval (`--context` — BM25 + link-graph
 prior, diversity, coarse-to-fine, truncation manifest, token receipt),
-surgical writes (`--edit`, `--set-frontmatter`), and the MCP server
-(`glance mcp`). Hardened after an adversarial review
+surgical writes (`--edit`, `--set-frontmatter`), the MCP server (`glance mcp`,
+11 tools reusing the exact CLI exports), and — new 2026-07-10 — the vault
+hygiene report `--doctor` / `vault_doctor`: per-note size, age, link degree,
+dangling `[[wikilinks]]`, TODO markers, and oversized/stale/orphan flags. The
+doctor is the mechanical half of the memory protocol (trigger table in
+memory/MEMORY.md). Hardened after an adversarial review
 (docs/archive/REVIEW.md): JSON parser depth cap, setext-aware edits, fence
 tracking, frontmatter escaping, surrogate-pair decoding, UTF-8-validated
 output.
 
-**27 test suites**, green locally and in CI (macos-latest). `make test`
-probes AddressSanitizer and falls back to UBSan alone where asan can't start
-(macOS 26 deadlock — see [[lessons]]).
+**Verified by the 2026-07-10 re-read:** zero TODO/FIXME markers in src/; 28
+test suites green (UBSan; the ASan probe story: [[lessons]]) locally and in
+CI (macos-latest). Untested by design: tui.c (~2.3k lines, hand-verified),
+clipboard.c, the two entry points. The release artefact is darwin_arm64 only.
 
 ## In flight (branches)
 
 - **feat/semantic-minilm — complete on the branch, not merged.** The real
   semantic tier: all-MiniLM-L6-v2 (fp16, via llama.cpp) behind the `Embedder`
   seam, persistent `.glance/` embedding cache, model download-on-first-use,
-  k-hop graph-expansion retrieval (zero-lexical neighbours finally surface).
-  Supersedes DESIGN.md §11's "next two". Spike numbers and ship decisions:
-  [[decisions]]. Open before merge: the llama.cpp dependency story on main
-  (the branch tracks `third_party/llama.cpp` as a submodule).
-- **feat/wysiwyg-inline — ON HOLD.** Inline WYSIWYG editing (markup renders
-  in place as you type, Obsidian-style), collapsing Reader/Insert into one
-  mode. The big user-side bet; parked, not abandoned. glance's durable edge
-  stays the agent-side token-saving layer.
+  k-hop graph-expansion retrieval. Supersedes DESIGN.md §11's "next two".
+  Spike numbers and ship decisions: [[decisions]]. Open before merge: the
+  llama.cpp dependency story on main (the branch tracks
+  `third_party/llama.cpp` as a submodule).
+- **feat/wysiwyg-inline — ON HOLD.** Inline WYSIWYG editing, collapsing
+  Reader/Insert into one mode. The big user-side bet; parked, not abandoned.
+- **feature/claim-store — Eddie's research spike, analyzed 2026-07-10.**
+  Python-only and purely additive (spike/ + two specs; no C touched): a
+  pre-registered test of knowledge-as-claims vs a flat document pile over
+  Wikipedia edit streams. Gate 3 (consistency advantage) replicated 3×;
+  Gate 1 (hot-node merge propagation) never measured — the frozen TCP stress
+  test is still owed. Its own pre-registered verdict: NO-GO for building the
+  C modules. Do not merge as-is; the verdict and what to salvage:
+  [[decisions]].
 
 ## Open
 
-- **User-side residuals:** inline images decode on every frame (a
-  persistent-plane cache is the right fix); flip the enhanced keyboard
-  protocol on by default once `keyboard = enhanced` has seen field testing;
-  remote (`http`) images aren't fetched; wide tables overflow rather than
-  wrap; display width is one column per codepoint (wide/zero-width chars TBD).
+- **User-side residuals:** inline images decode on every frame (persistent
+  planes are the right fix); flip enhanced keyboard on by default only after
+  field testing; remote (`http`) images aren't fetched; wide tables overflow
+  rather than wrap; display width is one column per codepoint; task-list
+  checkboxes render only in the HTML export (render.c ignores `is_task` —
+  terminal sinks show a plain bullet); raw HTML is dropped by the terminal
+  sinks but passes verbatim into the HTML export; selection/cursor/search-hit
+  and graph-explorer colors are hardcoded outside the theme (`hit_fg` not
+  settable from config); silent fixed caps (back-stack 64, backlinks/graph
+  panels 256, 16 image planes).
 - **Agent-side:** the token receipt is a heuristic (`max(bytes/4, words)`) —
   a real tokenizer or a calibration would make the saved-% exact; the MCP
-  server advertises only `tools` (no `resources`/`prompts`).
+  server advertises only `tools` (no `resources`/`prompts`); BM25 terms are
+  ASCII-only, so non-ASCII text is invisible to the lexical tier (the
+  `Embedder` seam is the planned way out); with `--semantic` nearly every
+  section scores > 0, inflating the `truncated` manifest; `HL_TYPE` is never
+  emitted (every `LangSpec.ty` is NULL) though every theme defines its color.
+- **Doc rot (found by the 2026-07-10 re-read):** DESIGN.md §9/M3 still says
+  "model pending the benchmark" (superseded by feat/semantic-minilm — update
+  at merge); tui.c's header comment still describes the pre-vi two-mode UI;
+  editor.c keeps a stale duplicate `ed_wordsep` comment and the dead
+  `Editor.xoff` field.
 - **Security residual** (from the review): relative `../` image/link targets
   aren't confined to the vault.
 - **Product:** the `glance` name collides with the OpenStack CLI — decide
   (rename? Homebrew tap name?) before packaging.
+

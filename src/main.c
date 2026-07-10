@@ -21,6 +21,7 @@
 #include <string.h>
 #include <libgen.h>
 #include <errno.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
 
@@ -45,6 +46,10 @@ static void print_help(void) {
 "  glance --neighbors N DIR link-graph neighbourhood of note N (--depth H hops)\n"
 "  glance --since TS DIR    notes in DIR modified after Unix time TS, as JSON\n"
 "  glance --graph DIR       print the vault's link graph as JSON\n"
+"  glance --doctor [DIR]    vault hygiene report as JSON: oversized (>150 lines)\n"
+"                           or stale (>45 days) notes, orphans, unreadable notes,\n"
+"                           dangling links, TODO:/FIXME: markers — fix what it\n"
+"                           flags; exit 0 clean, 2 findings, 1 unreadable DIR\n"
 "  glance --edit F OP H T   edit section H of file F (OP=append|insert|replace,\n"
 "                           T=text), saved atomically; prints the new section\n"
 "  glance --set-frontmatter F K V   set YAML frontmatter key K to value V in F\n"
@@ -211,6 +216,10 @@ int main(int argc, char **argv) {
         return export_file(in, out, th);
     }
     if (argc > 2 && !strcmp(argv[1], "--graph"))   return agent_graph(argv[2]);
+    if (argc > 1 && !strcmp(argv[1], "--doctor")) {
+        /* glance --doctor [DIR] — vault hygiene report; DIR defaults to ".". */
+        return agent_doctor(argc > 2 ? argv[2] : ".", (long)time(NULL));
+    }
     if (argc > 2 && !strcmp(argv[1], "--section")) {
         /* Argument is "FILE#anchor"; a bare "FILE" selects the whole document. */
         char *arg = argv[2], *hash = strrchr(arg, '#');

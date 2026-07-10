@@ -123,6 +123,7 @@ src/
   embed.c        embedding seam: Embedder interface + a hashing default + cosine
   context.c      budget planner: score order, diversity, coarse-to-fine, manifest
   edit.c         surgical source edits: section append/insert/replace, frontmatter
+  doctor.c       vault hygiene facts: note size/age, link degree, dangling links
   json.c         a small dependency-free JSON parser (for the MCP server)
   mcp.c          MCP server over stdio (JSON-RPC 2.0): the agent-memory tools
   agent.c        JSON exports + retrieval/write orchestration (all --… subcommands)
@@ -199,6 +200,11 @@ The living state lives in `memory/` — a glance vault of small notes
 - **Distill, don't append.** Rewrite stale lines, merge duplicates, delete
   the superseded — git history is the archive. Keep each note under ~150
   lines, with absolute dates.
+- **After touching the vault, lint it:** `./glance --doctor memory/` flags
+  oversized (>150 lines) and stale (>45 days) notes, orphans, dangling
+  `[[wikilinks]]` and leftover TODO markers — fix what it flags before you
+  finish. The full trigger table (when to update, fill, or delete which note)
+  lives in `memory/MEMORY.md` and is part of the protocol.
 - Skip the update only for typo-level edits.
 
 ## Where everything else lives

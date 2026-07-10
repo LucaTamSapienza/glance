@@ -13,17 +13,33 @@ work reads this first; the *rules* for working here live in
 
 ## Protocol (distill, don't accumulate)
 
-- **Session start** — read this index, then what you need. glance itself is the
-  cheap way in: `./glance --context "your question" memory/ --budget 2000`
-  (synchronously — never with `&`), or `--section "memory/status.md#Open"`.
-- **After non-trivial work** — fold the change into the right note: update
-  [[status]] in the same change; add a dated entry to [[decisions]] when you
-  settled something a future session could second-guess; add to [[lessons]]
-  only what was empirically surprising. `./glance --edit` makes surgical
-  updates.
-- **Curate, don't append.** Rewrite stale lines, merge duplicates, delete the
-  superseded — git history is the archive. Keep each note under ~150 lines.
-- **One `##` heading per entry.** Headings are glance's retrieval unit —
-  `--context` and `--section` address them — so an entry without its own
-  heading is invisible to budgeted retrieval.
-- Absolute dates only (write 2026-07-01, never "today").
+Read this index first; then ask, don't browse — `./glance --context "your
+question" memory/ --budget 2000` (synchronously — never with `&`), or
+`--section "memory/status.md#Open"`.
+
+**Update triggers — if a row fired, write in the same change, not later:**
+
+| You just… | Then… |
+|---|---|
+| shipped / merged / changed behaviour | rewrite the touched lines of [[status]] (On main · In flight · Open) |
+| settled something a future session could second-guess | dated entry in [[decisions]], with the why |
+| were empirically surprised (a hang, a leak, a wrong assumption) | entry in [[lessons]] — surprises only, never how-tos |
+| landed a milestone, opened or closed a branch | one line in [[history]] |
+| only fixed typos | nothing |
+
+**Delete triggers — stale memory is worse than none:**
+
+- a line that main now contradicts → rewrite it (git history is the archive);
+- a decision that stopped informing anything → drop its entry;
+- a note past ~150 lines → distill it back under.
+
+**Mechanical check — run after any vault edit and fix what it flags:**
+`./glance --doctor memory/` (MCP: `vault_doctor`) flags oversized (>150
+lines) and stale (>45 days) notes, orphans, dangling `[[wikilinks]]`, and
+leftover TODO markers.
+
+**Form:** one `##` per entry — headings are glance's retrieval unit, an entry
+without its own heading is invisible to `--context`/`--section`; absolute
+dates only (write 2026-07-10, never "today"); wikilink the notes you mention;
+`./glance --edit` for surgical updates.
+

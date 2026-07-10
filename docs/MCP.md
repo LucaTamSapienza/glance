@@ -60,6 +60,7 @@ Every read is **bounded** so it stays token-cheap; `vault_context` and
 | `vault_since`     | `dir`, `since`            | notes modified after a Unix timestamp |
 | `vault_links`     | `file`                    | a file's outbound links |
 | `vault_graph`     | `dir`                     | the whole vault's link graph |
+| `vault_doctor`    | `dir`                     | vault hygiene report: per-note size, age, distinct link degree, dangling links (wikilinks, embeds, relative `.md` links), TODO/FIXME markers, and maintenance flags (unreadable/oversized/stale/orphan); the summary carries `clean` |
 | `vault_edit`      | `file`, `heading`, `op`, `text` | surgically edit a section (`op` = append/insert/replace), saved atomically; echoes the new section |
 | `vault_set_frontmatter` | `file`, `key`, `value` | set a YAML frontmatter key, saved atomically |
 
