@@ -105,4 +105,5 @@ Doctor used in anger (adversarial vault + seed's own fill plan): five
 false-positive/negative classes fixed, distinct-note degree, `unreadable`
 flag, `summary.clean` + exit codes, and `--edit before`. The rehearsal now
 runs seed → fill → doctor exit 0 end to end; the why: [[decisions]].
+Landed on main via PRs #24 (doctor) and #25 (seed).
 

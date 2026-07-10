@@ -1,6 +1,6 @@
 # Status
 
-> Last updated: 2026-07-11 (feat/seed: brain scaffold + the dogfood
+> Last updated: 2026-07-11 (M5 merged: doctor + seed + the dogfood
 > hardening — 35 modules, 29 suites). What's done, what's in flight, what's
 > open. Rules and invariants live in AGENTS.md, not here.
 
@@ -28,31 +28,23 @@ surgical writes (`--edit`, `--set-frontmatter`), and the MCP server
 (`glance mcp`, tools reusing the exact CLI exports). Hardened after an
 adversarial review (docs/archive/REVIEW.md): JSON parser depth cap,
 setext-aware edits, fence tracking, frontmatter escaping, surrogate-pair
-decoding, UTF-8-validated output. M5 (doctor + seed) is complete on the
-stacked branches below.
+decoding, UTF-8-validated output. M5 (2026-07-11, PRs #24/#25) mechanized
+the memory protocol: `--doctor` / `vault_doctor` — the hygiene report with
+dogfood-set semantics (colon/paren markers outside fences, dangling across
+embeds/anchors/relative `.md` links, distinct-note degree, `unreadable`),
+`summary.clean` and exit 0/2/1 (a CI gate) — and `--seed` / `vault_seed`,
+the one-command brain scaffold (additive `memory/` skeleton, repo facts +
+fill plan + `wire_snippet` as JSON, doctor exit 0 as the done-check), plus
+`--edit before` for surgical dated-log backfills.
 
-**Verified 2026-07-10:** 29 test suites green (UBSan; the ASan probe story:
-[[lessons]]) locally, 28 in CI until the M5 branches merge; no TODO/FIXME
-markers in src/ (seed.c's template fill-markers are string content, not
-source markers). Untested by design: tui.c (~2.3k lines, hand-verified),
-clipboard.c, the two entry points. The release artefact is darwin_arm64 only.
+**Verified 2026-07-11:** 29 test suites green (UBSan; the ASan probe story:
+[[lessons]]) locally and in CI (macos-latest); no TODO/FIXME markers in src/
+(seed.c's template fill-markers are string content, not source markers).
+Untested by design: tui.c (~2.3k lines, hand-verified), clipboard.c, the two
+entry points. The release artefact is darwin_arm64 only.
 
 ## In flight (branches)
 
-- **feat/doctor → feat/seed (stacked) — complete, PRs pending.** The memory
-  protocol, mechanized (DESIGN.md §9/M5). feat/doctor: `--doctor` /
-  `vault_doctor`, the vault hygiene report (28th suite), hardened by the
-  2026-07-11 dogfood pass — marker rule (colon/paren, fences skipped),
-  dangling without false positives (embeds, `#anchors`, dead relative `.md`
-  links), distinct-note degree, `unreadable` flag, sorted output,
-  `summary.clean` + exit 0/2/1 (a CI gate), see [[decisions]]. feat/seed on
-  top: `--seed` / `vault_seed`, the one-command brain scaffold — additive
-  `memory/` skeleton (index + protocol, status/decisions/lessons/history
-  with seed fill-markers), repo facts + fill plan + `wire_snippet` as JSON,
-  doctor exit 0 as the done-check (29th suite) — plus `--edit before`, which
-  makes the plan's dated-log backfills surgical (rehearsed end to end: seed
-  → fill → doctor exit 0). Phase 2 open: the plugin skill that executes the
-  fill plan.
 - **feat/semantic-minilm — complete on the branch, not merged.** The real
   semantic tier: all-MiniLM-L6-v2 (fp16, via llama.cpp) behind the `Embedder`
   seam, persistent `.glance/` embedding cache, model download-on-first-use,
@@ -89,7 +81,9 @@ clipboard.c, the two entry points. The release artefact is darwin_arm64 only.
   ASCII-only, so non-ASCII text is invisible to the lexical tier (the
   `Embedder` seam is the planned way out); with `--semantic` nearly every
   section scores > 0, inflating the `truncated` manifest; `HL_TYPE` is never
-  emitted (every `LangSpec.ty` is NULL) though every theme defines its color.
+  emitted (every `LangSpec.ty` is NULL) though every theme defines its color;
+  brain-scaffold phase 2 is open — the plugin skill that executes seed's
+  fill plan (seed → fill via `--edit` → doctor exit 0).
 - **Doc rot (found by the 2026-07-10 re-read):** DESIGN.md §9/M3 still says
   "model pending the benchmark" (superseded by feat/semantic-minilm — update
   at merge); tui.c's header comment still describes the pre-vi two-mode UI;
