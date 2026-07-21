@@ -68,6 +68,19 @@ $(LLAMA_BUILD)/src/libllama.a:
 	cmake --build $(LLAMA_BUILD) --target llama -j
 # ------------------------------------------------------------------------------
 
+# The glance binary embeds the semantic flag, so flipping it must relink even
+# when no source changed. At parse time — but only for goals that build glance,
+# so `make test`/`make clean` never touch the binary — if the recorded flags
+# differ from the current ones, record the new flags and delete the stale
+# binary: a missing target rebuilds unconditionally, immune to same-second
+# mtime ties (Apple ships GNU make 3.81, whose comparison is second-granular).
+BUILDFLAGS  := semantic=$(GLANCE_SEMANTIC)
+BUILD_GOALS := $(if $(MAKECMDGOALS),$(filter all glance install,$(MAKECMDGOALS)),all)
+ifneq ($(BUILD_GOALS),)
+IGNORE := $(shell prev=`cat .buildflags 2>/dev/null`; \
+  [ "$$prev" = "$(BUILDFLAGS)" ] || { printf '%s' "$(BUILDFLAGS)" > .buildflags; rm -f glance; })
+endif
+
 glance: $(SEM_DEPS) $(GUI) $(CORE) $(HDRS)
 	$(CC) $(CFLAGS) -o $@ $(GUI) $(CORE) $(MD4C_LIBS) $(NC_LIBS) -lm $(SEM_LINK)
 
@@ -168,5 +181,5 @@ uninstall:
 	rm -f $(BINDIR)/glance $(BINDIR)/glance-render
 
 clean:
-	rm -f glance glance-render build-t-*
+	rm -f glance glance-render build-t-* .buildflags
 	rm -rf build *.dSYM
