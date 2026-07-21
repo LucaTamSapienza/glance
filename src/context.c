@@ -47,32 +47,37 @@ CtxPlan context_plan(const CtxCand *cand, int n, size_t budget) {
 
     size_t remaining = budget;
 
-    /* Has any already-picked candidate the same note as `note_id`? */
-    /* Pass 1 — diversity: at most one section per note, best score first. */
-    for (int k = 0; k < n; k++) {
-        int i = order[k];
-        int dup = 0;
-        for (int j = 0; j < p.npick; j++)
-            if (cand[p.picks[j].cand].note_id == cand[i].note_id) { dup = 1; break; }
-        if (dup) continue;
-        int gran;
-        size_t cost = fit(&cand[i], remaining, unlimited, &gran);
-        if (cost == 0 && !unlimited) continue;   /* try again in pass 2 */
-        p.picks[p.npick++] = (CtxPick){ i, gran, cost };
-        taken[i] = 1;
-        if (!unlimited) remaining -= cost;
-    }
-
-    /* Pass 2 — fill remaining budget with additional sections, score order. */
-    for (int k = 0; k < n; k++) {
-        int i = order[k];
-        if (taken[i]) continue;
-        int gran;
-        size_t cost = fit(&cand[i], remaining, unlimited, &gran);
-        if (cost == 0 && !unlimited) continue;
-        p.picks[p.npick++] = (CtxPick){ i, gran, cost };
-        taken[i] = 1;
-        if (!unlimited) remaining -= cost;
+    /* Two groups, direct matches first (surfaced == 0), then graph-surfaced
+     * neighbours into whatever budget is left — expansion must never evict a
+     * direct hit. Within each group: pass 1 takes at most one section per note
+     * (diversity), pass 2 fills the remaining budget in score order. A note is
+     * never in both groups (surfacing only happens when nothing in the note
+     * matched directly), so the duplicate check can span all picks. */
+    for (int surfaced = 0; surfaced <= 1; surfaced++) {
+        for (int k = 0; k < n; k++) {
+            int i = order[k];
+            if (cand[i].surfaced != surfaced) continue;
+            int dup = 0;
+            for (int j = 0; j < p.npick; j++)
+                if (cand[p.picks[j].cand].note_id == cand[i].note_id) { dup = 1; break; }
+            if (dup) continue;
+            int gran;
+            size_t cost = fit(&cand[i], remaining, unlimited, &gran);
+            if (cost == 0 && !unlimited) continue;   /* try again in pass 2 */
+            p.picks[p.npick++] = (CtxPick){ i, gran, cost };
+            taken[i] = 1;
+            if (!unlimited) remaining -= cost;
+        }
+        for (int k = 0; k < n; k++) {
+            int i = order[k];
+            if (taken[i] || cand[i].surfaced != surfaced) continue;
+            int gran;
+            size_t cost = fit(&cand[i], remaining, unlimited, &gran);
+            if (cost == 0 && !unlimited) continue;
+            p.picks[p.npick++] = (CtxPick){ i, gran, cost };
+            taken[i] = 1;
+            if (!unlimited) remaining -= cost;
+        }
     }
 
     /* Truncation manifest — everything not taken, in score order. */

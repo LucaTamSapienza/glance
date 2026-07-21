@@ -51,6 +51,40 @@ int main(void) {
 
     snprintf(p, sizeof p, "%s/index.md", dir);      unlink(p);
     snprintf(p, sizeof p, "%s/notes/Deep.md", dir); unlink(p);
+
+    /* graph_expand: a chain A -> B -> C. Seed only A; B is 1 hop away, C is 2.
+     * With khop=1 the activation reaches B but not C; with khop=2 it surfaces C
+     * (the zero-lexical neighbour), and B still outranks C. */
+    snprintf(p, sizeof p, "%s/A.md", dir); writef(p, "see [[B]]\n");
+    snprintf(p, sizeof p, "%s/B.md", dir); writef(p, "see [[C]]\n");
+    snprintf(p, sizeof p, "%s/C.md", dir); writef(p, "leaf\n");
+    Graph g2;
+    graph_build(dir, &g2);
+    int a = graph_find(&g2, "A"), b = graph_find(&g2, "B"), c = graph_find(&g2, "C");
+    expect(a >= 0 && b >= 0 && c >= 0, "chain nodes findable");
+    if (a >= 0 && b >= 0 && c >= 0) {
+        double *seed = calloc((size_t)g2.nn, sizeof *seed);
+        double *out  = malloc((size_t)g2.nn * sizeof *out);
+        seed[a] = 1.0;
+
+        graph_expand(&g2, seed, 1, 0.5, out);
+        expect(out[b] > 0.0, "1-hop activates B");
+        expect(out[c] == 0.0, "1-hop does not reach C");
+
+        graph_expand(&g2, seed, 2, 0.5, out);
+        expect(out[c] > 0.0, "2-hop surfaces zero-lexical C");
+        expect(out[b] > out[c], "nearer neighbour outranks farther one");
+
+        graph_expand(&g2, seed, 0, 0.5, out);
+        expect(out[b] == 0.0 && out[c] == 0.0, "khop=0 yields no expansion");
+
+        free(seed); free(out);
+    }
+    graph_free(&g2);
+    snprintf(p, sizeof p, "%s/A.md", dir); unlink(p);
+    snprintf(p, sizeof p, "%s/B.md", dir); unlink(p);
+    snprintf(p, sizeof p, "%s/C.md", dir); unlink(p);
+
     rmdir(sub); rmdir(dir);
 
     if (fails) { printf("%d graph test(s) FAILED\n", fails); return 1; }

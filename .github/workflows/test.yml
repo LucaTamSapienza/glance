@@ -16,3 +16,25 @@ jobs:
         run: make
       - name: Test (ASan/UBSan)
         run: make test
+
+  # Build-only: proves the vendored llama.cpp static link keeps compiling.
+  # No model download, nothing executed — link rot is the failure mode.
+  semantic-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Install dependencies
+        run: brew install md4c notcurses
+      - name: Record the submodule revision as the cache key
+        run: git submodule status third_party/llama.cpp > .llama-cache-key
+      - name: Cache the llama.cpp static build
+        uses: actions/cache@v4
+        with:
+          path: third_party/llama.cpp/build-static
+          key: llama-static-${{ runner.os }}-${{ hashFiles('.llama-cache-key') }}
+      - name: Build with the semantic tier
+        run: make GLANCE_SEMANTIC=1
+      - name: Verify the embedder is linked in
+        run: test "$(strings glance | grep -c llama_model_load)" -gt 0

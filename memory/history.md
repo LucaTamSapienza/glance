@@ -107,3 +107,14 @@ flag, `summary.clean` + exit codes, and `--edit before`. The rehearsal now
 runs seed → fill → doctor exit 0 end to end; the why: [[decisions]].
 Landed on main via PRs #24 (doctor) and #25 (seed).
 
+
+## 2026-07-22 — The semantic tier proves itself and asks to merge
+
+feat/semantic-minilm rebased onto post-M5 main, then made to earn its PR:
+two eval harnesses (12 daily questions + 10 surgical edits, plus an
+adversarial twin with traps and a planted injection) against a no-glance
+baseline, and the hardening they demanded — pinned-SHA model download,
+flag-aware rebuild, the direct-first planner guard. Memory-first steering
+with entry dating shipped in AGENTS.md; budget default set to 4000 by
+measurement. PR #26.
+

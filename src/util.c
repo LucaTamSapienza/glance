@@ -5,6 +5,8 @@
 #include <string.h>
 #include <stdio.h>
 
+#include <CommonCrypto/CommonDigest.h>   /* system digest: no extra dependency */
+
 /* True if b is a UTF-8 continuation byte. */
 int u8_cont(unsigned char b) { return (b & 0xC0) == 0x80; }
 
@@ -62,4 +64,23 @@ char *path_resolve(const char *basedir, const char *src) {
     char *out = malloc(need);
     if (out) snprintf(out, need, "%s/%s", basedir, src);
     return out;
+}
+
+/* SHA-256 of a whole file as lowercase hex; see util.h. */
+int sha256_file_hex(const char *path, char out[65]) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+    CC_SHA256_CTX ctx;
+    CC_SHA256_Init(&ctx);
+    unsigned char buf[65536];
+    for (size_t r; (r = fread(buf, 1, sizeof buf, f)) > 0; )
+        CC_SHA256_Update(&ctx, buf, (CC_LONG)r);
+    int err = ferror(f);
+    fclose(f);
+    if (err) return -1;
+    unsigned char md[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256_Final(md, &ctx);
+    for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++)
+        snprintf(out + 2 * i, 3, "%02x", md[i]);
+    return 0;
 }

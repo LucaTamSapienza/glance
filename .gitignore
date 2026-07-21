@@ -12,10 +12,10 @@
 .DS_Store
 build.log
 testdata/todo.md
+/.buildflags
 
-# semantic-tier working material (feat/semantic-minilm): llama.cpp checkouts + gguf models
+# local embedding spike (llama.cpp build + models, not committed)
 /spike/
-/third_party/
 
 # per-vault embedding cache (content-addressed, regenerable)
 .glance/

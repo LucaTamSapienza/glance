@@ -22,17 +22,67 @@ CORE := $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/doc_html.c $(SRC)/preprocess.c 
         $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c
 HDRS := $(wildcard $(SRC)/*.h)   # rebuild on any header change
 
-.PHONY: all test clean install uninstall
+.PHONY: all test clean install uninstall semantic-smoke
 
 all: glance glance-render
 
 GUI := $(SRC)/main.c $(SRC)/tui.c $(SRC)/editor.c $(SRC)/fswatch.c \
        $(SRC)/clipboard.c $(SRC)/completion.c $(SRC)/agent.c $(SRC)/legend.c \
        $(SRC)/progress.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/bm25.c \
-       $(SRC)/context.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/json.c $(SRC)/mcp.c \
+       $(SRC)/context.c $(SRC)/embed.c $(SRC)/embcache.c $(SRC)/edit.c $(SRC)/json.c $(SRC)/mcp.c \
        $(SRC)/export.c $(SRC)/fuzzy.c $(SRC)/doctor.c $(SRC)/seed.c
-glance: $(GUI) $(CORE) $(HDRS)
-	$(CC) $(CFLAGS) -o $@ $(GUI) $(CORE) $(MD4C_LIBS) $(NC_LIBS) -lm
+
+# --- Optional semantic embeddings (All-MiniLM-L6-v2 via vendored llama.cpp) ----
+# OFF by default: the standard build carries no llama dependency and uses the
+# dependency-free hashing embedder. Enable with:  make GLANCE_SEMANTIC=1
+# (builds the vendored static libs once, then links them into glance).
+LLAMA_DIR   := third_party/llama.cpp
+LLAMA_BUILD := $(LLAMA_DIR)/build-static
+LLAMA_A     := $(LLAMA_BUILD)/src/libllama.a \
+               $(LLAMA_BUILD)/ggml/src/libggml.a \
+               $(LLAMA_BUILD)/ggml/src/libggml-cpu.a \
+               $(LLAMA_BUILD)/ggml/src/ggml-metal/libggml-metal.a \
+               $(LLAMA_BUILD)/ggml/src/ggml-blas/libggml-blas.a \
+               $(LLAMA_BUILD)/ggml/src/libggml-base.a
+LLAMA_INC   := -I$(LLAMA_DIR)/include -I$(LLAMA_DIR)/ggml/include
+LLAMA_FW    := -lc++ -framework Foundation -framework Metal -framework MetalKit \
+               -framework Accelerate -framework QuartzCore
+
+SEM_DEPS :=
+SEM_LINK :=
+ifeq ($(GLANCE_SEMANTIC),1)
+CFLAGS   += -DGLANCE_SEMANTIC $(LLAMA_INC)
+GUI      += $(SRC)/embed_minilm.c
+SEM_DEPS := $(LLAMA_BUILD)/src/libllama.a
+SEM_LINK := $(LLAMA_A) $(LLAMA_FW)
+endif
+
+# Build the vendored llama.cpp as static libs (only the `llama` target: skips the
+# app/httplib/openssl target that needs a generated build-info.h).
+$(LLAMA_BUILD)/src/libllama.a:
+	cmake -B $(LLAMA_BUILD) -S $(LLAMA_DIR) -DCMAKE_BUILD_TYPE=Release \
+	  -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF \
+	  -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF \
+	  -DLLAMA_BUILD_TOOLS=OFF -DLLAMA_BUILD_SERVER=OFF \
+	  -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON
+	cmake --build $(LLAMA_BUILD) --target llama -j
+# ------------------------------------------------------------------------------
+
+# The glance binary embeds the semantic flag, so flipping it must relink even
+# when no source changed. At parse time — but only for goals that build glance,
+# so `make test`/`make clean` never touch the binary — if the recorded flags
+# differ from the current ones, record the new flags and delete the stale
+# binary: a missing target rebuilds unconditionally, immune to same-second
+# mtime ties (Apple ships GNU make 3.81, whose comparison is second-granular).
+BUILDFLAGS  := semantic=$(GLANCE_SEMANTIC)
+BUILD_GOALS := $(if $(MAKECMDGOALS),$(filter all glance install,$(MAKECMDGOALS)),all)
+ifneq ($(BUILD_GOALS),)
+IGNORE := $(shell prev=`cat .buildflags 2>/dev/null`; \
+  [ "$$prev" = "$(BUILDFLAGS)" ] || { printf '%s' "$(BUILDFLAGS)" > .buildflags; rm -f glance; })
+endif
+
+glance: $(SEM_DEPS) $(GUI) $(CORE) $(HDRS)
+	$(CC) $(CFLAGS) -o $@ $(GUI) $(CORE) $(MD4C_LIBS) $(NC_LIBS) -lm $(SEM_LINK)
 
 glance-render: $(SRC)/main_render.c $(CORE) $(HDRS)
 	$(CC) $(CFLAGS) -o $@ $(SRC)/main_render.c $(CORE) $(MD4C_LIBS)
@@ -60,6 +110,7 @@ test:
 	rm -f .san-probe .san-probe.c; \
 	CX="$(CC) $(TCFLAGS) -fsanitize=$$san"; \
 	echo "make test: building suites under -fsanitize=$$san"; \
+	$$CX -o build-t-util tests/util_test.c $(SRC)/util.c && ./build-t-util; \
 	$$CX -o build-t-editor tests/editor_test.c $(SRC)/editor.c $(SRC)/util.c && ./build-t-editor; \
 	$$CX -o build-t-preprocess tests/preprocess_test.c $(SRC)/preprocess.c && ./build-t-preprocess; \
 	$$CX $(shell pkg-config --cflags md4c) -o build-t-search tests/search_test.c \
@@ -76,11 +127,12 @@ test:
 	$$CX -lm -o build-t-bm25 tests/bm25_test.c $(SRC)/bm25.c && ./build-t-bm25; \
 	$$CX -o build-t-context tests/context_test.c $(SRC)/context.c && ./build-t-context; \
 	$$CX -lm -o build-t-embed tests/embed_test.c $(SRC)/embed.c && ./build-t-embed; \
+	$$CX -o build-t-embcache tests/embcache_test.c $(SRC)/embcache.c && ./build-t-embcache; \
 	$$CX $(shell pkg-config --cflags md4c) -o build-t-edit tests/edit_test.c \
 	  $(SRC)/edit.c $(SRC)/section.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-edit; \
 	$$CX -lm -o build-t-json tests/json_test.c $(SRC)/json.c $(SRC)/util.c && ./build-t-json; \
 	$$CX $(shell pkg-config --cflags md4c) -o build-t-mcp tests/mcp_test.c \
-	  $(SRC)/mcp.c $(SRC)/json.c $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/doctor.c $(SRC)/seed.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
+	  $(SRC)/mcp.c $(SRC)/json.c $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/embcache.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/doctor.c $(SRC)/seed.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
 	  $(shell pkg-config --libs md4c) -lm && ./build-t-mcp; \
 	$$CX $(shell pkg-config --cflags md4c) -o build-t-section tests/section_test.c \
 	  $(SRC)/section.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-section; \
@@ -96,17 +148,27 @@ test:
 	$$CX $(shell pkg-config --cflags md4c) -o build-t-vault tests/vault_test.c \
 	  $(SRC)/vault.c $(shell pkg-config --libs md4c) && ./build-t-vault; \
 	$$CX $(shell pkg-config --cflags md4c) -o build-t-agent tests/agent_test.c \
-	  $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/doctor.c $(SRC)/seed.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
+	  $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/embcache.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/doctor.c $(SRC)/seed.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
 	  $(shell pkg-config --libs md4c) -lm && ./build-t-agent; \
 	$$CX $(shell pkg-config --cflags md4c) -o build-t-graph tests/graph_test.c \
 	  $(SRC)/graph.c $(SRC)/vault.c $(SRC)/util.c $(shell pkg-config --libs md4c) && ./build-t-graph; \
 	$$CX $(shell pkg-config --cflags md4c) -o build-t-doctor tests/doctor_test.c \
-	  $(SRC)/doctor.c $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/seed.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
+	  $(SRC)/doctor.c $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/embcache.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/seed.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
 	  $(shell pkg-config --libs md4c) -lm && ./build-t-doctor; \
 	$$CX $(shell pkg-config --cflags md4c) -o build-t-seed tests/seed_test.c \
-	  $(SRC)/seed.c $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/doctor.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
+	  $(SRC)/seed.c $(SRC)/agent.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/context.c $(SRC)/bm25.c $(SRC)/embed.c $(SRC)/embcache.c $(SRC)/edit.c $(SRC)/fs_save.c $(SRC)/render.c $(SRC)/theme.c $(SRC)/preprocess.c $(SRC)/toc.c $(SRC)/vault.c $(SRC)/graph.c $(SRC)/doctor.c $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c \
 	  $(shell pkg-config --libs md4c) -lm && ./build-t-seed; \
 	rm -rf build-t-*
+
+# Semantic embedder sanity check (needs the vendored llama build + a gguf model).
+# Not part of `make test` (which must stay model-less and dependency-light).
+#   make semantic-smoke MODEL=/path/to/all-MiniLM-L6-v2.gguf
+semantic-smoke: $(LLAMA_BUILD)/src/libllama.a
+	$(CC) -std=c11 -O2 -DGLANCE_SEMANTIC $(LLAMA_INC) -o build-t-minilm \
+	  tests/embed_minilm_smoke.c $(SRC)/embed_minilm.c $(SRC)/embed.c \
+	  $(LLAMA_A) $(LLAMA_FW) -lm
+	./build-t-minilm $(MODEL)
+	rm -f build-t-minilm
 
 # Install both binaries onto PATH (default /usr/local/bin; may need sudo).
 install: all
@@ -119,5 +181,5 @@ uninstall:
 	rm -f $(BINDIR)/glance $(BINDIR)/glance-render
 
 clean:
-	rm -f glance glance-render build-t-*
+	rm -f glance glance-render build-t-* .buildflags
 	rm -rf build *.dSYM
