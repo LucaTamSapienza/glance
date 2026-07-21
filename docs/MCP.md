@@ -52,7 +52,7 @@ Every read is **bounded** so it stays token-cheap; `vault_context` and
 
 | Tool | Arguments | Returns |
 |------|-----------|---------|
-| `vault_context`   | `dir`, `query`, `budget?` | budgeted retrieval bundle: ranked sections (BM25 + a link-graph prior), with diversity, coarse-to-fine projection, a truncation manifest, and a receipt |
+| `vault_context`   | `dir`, `query`, `budget?`, `semantic?` | budgeted retrieval bundle: ranked sections (BM25 + a link-graph prior), with diversity, coarse-to-fine projection, a truncation manifest, and a receipt; `semantic: true` fuses an embedding cosine into the ranking |
 | `vault_section`   | `file`, `heading?`        | one heading's subtree + a token receipt |
 | `vault_outline`   | `file`, `depth?`, `abstract?` | the heading tree, depth-bounded, optional per-heading abstract |
 | `vault_neighbors` | `dir`, `note`, `depth?`   | link-graph neighbourhood with direction |
@@ -62,11 +62,30 @@ Every read is **bounded** so it stays token-cheap; `vault_context` and
 | `vault_graph`     | `dir`                     | the whole vault's link graph |
 | `vault_doctor`    | `dir`                     | vault hygiene report: per-note size, age, distinct link degree, dangling links (wikilinks, embeds, relative `.md` links), TODO/FIXME markers, and maintenance flags (unreadable/oversized/stale/orphan); the summary carries `clean` |
 | `vault_seed`      | `dir`                     | scaffold a memory vault ("brain") for the repo containing `dir`, additively; returns repo facts, a step-by-step fill plan, a `wire_snippet` for the host AGENTS.md, and the done-check (`vault_doctor` clean) |
-| `vault_edit`      | `file`, `heading`, `op`, `text` | surgically edit a section (`op` = append/insert/replace), saved atomically; echoes the new section |
+| `vault_edit`      | `file`, `heading`, `op`, `text` | surgically edit a section (`op` = append/insert/replace/before — `before` inserts a new sibling above the heading), saved atomically; echoes the new section |
 | `vault_set_frontmatter` | `file`, `key`, `value` | set a YAML frontmatter key, saved atomically |
 
 Each tool's result is a text content block whose text is the same JSON the
 corresponding `glance --…` command prints, so an agent can parse it directly.
+
+### Semantic retrieval (`semantic: true`)
+
+`vault_context`'s `semantic` flag fuses an embedding cosine into the lexical
+score — the same code path as `glance --context … --semantic`:
+
+- In a **`make GLANCE_SEMANTIC=1`** build, the embedder is the on-device
+  **all-MiniLM-L6-v2** encoder (vendored llama.cpp, statically linked). On
+  first use the model (~44 MB) is fetched to `~/.cache/glance/` and verified
+  against a **pinned SHA-256** before install — a mismatched download is
+  discarded and retrieval degrades to the lexical tier, never a hard error.
+  Section vectors are cached per vault in `DIR/.glance/` (gitignored,
+  regenerable).
+- In the default build the flag still works, backed by the dependency-free
+  hashing embedder (weaker semantics, zero downloads).
+- Env knobs: `GLANCE_MINILM_MODEL` (use your own gguf, trusted as given),
+  `GLANCE_MINILM_THREADS`, `GLANCE_MINILM_NGL`, and for retrieval-shape
+  ablation `GLANCE_GRAPH_KHOP` / `GLANCE_GRAPH_ALPHA`. Graph-surfaced
+  neighbours never displace direct matches in the budget plan.
 
 ## Protocol notes
 
