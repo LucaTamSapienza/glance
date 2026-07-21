@@ -97,6 +97,7 @@ test:
 	rm -f .san-probe .san-probe.c; \
 	CX="$(CC) $(TCFLAGS) -fsanitize=$$san"; \
 	echo "make test: building suites under -fsanitize=$$san"; \
+	$$CX -o build-t-util tests/util_test.c $(SRC)/util.c && ./build-t-util; \
 	$$CX -o build-t-editor tests/editor_test.c $(SRC)/editor.c $(SRC)/util.c && ./build-t-editor; \
 	$$CX -o build-t-preprocess tests/preprocess_test.c $(SRC)/preprocess.c && ./build-t-preprocess; \
 	$$CX $(shell pkg-config --cflags md4c) -o build-t-search tests/search_test.c \

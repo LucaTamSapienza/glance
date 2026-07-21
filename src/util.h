@@ -33,4 +33,8 @@ char *read_file(FILE *f, size_t *len);
  * NULL for a URL / allocation failure. */
 char *path_resolve(const char *basedir, const char *src);
 
+/* SHA-256 of the file at `path` as a lowercase hex string into out[65].
+ * Returns 0 on success, -1 if the file can't be read. */
+int sha256_file_hex(const char *path, char out[65]);
+
 #endif /* GLANCE_UTIL_H */

@@ -9,6 +9,7 @@
  * (llama_get_embeddings_seq), and L2-normalizes it into the caller's buffer.
  */
 #include "embed_minilm.h"
+#include "util.h"
 
 #include "llama.h"
 
@@ -135,6 +136,10 @@ Embedder *embedder_minilm(const char *model_path, int n_gpu_layers) {
 
 #define MINILM_FILE "all-MiniLM-L6-v2-ggml-model-f16.gguf"
 #define MINILM_URL  "https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/" MINILM_FILE
+/* Pinned SHA-256 of MINILM_FILE, cross-checked 2026-07-22 against the LFS oid
+ * published by the Hugging Face API for that exact blob. A download that does
+ * not hash to this is discarded — llama.cpp never parses unverified bytes. */
+#define MINILM_SHA256 "797b70c4edf85907fe0a49eb85811256f65fa0f7bf52166b147fd16be2be4662"
 
 /* True if `path` is a non-empty file whose first bytes are the GGUF magic. */
 static int is_gguf(const char *path) {
@@ -190,7 +195,18 @@ const char *minilm_model_path(void) {
         fprintf(stderr, "glance: model download failed; using the lexical fallback.\n");
         return NULL;
     }
+    /* Verify the download against the pinned digest before installing it; a
+     * pre-existing cache file was verified when it was installed, and an
+     * explicit GLANCE_MINILM_MODEL is the user's own model, trusted as given. */
+    char hex[65];
+    if (sha256_file_hex(tmp, hex) != 0 || strcmp(hex, MINILM_SHA256) != 0) {
+        unlink(tmp);
+        fprintf(stderr, "glance: model checksum mismatch (upstream changed or "
+                        "the download was tampered with); discarded — using the "
+                        "lexical fallback.\n");
+        return NULL;
+    }
     if (rename(tmp, path) != 0) { unlink(tmp); return NULL; }
-    fprintf(stderr, "glance: model ready.\n");
+    fprintf(stderr, "glance: model ready (checksum verified).\n");
     return path;
 }
