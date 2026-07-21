@@ -12,6 +12,10 @@
  *                     notes are represented before any note gets a second one;
  *   - coarse-to-fine: a candidate whose full section text does not fit is taken
  *                     as its cheaper abstract if that fits, else deferred;
+ *   - direct first:   graph-surfaced candidates (zero-lexical neighbours) are
+ *                     planned only into the budget left after every direct
+ *                     match has been served — expansion recall is a bonus and
+ *                     must never displace an answer-bearing direct hit;
  *   - truncation:     everything left out is reported (the manifest), so the
  *                     agent knows there is more and can follow up — never a
  *                     silent drop.
@@ -24,6 +28,8 @@ typedef struct {
     double score;            /* final relevance (BM25 + graph prior) */
     size_t full_tokens;      /* token cost of the full section text */
     size_t abstract_tokens;  /* token cost of the cheaper abstract projection */
+    int    surfaced;         /* 1 = here only via graph expansion (last field so
+                                positional initializers stay valid: default 0) */
 } CtxCand;
 
 enum { CTX_SECTION = 0, CTX_ABSTRACT = 1 };

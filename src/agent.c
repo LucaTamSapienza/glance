@@ -760,7 +760,8 @@ int agent_context(const char *dir, const char *query, size_t budget, int semanti
     for (int s = 0; s < nsec; s++) {
         if (sec[s].score <= 0.0) continue;
         cand2sec[ncand] = s;
-        cand[ncand++] = (CtxCand){ sec[s].note, sec[s].score, sec[s].full_tokens, sec[s].abstract_tokens };
+        cand[ncand++] = (CtxCand){ sec[s].note, sec[s].score, sec[s].full_tokens,
+                                   sec[s].abstract_tokens, sec[s].surfaced };
     }
     CtxPlan plan = context_plan(cand, ncand, budget);
 
