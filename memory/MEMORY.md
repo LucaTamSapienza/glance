@@ -14,8 +14,11 @@ work reads this first; the *rules* for working here live in
 ## Protocol (distill, don't accumulate)
 
 Read this index first; then ask, don't browse — `./glance --context "your
-question" memory/ --budget 2000` (synchronously — never with `&`), or
-`--section "memory/status.md#Open"`.
+question" memory/ --budget 4000` (synchronously — never with `&`), or
+`--section "memory/status.md#Open"`. When you answer from a bundle: quote
+the entry's date (that's the fact's freshness), and if the returned text
+doesn't literally contain the answer, say the memory doesn't cover it —
+retrieval fills the budget whether or not the answer exists.
 
 **Update triggers — if a row fired, write in the same change, not later:**
 
@@ -40,6 +43,9 @@ leftover TODO markers.
 
 **Form:** one `##` per entry — headings are glance's retrieval unit, an entry
 without its own heading is invisible to `--context`/`--section`; absolute
-dates only (write 2026-07-10, never "today"); wikilink the notes you mention;
-`./glance --edit` for surgical updates.
+dates only (write 2026-07-10, never "today"), and **every entry carries one**:
+in the heading (decisions, history) or as a trailing `*(as of YYYY-MM-DD)*`
+stamp (lessons — refresh it when you re-verify); wikilink the notes you
+mention; `./glance --edit` for surgical updates. Exact time/author of any
+line, when it matters: `git log -- memory/`.
 

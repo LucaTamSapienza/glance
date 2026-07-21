@@ -314,6 +314,22 @@ Everything we build either serves this loop or waits.
   (EmbeddingGemma-300M @ 256-dim Matryoshka), and an opt-in `--rerank` flag
   (jina-reranker-v2-base-multilingual, cross-encoder over the top-k before
   budget assembly).
+- **Budget planner v2 (eval-driven, 2026-07-22).** The 12-question dogfood
+  eval (`tests/eval/dogfood_eval.py` → `docs/archive/EVAL-2026-07-22.jsonl`) exposed three
+  planner gaps. Fixed same day: graph-surfaced chunks could displace direct
+  hits at tight budgets — `context_plan` now plans direct matches first and
+  expansion only into leftover budget ("direct first" in context.h). Still
+  open: selection is score-greedy rather than score-per-token (a 941-token
+  H1 index chunk evicts answer-bearing sections at small budgets —
+  demote-to-abstract or value-density ordering would fix it), and a
+  zero-answer query still returns a full bundle (no low-relevance signal a
+  consumer can trust — and the eval's negative result rules out the naive
+  fix: top-score magnitude does not separate hit from miss in either tier,
+  so a `weak: true` flag needs vault-relative calibration or
+  answer-presence verification, not a raw floor). Steering stopgap shipped in AGENTS.md
+  (memory-first, honest-miss, budget 4000). Related write-side gap: `--edit`
+  could auto-stamp an `updated:` frontmatter key so entry freshness is
+  mechanical, not disciplined.
 - **Name.** Stays `glance` for now; discoverability handled via README / a
   Homebrew tap (note the OpenStack `glance` CLI name collision).
 

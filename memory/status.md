@@ -1,7 +1,8 @@
 # Status
 
-> Last updated: 2026-07-11 (M5 merged: doctor + seed + the dogfood
-> hardening — 35 modules, 29 suites). What's done, what's in flight, what's
+> Last updated: 2026-07-22 (on main: M5 — 35 modules, 29 suites; on the
+> semantic branch: rebase + the retrieval eval, and the memory-first
+> steering with budget default 4000). What's done, what's in flight, what's
 > open. Rules and invariants live in AGENTS.md, not here.
 
 ## On main
@@ -52,8 +53,17 @@ entry points. The release artefact is darwin_arm64 only.
   Spike numbers and ship decisions: [[decisions]]. Rebased onto post-M5 main
   on 2026-07-21 (its STATUS.md/context.md edits folded into AGENTS.md + this
   note; verified end-to-end that day: build, suites, model fetch, warm cache
-  86 ms, k-hop). Open before merge: the llama.cpp dependency story on main
-  (the branch tracks `third_party/llama.cpp` as a submodule).
+  86 ms, k-hop). Dogfooded 2026-07-22: a 12-question / 10-edit eval vs a
+  no-glance baseline (tests/eval/dogfood_eval.py → docs/archive/EVAL-2026-07-22.jsonl) —
+  writes 9/9 placed at −85% tokens; reads −64% at budget 2000 but 1 answer
+  in 4 truncated, accuracy 1.0 at 4000 (~35% saved); `--semantic` rescued
+  reworded and Italian queries; the policy that came out of it:
+  [[decisions]] 2026-07-22. Hardened same day for the PR: pinned SHA-256 on
+  the model download (publisher-cross-checked; mismatch → discard +
+  lexical fallback; util suite is the 31st), flag-aware rebuild (flipping
+  GLANCE_SEMANTIC relinks; `make test` never touches the binary), and the
+  direct-first planner guard. Open before merge: the llama.cpp dependency
+  story on main (the branch tracks `third_party/llama.cpp` as a submodule).
 - **feat/wysiwyg-inline — ON HOLD.** Inline WYSIWYG editing, collapsing
   Reader/Insert into one mode. The big user-side bet; parked, not abandoned.
 - **feature/claim-store — Eddie's research spike, analyzed 2026-07-10.**
@@ -86,6 +96,25 @@ entry points. The release artefact is darwin_arm64 only.
   emitted (every `LangSpec.ty` is NULL) though every theme defines its color;
   brain-scaffold phase 2 is open — the plugin skill that executes seed's
   fill plan (seed → fill via `--edit` → doctor exit 0).
+- **Agent-side, from the 2026-07-22 eval:** the budget planner is
+  score-greedy, not score-per-token — a 941-token H1 chunk (the MEMORY.md
+  index) evicts answer sections from small budgets; no low-relevance signal
+  on a zero-answer query, the bundle fills the budget regardless — and a
+  naive score floor won't fix it (measured: top scores don't separate hit
+  from miss in either tier — semantic 1.63 answered vs 1.65 no-answer; the
+  AGENTS.md honest-miss rule is the working stopgap); ~~k-hop at tight
+  budgets could evict answer chunks~~ fixed 2026-07-22: `context_plan` now
+  plans direct matches first, graph-surfaced neighbours only into leftover
+  budget (Q10 khop2@2000: 0.67 → 1.0, regression test in context_test.c);
+  `--edit` doesn't
+  auto-stamp freshness — an `updated:` frontmatter touch on every surgical
+  write would make entry dates mechanical instead of disciplined. The
+  adversarial pass (same date, run3 in docs/archive/EVAL-2026-07-22.jsonl) added two
+  write-side facts: an append payload can smuggle new `## ` sections
+  (structure isn't sanitized — candidate doctor lint), and an injected
+  instruction-note comes back verbatim by design (the data-not-instructions
+  rule in AGENTS.md is the defense); fence-decoy/duplicate/prefix/unicode
+  anchors, no-EOL replace, 15-append bursts and 64 KB payloads all held.
 - **Doc rot (found by the 2026-07-10 re-read):** DESIGN.md §9/M3 still says
   "model pending the benchmark" (superseded by feat/semantic-minilm — update
   at merge); tui.c's header comment still describes the pre-vi two-mode UI;

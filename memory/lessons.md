@@ -14,6 +14,7 @@ StaticSpinMutex::LockSlow`). Reproduced on Apple clang 17 **and** Homebrew
 clang 20; `MallocNanoZone=0` doesn't help; UBSan is unaffected (no shadow
 memory). It looks exactly like an infinite build/test loop. Mitigation: the
 Makefile probe ([[decisions]]).
+*(as of 2026-07-01)*
 
 ## A backgrounded ./glance spins at 100% CPU
 
@@ -21,12 +22,14 @@ With no controlling tty (`&`, some sandboxes) the TUI event loop can't block
 on input. The rule (run every glance invocation synchronously) lives in
 AGENTS.md; this is the mechanism. Agent subcommands all finish in well under
 a second.
+*(as of 2026-07-01)*
 
 ## notcurses' NCKEY_RESIZE is unreliable behind an external poll loop
 
 Its input thread only surfaces the resize event when it next wakes for
 input, so an app that polls `notcurses_inputready_fd()` itself may never see
 it. If you need resize, own SIGWINCH via a self-pipe — see [[decisions]].
+*(as of 2026-07-01)*
 
 ## TUIs are testable headless with a PTY harness
 
@@ -35,6 +38,7 @@ DA1 (`\x1b[c`), CPR (`\x1b[6n`), the OSC color queries — because
 `notcurses_init` blocks until they're answered; then resize with
 `ioctl(TIOCSWINSZ)` + SIGWINCH and assert on the emitted frames. This is how
 the 2026-07-01 resize fix was validated without a terminal.
+*(as of 2026-07-01)*
 
 ## Terminals encode Ctrl-chords three different ways
 
@@ -54,6 +58,7 @@ rows in iTerm2's Key Mappings, after which the arrows arrive as
 alt+Left/Right (in enhanced mode via kitty; in legacy as CSI `1;3C/D`).
 Cmd+Left/Right arrive as Ctrl-A/Ctrl-E and are already bound to line
 start/end. Terminal.app doesn't speak the kitty protocol at all.
+*(as of 2026-07-01)*
 
 ## The kitty keyboard stack can outlive the app (iTerm2)
 
@@ -65,6 +70,7 @@ teardown pop carries a count (`CSI < 64 u`), clearing the whole stack in one
 write; popping past the top is a no-op, so over-popping is safe. Un-wedge a
 stuck tab with `printf '\x1b[<10u\x1b[=0u'` (or close it). This leak is why
 legacy remains the default keyboard mode.
+*(as of 2026-07-01)*
 
 ## NCBLIT_PIXEL needs an aspect-tight plane
 
@@ -74,12 +80,14 @@ them — size the image plane to the image's aspect ratio and stretch
 across frames corrupts notcurses' sprite bookkeeping (raw sixel/OSC bytes
 leak to the screen) — decode per frame; the proper future cache is
 persistent planes moved on scroll, not a reused visual.
+*(as of 2026-07-01)*
 
 ## The macOS pasteboard is lazy
 
 Right after a screenshot or a "copy image", the first read can return empty
 (a *promised* pasteboard): check `clipboard info` first (fail fast on plain
 text) and retry ~10×150 ms — `clipboard.c` does exactly this.
+*(as of 2026-07-01)*
 
 ## Stacked PRs: deleting a base branch closes its child PR
 
@@ -87,3 +95,17 @@ GitHub does not retarget children when a merged PR's branch is deleted —
 that is how M2's original PR #10 died and had to be reopened as PR #14.
 Retarget each child first (`gh pr edit N --base main`) and don't
 `--delete-branch` mid-chain.
+*(as of 2026-07-01)*
+
+## Retrieval fills the budget even on a zero-answer query
+
+Measured 2026-07-22 (tests/eval/dogfood_eval.py): `--context` returns a full
+budget's worth of chunks whether or not the vault contains the answer — on a
+no-answer query the bundle and receipt look identical to a hit, and only the
+*content* tells them apart. Consumers must check the returned text literally
+answers before trusting it (the steering rule in AGENTS.md); a planner-side
+low-relevance signal is an open item in [[status]]. Same eval, the flip
+side: a section chunk is its heading's *whole subtree*, so an H1 chunk is
+the entire note — the 941-token MEMORY.md index chunk crowded answer
+sections out of 2000-token budgets, which is why 4000 is the default.
+*(as of 2026-07-22)*
