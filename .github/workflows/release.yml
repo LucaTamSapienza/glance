@@ -18,7 +18,7 @@ jobs:
       - name: Build
         run: make
       - name: Package
-        run: tar -czf glance_${{ github.ref_name }}_darwin_arm64.tar.gz glance glance-render README.md LICENSE
+        run: tar -czf glance_${{ github.ref_name }}_darwin_arm64.tar.gz glance glance-render README.md LICENSE -C build Glance.app
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:

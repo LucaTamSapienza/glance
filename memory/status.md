@@ -1,8 +1,8 @@
 # Status
 
-> Last updated: 2026-07-11 (M5 merged: doctor + seed + the dogfood
-> hardening — 35 modules, 29 suites). What's done, what's in flight, what's
-> open. Rules and invariants live in AGENTS.md, not here.
+> Last updated: 2026-09-16 (native macOS preview, PR #27).
+> What's done, what's in flight, what's open. Rules and
+> invariants live in AGENTS.md, not here.
 
 ## On main
 
@@ -19,6 +19,17 @@ punctuation-aware word motion in editor **and** Reader; `keyboard = enhanced`
 opt-in (kitty protocol) with a stack-clearing teardown ([[lessons]]); HTML
 export (`glance-render --html`) and PDF via a detected converter
 (`glance --export`).
+
+**Native macOS preview** (2026-09-16, PR #27): `glance FILE --ui` /
+`glance --ui FILE` launches a read-only AppKit/WebKit `Glance.app` and returns
+the shell immediately. Reuses `md_to_html`, themes and highlighting; defaults
+to `auto`, following macOS light/dark appearance at opening, independently of
+the terminal theme. Explicit `--theme NAME` overrides it. Local images resolve
+against the document directory; web/mail links open externally. No editing,
+live reload or local note navigation. JavaScript is disabled and a preview
+CSP blocks frames/forms. `make` builds the companion, `make install` includes
+it under `libexec/glance`, and release archives carry it beside the CLI.
+Decision: [[decisions]].
 
 **Agent-side** (M1–M4 of docs/DESIGN.md) is shipped: bounded reads
 (`--outline`, `--section`, `--neighbors`, `--backlinks`, `--since`,
@@ -37,11 +48,12 @@ the one-command brain scaffold (additive `memory/` skeleton, repo facts +
 fill plan + `wire_snippet` as JSON, doctor exit 0 as the done-check), plus
 `--edit before` for surgical dated-log backfills.
 
-**Verified 2026-07-11:** 29 test suites green (UBSan; the ASan probe story:
-[[lessons]]) locally and in CI (macos-latest); no TODO/FIXME markers in src/
-(seed.c's template fill-markers are string content, not source markers).
-Untested by design: tui.c (~2.3k lines, hand-verified), clipboard.c, the two
-entry points. The release artefact is darwin_arm64 only.
+**Verified 2026-09-16:** 30 unit suites green locally under UBSan (ASan still
+cannot initialize; [[lessons]]) and in CI (macos-latest, PR #27).
+`make test-ui` passes locally against real WebKit: rendering, local images,
+Unicode filenames, system appearance, explicit themes and unchanged source.
+The TUI and clipboard still need hand verification. The release artefact is
+darwin_arm64 only and includes the native companion.
 
 ## In flight (branches)
 
@@ -93,4 +105,3 @@ entry points. The release artefact is darwin_arm64 only.
   aren't confined to the vault.
 - **Product:** the `glance` name collides with the OpenStack CLI — decide
   (rename? Homebrew tap name?) before packaging.
-

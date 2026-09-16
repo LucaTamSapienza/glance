@@ -1,6 +1,7 @@
 # glance — a terminal Markdown reader/editor in C.
 #   glance         the TUI: Reader + Insert + Split modes, vault navigation
 #   glance-render  render-only CLI: Markdown -> ANSI on stdout (file or stdin)
+#   Glance.app     macOS read-only preview, launched by glance FILE --ui
 #   make test      unit tests for the pure modules, under UBSan (+ ASan where its
 #                  runtime can initialize; see the probe in the `test` recipe)
 CC      ?= cc
@@ -12,9 +13,15 @@ NC_LIBS   := $(shell pkg-config --libs notcurses)
 
 SRC := src
 
-# Where `make install` puts the two binaries (override: make install PREFIX=~/.local).
+# Install the CLIs and native companion under PREFIX (e.g. PREFIX=~/.local).
 PREFIX ?= /usr/local
 BINDIR := $(DESTDIR)$(PREFIX)/bin
+APPDIR := $(DESTDIR)$(PREFIX)/libexec/glance
+PREVIEW_APP := build/Glance.app
+PREVIEW_CORE := $(SRC)/preview.c $(SRC)/doc_html.c $(SRC)/theme.c $(SRC)/highlight.c $(SRC)/util.c
+ifeq ($(shell uname -s),Darwin)
+NATIVE_APP := $(PREVIEW_APP)/Contents/MacOS/Glance
+endif
 
 # renderer + shared helpers, linked into both binaries
 CORE := $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/doc_html.c $(SRC)/preprocess.c $(SRC)/theme.c \
@@ -22,20 +29,33 @@ CORE := $(SRC)/render.c $(SRC)/doc_ansi.c $(SRC)/doc_html.c $(SRC)/preprocess.c 
         $(SRC)/highlight.c $(SRC)/image_size.c $(SRC)/util.c
 HDRS := $(wildcard $(SRC)/*.h)   # rebuild on any header change
 
-.PHONY: all test clean install uninstall
+.PHONY: all test test-ui clean install uninstall
 
-all: glance glance-render
+all: glance glance-render $(NATIVE_APP)
 
 GUI := $(SRC)/main.c $(SRC)/tui.c $(SRC)/editor.c $(SRC)/fswatch.c \
        $(SRC)/clipboard.c $(SRC)/completion.c $(SRC)/agent.c $(SRC)/legend.c \
        $(SRC)/progress.c $(SRC)/section.c $(SRC)/receipt.c $(SRC)/bm25.c \
        $(SRC)/context.c $(SRC)/embed.c $(SRC)/edit.c $(SRC)/json.c $(SRC)/mcp.c \
-       $(SRC)/export.c $(SRC)/fuzzy.c $(SRC)/doctor.c $(SRC)/seed.c
-glance: $(GUI) $(CORE) $(HDRS)
+       $(SRC)/export.c $(SRC)/fuzzy.c $(SRC)/doctor.c $(SRC)/seed.c $(SRC)/preview.c
+glance: $(GUI) $(CORE) $(HDRS) | $(NATIVE_APP)
 	$(CC) $(CFLAGS) -o $@ $(GUI) $(CORE) $(MD4C_LIBS) $(NC_LIBS) -lm
 
 glance-render: $(SRC)/main_render.c $(CORE) $(HDRS)
 	$(CC) $(CFLAGS) -o $@ $(SRC)/main_render.c $(CORE) $(MD4C_LIBS)
+
+$(PREVIEW_APP)/Contents/MacOS/Glance: $(SRC)/preview_macos.m $(PREVIEW_CORE) $(HDRS) macos/Info.plist
+	mkdir -p $(PREVIEW_APP)/Contents/MacOS
+	cp macos/Info.plist $(PREVIEW_APP)/Contents/Info.plist
+	$(CC) $(CFLAGS) -fobjc-arc -o $@ \
+	  $(SRC)/preview_macos.m $(PREVIEW_CORE) $(MD4C_LIBS) -framework Cocoa -framework WebKit
+
+# Requires a macOS graphical session; verifies the real WebKit document.
+test-ui: all
+	$(CC) $(CFLAGS) -fobjc-arc -o build-t-preview-ui \
+	  tests/preview_ui_test.m $(PREVIEW_CORE) $(MD4C_LIBS) -framework Cocoa -framework WebKit
+	./build-t-preview-ui
+	rm -f build-t-preview-ui
 
 # Each test binary links the modules it exercises. The sanitizer set is chosen at
 # run time by the probe at the top of the `test` recipe below — AddressSanitizer +
@@ -60,6 +80,8 @@ test:
 	rm -f .san-probe .san-probe.c; \
 	CX="$(CC) $(TCFLAGS) -fsanitize=$$san"; \
 	echo "make test: building suites under -fsanitize=$$san"; \
+	$$CX $(shell pkg-config --cflags md4c) -o build-t-preview tests/preview_test.c \
+	  $(PREVIEW_CORE) $(MD4C_LIBS) && ./build-t-preview; \
 	$$CX -o build-t-editor tests/editor_test.c $(SRC)/editor.c $(SRC)/util.c && ./build-t-editor; \
 	$$CX -o build-t-preprocess tests/preprocess_test.c $(SRC)/preprocess.c && ./build-t-preprocess; \
 	$$CX $(shell pkg-config --cflags md4c) -o build-t-search tests/search_test.c \
@@ -108,15 +130,20 @@ test:
 	  $(shell pkg-config --libs md4c) -lm && ./build-t-seed; \
 	rm -rf build-t-*
 
-# Install both binaries onto PATH (default /usr/local/bin; may need sudo).
+# Install both binaries onto PATH and the native companion under libexec.
 install: all
-	install -d $(BINDIR)
-	install -m 755 glance $(BINDIR)/glance
-	install -m 755 glance-render $(BINDIR)/glance-render
+	install -d "$(BINDIR)"
+	install -m 755 glance "$(BINDIR)/glance"
+	install -m 755 glance-render "$(BINDIR)/glance-render"
+ifeq ($(shell uname -s),Darwin)
+	install -d "$(APPDIR)"
+	ditto $(PREVIEW_APP) "$(APPDIR)/Glance.app"
+endif
 	@echo "installed glance and glance-render to $(BINDIR)"
 
 uninstall:
-	rm -f $(BINDIR)/glance $(BINDIR)/glance-render
+	rm -f "$(BINDIR)/glance" "$(BINDIR)/glance-render"
+	rm -rf "$(APPDIR)/Glance.app"
 
 clean:
 	rm -f glance glance-render build-t-*
