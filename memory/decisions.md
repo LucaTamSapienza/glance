@@ -5,6 +5,12 @@
 > headings are glance's retrieval unit. Drop an entry once it stops
 > informing anything.
 
+## 2026-09-16 — Native preview is a small macOS companion
+
+`glance FILE --ui` opens a read-only AppKit window around WKWebView, using the existing HTML export renderer. A separate `Glance.app` launched through Launch Services returns the shell immediately, gets a proper macOS app identity, and keeps AppKit/WebKit out of the CLI process. No editor, browser tab, server or new runtime. The source is read once; local resources use its directory; explicit web/mail links open externally. JavaScript and active embedded content are disabled. Build/install/release layouts all carry the companion; native rendering is checked with `make test-ui`. See [[status]].
+
+Default theme (2026-09-16, user preference): the preview starts with auto, following macOS light/dark appearance at opening, independently of the terminal default. Explicit --theme can select a fixed or custom palette. Configured palettes are still loaded, but the global theme default remains a terminal/export preference.
+
 ## 2026-07-11 — Doctor's contract set by dogfood: measure meaning, gate on clean
 
 An adversarial-vault pass plus executing seed's fill plan settled doctor's
@@ -140,11 +146,3 @@ shipped as M1–M4 (PRs #9–#14), MCP tools reusing the exact CLI exports.
 Direct pushes to main are blocked (ruleset `protect-main`); every change
 lands by PR. Commits credit Luca only — the history was once rewritten
 (filter-branch) to strip assistant co-author trailers; never add them.
-
-## 2026-06-15 — Rewrite in C and own the renderer
-
-Most of the Go code existed to fight glamour's opacity (marker paragraphs to
-preserve blanks, ANSI-stripping to search). md4c → our structured `Doc` →
-sinks makes every consumer a direct read of one model; notcurses replaces
-bubbletea. Go survives at the `go-final` tag.
-

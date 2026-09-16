@@ -1,6 +1,7 @@
 /* main.c — glance TUI entry point.
  *
  *   glance [file.md]      open a file in the Reader/Insert TUI
+ *   glance file.md --ui  open a read-only native macOS preview
  *   cat x.md | glance     piped stdin, no file: render to stdout (a rendered cat)
  *   glance --help         full usage and key bindings
  *   glance --keys         diagnostic: print raw key events (see tui_keyprobe)
@@ -14,6 +15,7 @@
 #include "render.h"
 #include "theme.h"
 #include "export.h"
+#include "preview.h"
 #include "util.h"
 
 #include <stdio.h>
@@ -34,6 +36,7 @@ static void print_help(void) {
 "USAGE\n"
 "  glance [FILE]            open FILE in the TUI (a missing path starts a new,\n"
 "                           empty file, created on first save)\n"
+"  glance FILE --ui        open a read-only macOS preview window (also --ui FILE)\n"
 "  cat FILE | glance        render the piped Markdown to stdout (like glance-render)\n"
 "  glance --keys            diagnostic: print raw key events, Esc to quit\n"
 "  glance --outline FILE    print the heading tree as JSON (--depth N, --abstract)\n"
@@ -262,6 +265,14 @@ int main(int argc, char **argv) {
         }
         return agent_context(dir, query, budget, semantic);
     }
+
+    const char *preview_path = NULL;
+    int ui = preview_args(argc, argv, &preview_path);
+    if (ui < 0) {
+        fprintf(stderr, "usage: glance FILE --ui [--theme NAME] (macOS only)\n");
+        return 2;
+    }
+    if (ui) return preview_open(preview_path, theme_name);
 
     /* Piped stdin with no file argument: act as a filter — render the document
      * to stdout, like glance-render — instead of opening the TUI. A pipe can't

@@ -4,6 +4,10 @@
 > before chasing a "weird" hang or a missed event. One `##` per lesson —
 > headings are glance's retrieval unit.
 
+## AppKit and the renderer both define Style
+
+Including theme.h/render.h beside Cocoa headers fails: MacTypes.h already typedefs Style. Keep the native shell behind preview.h and call the renderer through a C bridge instead of importing renderer types into Objective-C. Native filenames may also be canonically decomposed (Caffè becomes e plus combining accent), so UI tests normalize titles before comparison. Both reproduced while building the preview. *(as of 2026-09-16)*
+
 ## AddressSanitizer deadlocks at init on macOS 26
 
 Any `-fsanitize=address` binary can spin at 100% CPU before reaching `main`:

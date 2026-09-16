@@ -107,3 +107,7 @@ flag, `summary.clean` + exit codes, and `--edit before`. The rehearsal now
 runs seed → fill → doctor exit 0 end to end; the why: [[decisions]].
 Landed on main via PRs #24 (doctor) and #25 (seed).
 
+## 2026-09-16 — Native macOS preview
+
+Opened feat/macos-preview from main: glance FILE --ui launches a read-only AppKit/WebKit companion, follows macOS appearance by default, and ships through the normal build/install/release path. Thirty unit suites and native WebKit tests pass; user verified the window. Details: [[status]] and [[decisions]].
+

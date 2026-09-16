@@ -1,8 +1,8 @@
 # Status
 
-> Last updated: 2026-07-11 (M5 merged: doctor + seed + the dogfood
-> hardening — 35 modules, 29 suites). What's done, what's in flight, what's
-> open. Rules and invariants live in AGENTS.md, not here.
+> Last updated: 2026-09-16 (native macOS preview ready for review on
+> feat/macos-preview). What's done, what's in flight, what's open. Rules and
+> invariants live in AGENTS.md, not here.
 
 ## On main
 
@@ -37,14 +37,25 @@ the one-command brain scaffold (additive `memory/` skeleton, repo facts +
 fill plan + `wire_snippet` as JSON, doctor exit 0 as the done-check), plus
 `--edit before` for surgical dated-log backfills.
 
-**Verified 2026-07-11:** 29 test suites green (UBSan; the ASan probe story:
-[[lessons]]) locally and in CI (macos-latest); no TODO/FIXME markers in src/
-(seed.c's template fill-markers are string content, not source markers).
-Untested by design: tui.c (~2.3k lines, hand-verified), clipboard.c, the two
-entry points. The release artefact is darwin_arm64 only.
+**Branch verified locally 2026-09-16:** 30 unit suites green under UBSan (ASan still
+cannot initialize; [[lessons]]) and `make test-ui` passes against real WebKit.
+Last recorded CI verification: 29 suites on 2026-07-11 (macos-latest).
+The TUI and clipboard still need hand verification. The release artefact is
+darwin_arm64 only; feat/macos-preview adds the native companion to the package.
 
 ## In flight (branches)
 
+- **feat/macos-preview — ready for review (2026-09-16).** `glance FILE --ui`
+  / `glance --ui FILE` launches a read-only AppKit/WebKit `Glance.app` and
+  returns the shell immediately. Reuses `md_to_html`, themes and highlighting;
+  defaults to `auto`, following macOS light/dark appearance at opening,
+  independently of the terminal theme. Explicit `--theme NAME` overrides it.
+  Resolves local images against the document directory. No editing or live
+  reload; web/mail links open externally. JavaScript is disabled and a preview
+  CSP blocks frames/forms. `make` builds the companion, `make install` includes
+  it under `libexec/glance`, and release archives carry it beside the CLI.
+  `make test-ui` verifies actual WebKit rendering, images, themes and unchanged
+  source bytes in a macOS graphical session. Decision: [[decisions]].
 - **feat/semantic-minilm — complete on the branch, not merged.** The real
   semantic tier: all-MiniLM-L6-v2 (fp16, via llama.cpp) behind the `Embedder`
   seam, persistent `.glance/` embedding cache, model download-on-first-use,
@@ -93,4 +104,3 @@ entry points. The release artefact is darwin_arm64 only.
   aren't confined to the vault.
 - **Product:** the `glance` name collides with the OpenStack CLI — decide
   (rename? Homebrew tap name?) before packaging.
-

@@ -12,6 +12,7 @@ A terminal Markdown tool with two faces, over the same folder of `.md` files:
 
 ```
 $ glance README.md                      # open the reader (you)
+$ glance README.md --ui                 # open a read-only macOS window
 $ glance --context "how do we deploy?" ./vault --budget 4000   # retrieve (your agent)
 $ glance mcp                            # serve the vault to Claude Desktop / Cursor
 ```
@@ -26,6 +27,7 @@ machine.
 
 ```sh
 glance file.md                 # open in the reader TUI
+glance file.md --ui            # open a read-only macOS preview window
 glance new.md                  # a path that doesn't exist opens empty; :w creates it
 glance-render -w 80 file.md    # render to ANSI on stdout (-l for a light theme)
 cat note.md | glance           # piped stdin: render to stdout (like glance-render)
@@ -36,6 +38,24 @@ glance renders Markdown with **syntax-highlighted** code blocks, **column-aligne
 tables**, and **inline images** (pixel graphics where the terminal supports them).
 Three modes: **Reader** (rendered, with a block cursor), **Insert** (full-screen
 editor), **Split** (editor + live preview).
+
+### macOS preview
+
+`glance file.md --ui` (or `glance --ui file.md`) opens a separate **Glance**
+window and immediately returns the terminal prompt. The window displays the
+rendered Markdown, with selectable text, tables, images and highlighted code.
+It is read-only: there is no editor or save command, and the source stays untouched.
+`Cmd-C` copies selected text; `Cmd-W` closes the window and `Cmd-Q` quits.
+
+The preview uses the same HTML renderer as the export, inside macOS AppKit /
+WebKit. Local images resolve relative to the Markdown file. Web and email links
+open in their default apps; local note navigation is not part of this preview.
+The window shows the file as it was opened; reopen it to see external edits.
+Document scripts, forms and embedded frames cannot run or navigate the preview.
+The preview defaults to `auto`, following the macOS light/dark appearance at
+opening, independently of the terminal theme. Choose another palette with
+`--theme NAME` (including custom themes from the config).
+No browser, local server or extra runtime is needed.
 
 ### Keys
 
@@ -248,13 +268,17 @@ Requires a C11 compiler, [md4c](https://github.com/mity/md4c),
 brew install md4c notcurses pkg-config
 git clone https://github.com/LucaTamSapienza/glance
 cd glance
-make                 # builds ./glance (TUI) and ./glance-render (CLI)
+make                 # builds both CLIs and build/Glance.app on macOS
 make test            # unit tests (UBSan + AddressSanitizer where it can start)
+make test-ui         # native preview integration test (macOS graphical session)
 make install         # copy onto your PATH (/usr/local/bin; honours PREFIX/DESTDIR)
 ```
 
 For a no-sudo install: `make install PREFIX=~/.local` (with `~/.local/bin` on your
-`PATH`). `make uninstall` removes them.
+`PATH`). The preview app is installed under `PREFIX/libexec/glance/Glance.app`.
+`make uninstall` removes both binaries and the app. From a release archive, keep
+`Glance.app` beside the `glance` executable. Building the app also requires the
+macOS SDK / Command Line Tools (`xcode-select --install`).
 
 ## Use with Claude Code (plugin)
 
