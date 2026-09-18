@@ -113,4 +113,4 @@ PR #27 brings the native preview to main: glance FILE --ui launches a read-only 
 
 ## 2026-09-18 — Native app identity
 
-Branch `feat/macos-app-icon` packages the approved paper-eye logo for the native preview, including Retina sizes and bundle timestamp refreshes so macOS notices icon updates. Local build, unit/WebKit tests and installed-app checks pass; details: [[status]] and [[lessons]].
+PR #28 brings the approved paper-eye logo to the native preview on main, including Retina sizes and bundle timestamp refreshes so macOS notices icon updates. Local build, unit/WebKit tests, installed-app checks and GitHub CI pass; details: [[status]] and [[lessons]].
