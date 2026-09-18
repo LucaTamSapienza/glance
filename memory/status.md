@@ -1,6 +1,6 @@
 # Status
 
-> Last updated: 2026-09-16 (native macOS preview, PR #27).
+> Last updated: 2026-09-18 (native preview icon integration).
 > What's done, what's in flight, what's open. Rules and
 > invariants live in AGENTS.md, not here.
 
@@ -74,6 +74,8 @@ darwin_arm64 only and includes the native companion.
   test is still owed. Its own pre-registered verdict: NO-GO for building the
   C modules. Do not merge as-is; the verdict and what to salvage:
   [[decisions]].
+
+- **feat/macos-app-icon** (2026-09-18): the user-approved paper-eye logo with a mint cursor is preserved in `macos/Glance.png`. The build generates a transparent `.icns` with standard/Retina sizes and bundles it through `CFBundleIconFile`; install and release layouts carry it automatically. Installed under `~/.local`; all 30 UBSan suites and `make test-ui` pass, and all 10 icon representations decode correctly. Build/install refresh the outer bundle modification date so Launch Services notices icon changes; the installed app registration was refreshed and a fresh launch resolves the logo ([[lessons]]).
 
 ## Open
 

@@ -110,3 +110,7 @@ Landed on main via PRs #24 (doctor) and #25 (seed).
 ## 2026-09-16 — Native macOS preview
 
 PR #27 brings the native preview to main: glance FILE --ui launches a read-only AppKit/WebKit companion, follows macOS appearance by default, and ships through the normal build/install/release path. Thirty unit suites pass locally and in CI; native WebKit tests pass locally and the user verified the window. Details: [[status]] and [[decisions]].
+
+## 2026-09-18 — Native app identity
+
+Branch `feat/macos-app-icon` packages the approved paper-eye logo for the native preview, including Retina sizes and bundle timestamp refreshes so macOS notices icon updates. Local build, unit/WebKit tests and installed-app checks pass; details: [[status]] and [[lessons]].

@@ -20,7 +20,9 @@ APPDIR := $(DESTDIR)$(PREFIX)/libexec/glance
 PREVIEW_APP := build/Glance.app
 PREVIEW_CORE := $(SRC)/preview.c $(SRC)/doc_html.c $(SRC)/theme.c $(SRC)/highlight.c $(SRC)/util.c
 ifeq ($(shell uname -s),Darwin)
-NATIVE_APP := $(PREVIEW_APP)/Contents/MacOS/Glance
+NATIVE_APP := $(PREVIEW_APP)/Contents/MacOS/Glance \
+              $(PREVIEW_APP)/Contents/Info.plist \
+              $(PREVIEW_APP)/Contents/Resources/Glance.icns
 endif
 
 # renderer + shared helpers, linked into both binaries
@@ -44,11 +46,28 @@ glance: $(GUI) $(CORE) $(HDRS) | $(NATIVE_APP)
 glance-render: $(SRC)/main_render.c $(CORE) $(HDRS)
 	$(CC) $(CFLAGS) -o $@ $(SRC)/main_render.c $(CORE) $(MD4C_LIBS)
 
-$(PREVIEW_APP)/Contents/MacOS/Glance: $(SRC)/preview_macos.m $(PREVIEW_CORE) $(HDRS) macos/Info.plist
+$(PREVIEW_APP)/Contents/MacOS/Glance: $(SRC)/preview_macos.m $(PREVIEW_CORE) $(HDRS)
 	mkdir -p $(PREVIEW_APP)/Contents/MacOS
-	cp macos/Info.plist $(PREVIEW_APP)/Contents/Info.plist
 	$(CC) $(CFLAGS) -fobjc-arc -o $@ \
 	  $(SRC)/preview_macos.m $(PREVIEW_CORE) $(MD4C_LIBS) -framework Cocoa -framework WebKit
+
+# Refresh the bundle timestamp so Launch Services notices changed metadata.
+$(PREVIEW_APP)/Contents/Info.plist: macos/Info.plist
+	mkdir -p $(dir $@)
+	cp $< $@
+	touch $(PREVIEW_APP)
+
+# Generate the standard and Retina representations from the approved artwork.
+$(PREVIEW_APP)/Contents/Resources/Glance.icns: macos/Glance.png
+	mkdir -p $(dir $@) build/Glance.iconset
+	@set -e; for size in 16 32 128 256 512; do \
+		sips -z $$size $$size $< --out build/Glance.iconset/icon_$${size}x$${size}.png >/dev/null; \
+		pixels=$$((size * 2)); \
+		sips -z $$pixels $$pixels $< --out build/Glance.iconset/icon_$${size}x$${size}@2x.png >/dev/null; \
+	done
+	iconutil --convert icns build/Glance.iconset --output $@
+	rm -rf build/Glance.iconset
+	touch $(PREVIEW_APP)
 
 # Requires a macOS graphical session; verifies the real WebKit document.
 test-ui: all
@@ -138,6 +157,7 @@ install: all
 ifeq ($(shell uname -s),Darwin)
 	install -d "$(APPDIR)"
 	ditto $(PREVIEW_APP) "$(APPDIR)/Glance.app"
+	touch "$(APPDIR)/Glance.app"
 endif
 	@echo "installed glance and glance-render to $(BINDIR)"
 
