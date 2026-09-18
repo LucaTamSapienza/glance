@@ -1,6 +1,6 @@
 # Status
 
-> Last updated: 2026-09-16 (native macOS preview, PR #27).
+> Last updated: 2026-09-18 (native app icon, PR #28).
 > What's done, what's in flight, what's open. Rules and
 > invariants live in AGENTS.md, not here.
 
@@ -54,6 +54,8 @@ cannot initialize; [[lessons]]) and in CI (macos-latest, PR #27).
 Unicode filenames, system appearance, explicit themes and unchanged source.
 The TUI and clipboard still need hand verification. The release artefact is
 darwin_arm64 only and includes the native companion.
+
+Native app icon (2026-09-18, PR #28): the user-approved paper-eye logo with a mint cursor is preserved in `macos/Glance.png`. The build generates a transparent `.icns` with standard/Retina sizes and bundles it through `CFBundleIconFile`; install and release layouts carry it automatically. Installed under `~/.local`; all 30 UBSan suites and `make test-ui` pass, and all 10 icon representations decode correctly. Build/install refresh the outer bundle modification date so Launch Services notices icon changes; the installed app registration was refreshed and a fresh launch resolves the logo ([[lessons]]).
 
 ## In flight (branches)
 

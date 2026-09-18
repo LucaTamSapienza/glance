@@ -11,6 +11,8 @@
 
 Default theme (2026-09-16, user preference): the preview starts with auto, following macOS light/dark appearance at opening, independently of the terminal default. Explicit --theme can select a fixed or custom palette. Configured palettes are still loaded, but the global theme default remains a terminal/export preference.
 
+App icon (2026-09-18, user-approved): a paper-eye with a mint cursor on midnight blue represents reading and selective context. Preserve the approved PNG in `macos/Glance.png`; generate the multi-resolution `.icns` with macOS `sips` and `iconutil` during the build, rather than keeping a second source asset. The bundle declares `CFBundleIconFile`, so normal installation and release packaging include the identity.
+
 ## 2026-07-11 — Doctor's contract set by dogfood: measure meaning, gate on clean
 
 An adversarial-vault pass plus executing seed's fill plan settled doctor's

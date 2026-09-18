@@ -91,3 +91,7 @@ GitHub does not retarget children when a merged PR's branch is deleted —
 that is how M2's original PR #10 died and had to be reopened as PR #14.
 Retarget each child first (`gh pr edit N --base main`) and don't
 `--delete-branch` mid-chain.
+
+## macOS caches app identity using the bundle modification date
+
+On 2026-09-18, copying the new icon and Info.plist left the outer Glance.app directory dated 2026-09-16. NSWorkspace iconForFile already returned the logo while the user still saw a generic Dock tile, so that check alone was insufficient. Touch the outer bundle after metadata/icon builds and after ditto installation; Launch Services uses that modification date to detect registration updates. Verify a newly launched installed app as well as the asset. An explicit LSRegisterURL update refreshed the existing local registration.
