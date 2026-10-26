@@ -1,6 +1,6 @@
 # Status
 
-> Last updated: 2026-09-18 (native app icon, PR #28).
+> Last updated: 2026-10-26 (Finder integration, uncommitted working tree).
 > What's done, what's in flight, what's open. Rules and
 > invariants live in AGENTS.md, not here.
 
@@ -76,6 +76,8 @@ Native app icon (2026-09-18, PR #28): the user-approved paper-eye logo with a mi
   test is still owed. Its own pre-registered verdict: NO-GO for building the
   C modules. Do not merge as-is; the verdict and what to salvage:
   [[decisions]].
+
+- Finder integration (2026-10-26, uncommitted working tree): imported Markdown UTI and Viewer/Alternate registration make `Glance.app` eligible for Finder Open With/default selection. Cold/warm Finder batches open separate windows, canonical-path repeats focus the existing preview, errors preserve other windows, and close/reopen reads a fresh snapshot. Documentless launch offers standard Open and File > Open (Cmd-O). Finder instances remain available after last close; CLI instances still terminate then, preserving `open -n` lifecycle and explicit themes. Renderer/CSP and source remain unchanged. Verified 2026-10-26: `make`, `make test-ui` (cold/warm events, batches, reopen, picker, CLI lifecycle/themes and bundle metadata), and all 30 UBSan suites via `make test`; ASan used its known macOS fallback. The coordinator installed successfully with `make install PREFIX=/Users/lucatam/.local` and refreshed the installed bundle using `lsregister -f`. An NSWorkspace query for the real `/Users/lucatam/Downloads/temp.md` now lists both installed and build copies of Glance (neither appeared before); the default remains Visual Studio Code. Real UI verification with cua: launching the installed app without arguments shows Open; selecting `temp.md` opens a window titled `temp.md` displaying `ciao`. Decision: [[decisions]].
 
 ## Open
 

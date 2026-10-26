@@ -45,17 +45,34 @@ editor), **Split** (editor + live preview).
 window and immediately returns the terminal prompt. The window displays the
 rendered Markdown, with selectable text, tables, images and highlighted code.
 It is read-only: there is no editor or save command, and the source stays untouched.
-`Cmd-C` copies selected text; `Cmd-W` closes the window and `Cmd-Q` quits.
+`Cmd-C` copies selected text; `Cmd-O` opens more Markdown files; `Cmd-W` closes
+one window and `Cmd-Q` quits. Each document gets its own window. Reopening an
+already-open file brings its window forward and keeps your reading position;
+close it and open it again to read external changes. CLI-launched instances quit
+after their last window closes.
 
 The preview uses the same HTML renderer as the export, inside macOS AppKit /
 WebKit. Local images resolve relative to the Markdown file. Web and email links
 open in their default apps; local note navigation is not part of this preview.
-The window shows the file as it was opened; reopen it to see external edits.
+The window shows the file as it was opened.
 Document scripts, forms and embedded frames cannot run or navigate the preview.
 The preview defaults to `auto`, following the macOS light/dark appearance at
 opening, independently of the terminal theme. Choose another palette with
 `--theme NAME` (including custom themes from the config).
 No browser, local server or extra runtime is needed.
+
+After installation, use Finder **Open With > Glance** to open `.md` and
+`.markdown` documents. To make Glance the default, select a Markdown file and
+choose **Get Info > Open with > Glance > Change All…** (Italian Finder:
+**Ottieni informazioni > Apri con > Glance > Modifica tutti…**). If Glance is
+missing from the list, choose **Other…**, enable **All Applications**, and use
+Cmd-Shift-G to select the installed bundle at `PREFIX/libexec/glance/Glance.app`:
+`/usr/local/libexec/glance/Glance.app` by default, or
+`~/.local/libexec/glance/Glance.app` for the no-sudo installation below. Repeat
+for each extension you want to associate. Glance registers as a Markdown viewer;
+installing it does not change your default app. Launching Glance directly offers
+the standard Open panel; **File > Open…** (Cmd-O) remains available after closing
+all windows.
 
 ### Keys
 

@@ -5,13 +5,13 @@
 > headings are glance's retrieval unit. Drop an entry once it stops
 > informing anything.
 
+## 2026-10-26 — Finder Markdown viewer and independent document windows
+
+Import `net.daringfireball.markdown` (plain text; `.md`/`.markdown`) and declare `Viewer`/`Alternate`: Glance is selectable in Finder without taking the default. Finder launches need no argv file; queue pre-launch open batches and acknowledge each with `replyToOpenOrPrint:` after attempting every file. Each canonical path owns a read-only window; reopening focuses it, while closing then reopening reads a fresh snapshot. A bad file leaves other documents intact. Direct launch uses the standard multi-file Open panel and File > Open (Cmd-O), without an empty document. Finder instances stay available after the last close; CLI file arguments set a last-window termination flag because `glance --ui` deliberately launches independent instances with `open -n`. Explicit CLI themes remain per instance. See [[status]].
+
 ## 2026-09-16 — Native preview is a small macOS companion
 
-`glance FILE --ui` opens a read-only AppKit window around WKWebView, using the existing HTML export renderer. A separate `Glance.app` launched through Launch Services returns the shell immediately, gets a proper macOS app identity, and keeps AppKit/WebKit out of the CLI process. No editor, browser tab, server or new runtime. The source is read once; local resources use its directory; explicit web/mail links open externally. JavaScript and active embedded content are disabled. Build/install/release layouts all carry the companion; native rendering is checked with `make test-ui`. See [[status]].
-
-Default theme (2026-09-16, user preference): the preview starts with auto, following macOS light/dark appearance at opening, independently of the terminal default. Explicit --theme can select a fixed or custom palette. Configured palettes are still loaded, but the global theme default remains a terminal/export preference.
-
-App icon (2026-09-18, user-approved): a paper-eye with a mint cursor on midnight blue represents reading and selective context. Preserve the approved PNG in `macos/Glance.png`; generate the multi-resolution `.icns` with macOS `sips` and `iconutil` during the build, rather than keeping a second source asset. The bundle declares `CFBundleIconFile`, so normal installation and release packaging include the identity.
+`glance FILE --ui` launches a separate read-only AppKit/WKWebView `Glance.app` through Launch Services, returning the shell immediately and keeping AppKit/WebKit out of the CLI. It reuses the HTML export renderer, reads the source once, resolves local resources beside it and opens explicit web/mail links externally; scripts and active embedded content are disabled. Build/install/releases include the companion; `make test-ui` verifies native rendering. See [[status]]. The preview defaults to `auto` (macOS appearance at opening), independently of the terminal default; explicit `--theme` selects a fixed/custom palette. Configured palettes still load. App icon (2026-09-18, user-approved): preserve the paper-eye/mint-cursor PNG in `macos/Glance.png`; build its multi-resolution `.icns` with `sips`/`iconutil` and declare `CFBundleIconFile` so install/releases carry it.
 
 ## 2026-07-11 — Doctor's contract set by dogfood: measure meaning, gate on clean
 
