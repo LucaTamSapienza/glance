@@ -114,3 +114,7 @@ PR #27 brings the native preview to main: glance FILE --ui launches a read-only 
 ## 2026-09-18 — Native app identity
 
 PR #28 brings the approved paper-eye logo to the native preview on main, including Retina sizes and bundle timestamp refreshes so macOS notices icon updates. Local build, unit/WebKit tests, installed-app checks and GitHub CI pass; details: [[status]] and [[lessons]].
+
+## 2026-10-26 — Finder Markdown integration
+
+PR #29 makes Glance selectable as a Markdown viewer in Finder and adds native document-open events, independent windows and the standard Open panel. CLI themes and last-window termination remain intact. All 30 UBSan suites and the expanded native tests pass; installed-app registration and opening a real document were verified, and the user confirmed the fix. Details: [[status]] and [[decisions]].
