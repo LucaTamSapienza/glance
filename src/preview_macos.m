@@ -1,9 +1,10 @@
 /* preview_macos.m — a read-only AppKit window around the shared HTML renderer. */
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include "preview.h"
 
-@interface GlancePreview : NSObject <NSApplicationDelegate, WKNavigationDelegate>
+@interface GlanceDocument : NSObject <WKNavigationDelegate>
 @property(nonatomic, strong) NSWindow *window;
 @property(nonatomic, strong) WKWebView *webView;
 @property(nonatomic, strong) NSURL *documentURL;
@@ -13,31 +14,7 @@
 - (BOOL)showDocument:(NSURL *)url error:(NSError **)error;
 @end
 
-/* Build the standard app menus needed for copying, selecting and closing. */
-static void install_menu(void) {
-    NSMenu *bar = [NSMenu new];
-    NSMenuItem *appItem = [NSMenuItem new];
-    [bar addItem:appItem];
-    NSMenu *app = [[NSMenu alloc] initWithTitle:@"Glance"];
-    [app addItemWithTitle:@"Quit Glance" action:@selector(terminate:) keyEquivalent:@"q"];
-    appItem.submenu = app;
-
-    NSMenuItem *fileItem = [NSMenuItem new];
-    [bar addItem:fileItem];
-    NSMenu *file = [[NSMenu alloc] initWithTitle:@"File"];
-    [file addItemWithTitle:@"Close" action:@selector(performClose:) keyEquivalent:@"w"];
-    fileItem.submenu = file;
-
-    NSMenuItem *editItem = [NSMenuItem new];
-    [bar addItem:editItem];
-    NSMenu *edit = [[NSMenu alloc] initWithTitle:@"Edit"];
-    [edit addItemWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
-    [edit addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
-    editItem.submenu = edit;
-    NSApp.mainMenu = bar;
-}
-
-@implementation GlancePreview
+@implementation GlanceDocument
 
 /* Render a UTF-8 Markdown file with its own directory as the resource base. */
 - (BOOL)showDocument:(NSURL *)url error:(NSError **)error {
@@ -94,28 +71,6 @@ static void install_menu(void) {
     return YES;
 }
 
-/* Start the requested document after AppKit has connected to WindowServer. */
-- (void)applicationDidFinishLaunching:(NSNotification *)notification {
-    (void)notification;
-    install_menu();
-    NSError *error = nil;
-    if (![self showDocument:self.documentURL error:&error]) {
-        NSAlert *alert = [NSAlert new];
-        alert.messageText = @"Unable to preview Markdown";
-        alert.informativeText = error.localizedDescription ?: @"The file could not be opened.";
-        [alert runModal];
-        [NSApp terminate:nil];
-        return;
-    }
-    [NSApp activateIgnoringOtherApps:YES];
-}
-
-/* Quit when the preview closes, so no invisible helper remains running. */
-- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
-    (void)sender;
-    return YES;
-}
-
 /* Keep the preview on its document; explicit web/mail links open externally. */
 - (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)action
     decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
@@ -159,19 +114,201 @@ static void install_menu(void) {
 
 @end
 
+@interface GlancePreview : NSObject <NSApplicationDelegate, NSWindowDelegate>
+@property(nonatomic, strong) NSMutableArray<GlanceDocument *> *documents;
+@property(nonatomic, strong) NSMutableArray<NSArray<NSString *> *> *pendingBatches;
+@property(nonatomic, strong) NSURL *initialDocumentURL;
+@property(nonatomic, copy) NSString *themeName;
+@property(nonatomic, strong) NSOpenPanel *openPanel;
+@property(nonatomic) BOOL launched;
+@property(nonatomic) BOOL receivedOpenRequest;
+@property(nonatomic) BOOL terminateAfterLastWindowClosed;
+- (void)openDocument:(id)sender;
+- (BOOL)openURLs:(NSArray<NSURL *> *)urls;
+- (void)presentOpenErrors:(NSArray<NSError *> *)errors;
+@end
+
+/* Build standard menus, including an explicit target so Open works without windows. */
+static void install_menu(GlancePreview *delegate) {
+    NSMenu *bar = [NSMenu new];
+    NSMenuItem *appItem = [NSMenuItem new];
+    [bar addItem:appItem];
+    NSMenu *app = [[NSMenu alloc] initWithTitle:@"Glance"];
+    [app addItemWithTitle:@"Quit Glance" action:@selector(terminate:) keyEquivalent:@"q"];
+    appItem.submenu = app;
+
+    NSMenuItem *fileItem = [NSMenuItem new];
+    [bar addItem:fileItem];
+    NSMenu *file = [[NSMenu alloc] initWithTitle:@"File"];
+    NSMenuItem *open = [file addItemWithTitle:@"Open…" action:@selector(openDocument:) keyEquivalent:@"o"];
+    open.target = delegate;
+    [file addItemWithTitle:@"Close" action:@selector(performClose:) keyEquivalent:@"w"];
+    fileItem.submenu = file;
+
+    NSMenuItem *editItem = [NSMenuItem new];
+    [bar addItem:editItem];
+    NSMenu *edit = [[NSMenu alloc] initWithTitle:@"Edit"];
+    [edit addItemWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
+    [edit addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+    editItem.submenu = edit;
+    NSApp.mainMenu = bar;
+}
+
+@implementation GlancePreview
+
+/* Retain each live document and defer Finder batches until AppKit finishes launching. */
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        _documents = [NSMutableArray new];
+        _pendingBatches = [NSMutableArray new];
+    }
+    return self;
+}
+
+/* Open every readable file independently and focus an already-open canonical path. */
+- (BOOL)openURLs:(NSArray<NSURL *> *)urls {
+    self.receivedOpenRequest = YES;
+    if (self.openPanel) [self.openPanel cancel:nil];
+    NSMutableArray<NSError *> *errors = [NSMutableArray new];
+    for (NSURL *url in urls) {
+        NSURL *canonical = url.URLByStandardizingPath.URLByResolvingSymlinksInPath;
+        GlanceDocument *existing = nil;
+        for (GlanceDocument *document in self.documents) {
+            if ([document.documentURL isEqual:canonical]) { existing = document; break; }
+        }
+        if (existing) {
+            [existing.window deminiaturize:nil];
+            [existing.window makeKeyAndOrderFront:nil];
+            continue;
+        }
+        GlanceDocument *document = [GlanceDocument new];
+        document.themeName = self.themeName;
+        NSError *error = nil;
+        if ([document showDocument:canonical error:&error]) {
+            document.window.delegate = self;
+            [self.documents addObject:document];
+        } else {
+            [errors addObject:[NSError errorWithDomain:NSCocoaErrorDomain code:error.code
+                userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"%@: %@",
+                    url.lastPathComponent, error.localizedDescription ?: @"The file could not be opened."]}]];
+        }
+    }
+    if (urls.count) [NSApp activateIgnoringOtherApps:YES];
+    if (errors.count) [self presentOpenErrors:errors];
+    return errors.count == 0;
+}
+
+/* Report a batch failure after opening its valid files, without closing other previews. */
+- (void)presentOpenErrors:(NSArray<NSError *> *)errors {
+    NSMutableArray<NSString *> *messages = [NSMutableArray new];
+    for (NSError *error in errors) [messages addObject:error.localizedDescription];
+    NSAlert *alert = [NSAlert new];
+    alert.messageText = @"Unable to preview Markdown";
+    alert.informativeText = [messages componentsJoinedByString:@"\n\n"];
+    NSWindow *parent = NSApp.keyWindow;
+    if (parent && !parent.attachedSheet) [alert beginSheetModalForWindow:parent completionHandler:nil];
+    else [alert runModal];
+}
+
+/* Offer the native multi-file picker, reusing it when Open is invoked twice. */
+- (void)openDocument:(id)sender {
+    (void)sender;
+    if (self.openPanel) { [self.openPanel makeKeyAndOrderFront:nil]; return; }
+    NSOpenPanel *panel = [NSOpenPanel openPanel];
+    panel.canChooseFiles = YES;
+    panel.canChooseDirectories = NO;
+    panel.allowsMultipleSelection = YES;
+    panel.allowedContentTypes = @[[UTType typeWithFilenameExtension:@"md"],
+                                 [UTType typeWithFilenameExtension:@"markdown"]];
+    self.openPanel = panel;
+    [panel beginWithCompletionHandler:^(NSModalResponse response) {
+        self.openPanel = nil;
+        if (response == NSModalResponseOK) [self openURLs:panel.URLs];
+    }];
+}
+
+/* Offer a picker only after launch-time Finder events have had a chance to arrive. */
+- (void)openInitialDocumentIfNeeded {
+    if (!self.receivedOpenRequest && !self.documents.count) [self openDocument:nil];
+}
+
+/* Initialize menus, drain cold-launch requests and defer the documentless fallback. */
+- (void)applicationDidFinishLaunching:(NSNotification *)notification {
+    (void)notification;
+    install_menu(self);
+    self.launched = YES;
+    if (self.initialDocumentURL) {
+        [self openURLs:@[self.initialDocumentURL]];
+        self.initialDocumentURL = nil;
+    }
+    NSArray<NSArray<NSString *> *> *batches = self.pendingBatches.copy;
+    [self.pendingBatches removeAllObjects];
+    for (NSArray<NSString *> *batch in batches) [self application:NSApp openFiles:batch];
+    [self performSelector:@selector(openInitialDocumentIfNeeded) withObject:nil afterDelay:0];
+    [NSApp activateIgnoringOtherApps:YES];
+}
+
+/* Queue cold Finder events; acknowledge each batch after all its files were attempted. */
+- (void)application:(NSApplication *)sender openFiles:(NSArray<NSString *> *)filenames {
+    self.receivedOpenRequest = YES;
+    if (!self.launched) { [self.pendingBatches addObject:filenames.copy]; return; }
+    NSMutableArray<NSURL *> *urls = [NSMutableArray new];
+    for (NSString *path in filenames) [urls addObject:[NSURL fileURLWithPath:path]];
+    BOOL success = [self openURLs:urls];
+    [sender replyToOpenOrPrint:success ? NSApplicationDelegateReplySuccess : NSApplicationDelegateReplyFailure];
+}
+
+/* Let the deferred launch fallback supply the picker instead of an untitled document. */
+- (BOOL)applicationShouldOpenUntitledFile:(NSApplication *)sender {
+    (void)sender;
+    return NO;
+}
+
+/* Reopening from the Dock offers Open when no document windows remain. */
+- (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)visible {
+    (void)sender;
+    if (!visible && self.launched) [self openDocument:nil];
+    return YES;
+}
+
+/* Keep Finder launches available for Open; retire independent CLI instances on last close. */
+- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
+    (void)sender;
+    return self.terminateAfterLastWindowClosed;
+}
+
+/* Release closed document controllers so reopening reads a fresh snapshot from disk. */
+- (void)windowWillClose:(NSNotification *)notification {
+    for (GlanceDocument *document in self.documents.copy) {
+        if (document.window == notification.object) [self.documents removeObject:document];
+    }
+}
+
+@end
+
+/* Accept documentless Finder launches and preserve the CLI file/theme invocation. */
+static BOOL configure_arguments(GlancePreview *delegate, int argc, char **argv) {
+    if (argc == 1 || (argc == 2 && !strncmp(argv[1], "-psn_", 5))) return YES;
+    if (argc != 2 && !(argc == 4 && !strcmp(argv[2], "--theme"))) return NO;
+    delegate.terminateAfterLastWindowClosed = YES;
+    delegate.initialDocumentURL = [NSURL fileURLWithFileSystemRepresentation:argv[1]
+        isDirectory:NO relativeToURL:nil];
+    if (argc == 4) delegate.themeName = [NSString stringWithUTF8String:argv[3]];
+    return YES;
+}
+
 #ifndef GLANCE_PREVIEW_TEST
-/* Enter the native app loop; this executable is launched by `glance --ui`. */
+/* Enter the native app loop for either Finder events or `glance --ui` arguments. */
 int main(int argc, char **argv) {
     @autoreleasepool {
-        if (argc != 2 && !(argc == 4 && !strcmp(argv[2], "--theme"))) {
-            fprintf(stderr, "usage: Glance FILE [--theme NAME]\n");
+        GlancePreview *delegate = [GlancePreview new];
+        if (!configure_arguments(delegate, argc, argv)) {
+            fprintf(stderr, "usage: Glance [FILE [--theme NAME]]\n");
             return 2;
         }
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
-        GlancePreview *delegate = [GlancePreview new];
-        delegate.documentURL = [NSURL fileURLWithFileSystemRepresentation:argv[1] isDirectory:NO relativeToURL:nil];
-        if (argc == 4) delegate.themeName = [NSString stringWithUTF8String:argv[3]];
         NSApp.delegate = delegate;
         [NSApp run];
     }

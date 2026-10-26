@@ -49,7 +49,7 @@ glance-render: $(SRC)/main_render.c $(CORE) $(HDRS)
 $(PREVIEW_APP)/Contents/MacOS/Glance: $(SRC)/preview_macos.m $(PREVIEW_CORE) $(HDRS)
 	mkdir -p $(PREVIEW_APP)/Contents/MacOS
 	$(CC) $(CFLAGS) -fobjc-arc -o $@ \
-	  $(SRC)/preview_macos.m $(PREVIEW_CORE) $(MD4C_LIBS) -framework Cocoa -framework WebKit
+	  $(SRC)/preview_macos.m $(PREVIEW_CORE) $(MD4C_LIBS) -framework Cocoa -framework WebKit -framework UniformTypeIdentifiers
 
 # Refresh the bundle timestamp so Launch Services notices changed metadata.
 $(PREVIEW_APP)/Contents/Info.plist: macos/Info.plist
@@ -72,7 +72,7 @@ $(PREVIEW_APP)/Contents/Resources/Glance.icns: macos/Glance.png
 # Requires a macOS graphical session; verifies the real WebKit document.
 test-ui: all
 	$(CC) $(CFLAGS) -fobjc-arc -o build-t-preview-ui \
-	  tests/preview_ui_test.m $(PREVIEW_CORE) $(MD4C_LIBS) -framework Cocoa -framework WebKit
+	  tests/preview_ui_test.m $(PREVIEW_CORE) $(MD4C_LIBS) -framework Cocoa -framework WebKit -framework UniformTypeIdentifiers
 	./build-t-preview-ui
 	rm -f build-t-preview-ui
 

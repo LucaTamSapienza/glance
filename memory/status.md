@@ -1,6 +1,6 @@
 # Status
 
-> Last updated: 2026-09-18 (native app icon, PR #28).
+> Last updated: 2026-10-26 (Finder integration, PR #29).
 > What's done, what's in flight, what's open. Rules and
 > invariants live in AGENTS.md, not here.
 
@@ -56,6 +56,10 @@ The TUI and clipboard still need hand verification. The release artefact is
 darwin_arm64 only and includes the native companion.
 
 Native app icon (2026-09-18, PR #28): the user-approved paper-eye logo with a mint cursor is preserved in `macos/Glance.png`. The build generates a transparent `.icns` with standard/Retina sizes and bundles it through `CFBundleIconFile`; install and release layouts carry it automatically. Installed under `~/.local`; all 30 UBSan suites and `make test-ui` pass, and all 10 icon representations decode correctly. Build/install refresh the outer bundle modification date so Launch Services notices icon changes; the installed app registration was refreshed and a fresh launch resolves the logo ([[lessons]]).
+
+Finder integration (2026-10-26, PR #29): `Glance.app` declares `.md`/`.markdown` as a Markdown Viewer/Alternate and handles Finder open events at launch and while running. Documents use separate windows; reopening a canonical path focuses its existing preview, and a failed file leaves other windows intact. Direct launch offers the native Open panel and File > Open (Cmd-O). Finder instances stay available after the last window closes; CLI instances still quit then, preserving `open -n` lifecycle and explicit themes. Registration leaves the default app unchanged. See [[decisions]].
+
+Verified 2026-10-26: build, expanded native WebKit tests and all 30 UBSan suites pass (the known ASan fallback applies). Installed under `~/.local`; refreshed Launch Services registration makes the app a candidate for Markdown. Opening a real Downloads document through the installed app's Open panel displays its content correctly; the user confirmed the fix.
 
 ## In flight (branches)
 
