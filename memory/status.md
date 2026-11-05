@@ -1,6 +1,6 @@
 # Status
 
-> Last updated: 2026-11-05 (Linux port in the working tree, uncommitted).
+> Last updated: 2026-11-05 (Linux port merged in PR #30; Linux `--ui` on feat/linux-preview).
 > What's done, what's in flight, what's open. Rules and
 > invariants live in AGENTS.md, not here.
 
@@ -61,6 +61,8 @@ Finder integration (2026-10-26, PR #29): `Glance.app` declares `.md`/`.markdown`
 
 Verified 2026-10-26: build, expanded native WebKit tests and all 30 UBSan suites pass (the known ASan fallback applies). Installed under `~/.local`; refreshed Launch Services registration makes the app a candidate for Markdown. Opening a real Downloads document through the installed app's Open panel displays its content correctly; the user confirmed the fix.
 
+Linux preview (2026-11-05, branch feat/linux-preview, PR pending): `--ui` on Linux spawns `glance-preview` (beside the CLI or `../libexec/glance/`, detached via `posix_spawn` + setsid), a GTK4/WebKitGTK 6.0 `GtkApplication` (`dev.glance.Preview`, HANDLES_OPEN): one instance per session over D-Bus, the theme travels as the open hint, one window per canonical path, Ctrl-O/W/Q, JS off + the macOS CSP, ephemeral network session, `auto` from the settings portal `color-scheme`. Built only when the GTK/WebKit dev packages exist; `make install` adds `glance.desktop`. On Ubuntu's userns-restricted AppArmor it probes a user namespace and, failing that, disables WebKit's sandbox with a stderr note; `linux/glance-preview.apparmor` keeps it on (sudo). Verified on Ubuntu 24.04 (X11): make, 30 suites ASan+UBSan, install to `~/.local`, window opens with the prompt back at once, reopen reuses the instance and window, `--theme nord`, Ctrl-W/last-window exit, Ctrl-Q, Ctrl-O dialog appears (picking a file through it not automated). See [[decisions]].
+
 ## In flight (branches)
 
 - **feat/semantic-minilm — complete on the branch, not merged.** The real
@@ -111,10 +113,11 @@ Verified 2026-10-26: build, expanded native WebKit tests and all 30 UBSan suites
   aren't confined to the vault.
 - **Product:** the `glance` name collides with the OpenStack CLI — decide
   (rename? Homebrew tap name?) before packaging.
-- **Linux** (2026-11-05, Ubuntu 24.04, notcurses 3.0.7 from apt; working
-  tree, not yet committed): `make`, `make test` (ASan+UBSan), `make install`
+- **Linux** (2026-11-05, Ubuntu 24.04, notcurses 3.0.7 from apt; PR #30):
+  `make`, `make test` (ASan+UBSan), `make install`
   pass. Residuals: a lone Esc is swallowed by notcurses 3.0.7 (press Esc
   twice) — see [[lessons]]; clipboard/link opening/image paste are
-  macOS-only (`pbcopy`/`open`/`osascript`); `--ui` is macOS-only; no Linux CI.
+  macOS-only (`pbcopy`/`open`/`osascript`); `--ui` on Linux is on
+  feat/linux-preview (above); no Linux CI.
   Cross-platform bug found meanwhile: Ctrl-S in Insert, then Esc, leaves the
   buffer marked dirty (`save_file` doesn't clear `ed.dirty`).

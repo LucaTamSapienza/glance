@@ -2,6 +2,7 @@
 #   glance         the TUI: Reader + Insert + Split modes, vault navigation
 #   glance-render  render-only CLI: Markdown -> ANSI on stdout (file or stdin)
 #   Glance.app     macOS read-only preview, launched by glance FILE --ui
+#   glance-preview Linux read-only preview (GTK4 + WebKitGTK), same launcher
 #   make test      unit tests for the pure modules, under UBSan (+ ASan where its
 #                  runtime can initialize; see the probe in the `test` recipe)
 CC      ?= cc
@@ -23,6 +24,14 @@ ifeq ($(shell uname -s),Darwin)
 NATIVE_APP := $(PREVIEW_APP)/Contents/MacOS/Glance \
               $(PREVIEW_APP)/Contents/Info.plist \
               $(PREVIEW_APP)/Contents/Resources/Glance.icns
+endif
+# Linux builds the preview only when GTK4 + WebKitGTK 6.0 dev packages are present.
+ifeq ($(shell uname -s),Linux)
+LINUX_PREVIEW := $(shell pkg-config --exists gtk4 webkitgtk-6.0 && echo glance-preview)
+endif
+ifneq ($(LINUX_PREVIEW),)
+NATIVE_APP := glance-preview
+GTK_FLAGS = $(shell pkg-config --cflags --libs gtk4 webkitgtk-6.0)
 endif
 
 # renderer + shared helpers, linked into both binaries
@@ -50,6 +59,9 @@ $(PREVIEW_APP)/Contents/MacOS/Glance: $(SRC)/preview_macos.m $(PREVIEW_CORE) $(H
 	mkdir -p $(PREVIEW_APP)/Contents/MacOS
 	$(CC) $(CFLAGS) -fobjc-arc -o $@ \
 	  $(SRC)/preview_macos.m $(PREVIEW_CORE) $(MD4C_LIBS) -framework Cocoa -framework WebKit -framework UniformTypeIdentifiers
+
+glance-preview: $(SRC)/preview_linux.c $(PREVIEW_CORE) $(HDRS)
+	$(CC) $(CFLAGS) -o $@ $(SRC)/preview_linux.c $(PREVIEW_CORE) $(MD4C_LIBS) $(GTK_FLAGS)
 
 # Refresh the bundle timestamp so Launch Services notices changed metadata.
 $(PREVIEW_APP)/Contents/Info.plist: macos/Info.plist
@@ -164,12 +176,21 @@ ifeq ($(shell uname -s),Darwin)
 	ditto $(PREVIEW_APP) "$(APPDIR)/Glance.app"
 	touch "$(APPDIR)/Glance.app"
 endif
+ifneq ($(LINUX_PREVIEW),)
+	install -d "$(APPDIR)" "$(DESTDIR)$(PREFIX)/share/applications"
+	install -m 755 glance-preview "$(APPDIR)/glance-preview"
+	printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Glance' \
+	  'Comment=Read-only Markdown preview' 'Exec=$(PREFIX)/libexec/glance/glance-preview %F' \
+	  'MimeType=text/markdown;' 'Categories=Utility;TextTools;' 'Terminal=false' \
+	  > "$(DESTDIR)$(PREFIX)/share/applications/glance.desktop"
+endif
 	@echo "installed glance and glance-render to $(BINDIR)"
 
 uninstall:
 	rm -f "$(BINDIR)/glance" "$(BINDIR)/glance-render"
 	rm -rf "$(APPDIR)/Glance.app"
+	rm -f "$(APPDIR)/glance-preview" "$(DESTDIR)$(PREFIX)/share/applications/glance.desktop"
 
 clean:
-	rm -f glance glance-render build-t-*
+	rm -f glance glance-render glance-preview build-t-*
 	rm -rf build *.dSYM
