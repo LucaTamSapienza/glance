@@ -85,6 +85,11 @@ test-ui: all
 # `make test` hang (at 100% CPU) on the first suite instead of running, so it is
 # added only after the probe confirms a trivial asan binary can actually run.
 TCFLAGS := -std=c11 -g -Wall -Wextra
+# glibc hides POSIX (strdup, mkstemp, ...) under strict -std=c11; the app build
+# gets this from notcurses' pkg-config cflags, the suites need it spelled out.
+ifeq ($(shell uname -s),Linux)
+TCFLAGS += -D_DEFAULT_SOURCE
+endif
 test:
 	@set -e; \
 	san=address,undefined; \
