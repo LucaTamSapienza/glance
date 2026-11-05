@@ -16,8 +16,8 @@ int preview_args(int argc, char **argv, const char **path);
  * Returns an allocated absolute path, or NULL when the app is missing. */
 char *preview_app_path(const char *executable);
 
-/* Open a readable Markdown file in the macOS preview app and return promptly.
- * Returns 0 once Launch Services accepts the request, nonzero on error. */
+/* Open a readable Markdown file in the native preview and return promptly.
+ * Returns 0 once the companion is launched, nonzero on error. */
 int preview_open(const char *path, const char *theme_name);
 
 #endif

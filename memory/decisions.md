@@ -5,6 +5,10 @@
 > headings are glance's retrieval unit. Drop an entry once it stops
 > informing anything.
 
+## 2026-11-05 — Linux preview: one GTK instance, sandbox fallback on Ubuntu
+
+`glance-preview` is a GtkApplication with D-Bus single instance (unlike macOS `open -n`): reopening a file anywhere focuses its window; the theme rides the `open` hint, so each window keeps its own. Ubuntu 23.10+ AppArmor stops WebKit's bwrap sandbox (uid map denied, the web process aborts), and the fix needs root, so the user chose: probe a user namespace, disable the sandbox only when it fails (JS stays off, CSP + ephemeral session stay) and say so on stderr; `linux/glance-preview.apparmor` is the one-command sudo fix. See [[status]].
+
 ## 2026-10-26 — Finder Markdown viewer and independent document windows
 
 Import `net.daringfireball.markdown` (plain text; `.md`/`.markdown`) and declare `Viewer`/`Alternate`: Glance is selectable in Finder without taking the default. Finder launches need no argv file; queue pre-launch open batches and acknowledge each with `replyToOpenOrPrint:` after attempting every file. Each canonical path owns a read-only window; reopening focuses it, while closing then reopening reads a fresh snapshot. A bad file leaves other documents intact. Direct launch uses the standard multi-file Open panel and File > Open (Cmd-O), without an empty document. Finder instances stay available after the last close; CLI file arguments set a last-window termination flag because `glance --ui` deliberately launches independent instances with `open -n`. Explicit CLI themes remain per instance. See [[status]].
@@ -43,15 +47,7 @@ notes.
 
 ## 2026-07-10 — The memory protocol got a mechanical half: --doctor
 
-The protocol's rules (update triggers, the ~150-line cap, distill-don't-
-append) were prose only — nothing checked them. Now `./glance --doctor DIR`
-(MCP: `vault_doctor`) reports per-note lines, age, link degree, dangling
-`[[wikilinks]]` and TODO markers, and flags oversized (>150 lines), stale
-(>45 days) and orphaned notes. Facts live in doctor.c (pure, the 28th
-suite); the thresholds are judgements and live in agent.c, documented in
-`--help`. The update/fill/delete trigger table lives in memory/MEMORY.md;
-AGENTS.md tells every agent to lint the vault after touching it and fix
-what it flags.
+The protocol's rules (update triggers, the ~150-line cap, distill-don't-append) were prose only — nothing checked them. Now `./glance --doctor DIR` (MCP: `vault_doctor`) reports per-note lines, age, link degree, dangling `[[wikilinks]]` and TODO markers, and flags oversized (>150 lines), stale (>45 days) and orphaned notes. Facts live in doctor.c (pure, the 28th suite); the thresholds are judgements and live in agent.c, documented in `--help`. The update/fill/delete trigger table lives in memory/MEMORY.md; AGENTS.md tells every agent to lint the vault after touching it and fix what it flags.
 
 ## 2026-07-10 — Eddie's claim store: research to finish, not a brain swap
 

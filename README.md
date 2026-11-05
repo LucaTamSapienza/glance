@@ -74,6 +74,17 @@ installing it does not change your default app. Launching Glance directly offers
 the standard Open panel; **File > Open…** (Cmd-O) remains available after closing
 all windows.
 
+**Linux.** The same `--ui` opens a GTK4/WebKitGTK window (`glance-preview`;
+`make` builds it once `sudo apt install libgtk-4-dev libwebkitgtk-6.0-dev` is done)
+with the same behaviour: `Ctrl-O`, `Ctrl-W`, `Ctrl-Q`, one window per document,
+a single instance per session, and `auto` following the desktop's light/dark
+setting. `make install` also adds `glance.desktop`, so file managers offer
+**Open With > Glance**; make it the default with
+`xdg-mime default glance.desktop text/markdown`. On Ubuntu 23.10+ AppArmor blocks
+WebKit's sandbox, so the preview runs with the sandbox off (JavaScript stays
+disabled) and says so on stderr; to keep it on, install the profile once:
+`sudo install -m 644 linux/glance-preview.apparmor /etc/apparmor.d/glance-preview && sudo apparmor_parser -r /etc/apparmor.d/glance-preview`.
+
 ### Keys
 
 **Reader**
@@ -292,7 +303,8 @@ make install         # copy onto your PATH (/usr/local/bin; honours PREFIX/DESTD
 ```
 
 For a no-sudo install: `make install PREFIX=~/.local` (with `~/.local/bin` on your
-`PATH`). The preview app is installed under `PREFIX/libexec/glance/Glance.app`.
+`PATH`). The preview app is installed under `PREFIX/libexec/glance/Glance.app`
+(`PREFIX/libexec/glance/glance-preview` on Linux).
 `make uninstall` removes both binaries and the app. From a release archive, keep
 `Glance.app` beside the `glance` executable. Building the app also requires the
 macOS SDK / Command Line Tools (`xcode-select --install`).

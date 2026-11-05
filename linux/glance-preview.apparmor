@@ -1,0 +1,13 @@
+# Lets glance-preview (and WebKit's bwrap sandbox) create user namespaces on
+# Ubuntu 23.10+. Unconfined otherwise, like Ubuntu's own epiphany profile.
+# sudo install -m 644 linux/glance-preview.apparmor /etc/apparmor.d/glance-preview
+# sudo apparmor_parser -r /etc/apparmor.d/glance-preview
+
+abi <abi/4.0>,
+include <tunables/global>
+
+profile glance-preview /**/libexec/glance/glance-preview flags=(unconfined) {
+  userns,
+
+  include if exists <local/glance-preview>
+}
