@@ -1,13 +1,13 @@
 # Status
 
-> Last updated: 2026-10-26 (Finder integration, PR #29).
+> Last updated: 2026-11-05 (Linux port in the working tree, uncommitted).
 > What's done, what's in flight, what's open. Rules and
 > invariants live in AGENTS.md, not here.
 
 ## On main
 
 **User-side** is a complete reader/editor: Reader / Insert / Split modes;
-search (`/ n N`); TOC (`t`); atomic save + kqueue live-reload (clean buffers
+search (`/ n N`); TOC (`t`); atomic save + kqueue (inotify on Linux) live-reload (clean buffers
 adopt external edits, dirty ones get an `r`/`k` conflict prompt); charwise and
 linewise selection with clipboard yank; `[[wikilinks]]` / backlinks (`b`) /
 graph explorer (`Ctrl-G`) / fuzzy switcher (`Ctrl-P`); twelve themes with a
@@ -111,3 +111,10 @@ Verified 2026-10-26: build, expanded native WebKit tests and all 30 UBSan suites
   aren't confined to the vault.
 - **Product:** the `glance` name collides with the OpenStack CLI — decide
   (rename? Homebrew tap name?) before packaging.
+- **Linux** (2026-11-05, Ubuntu 24.04, notcurses 3.0.7 from apt; working
+  tree, not yet committed): `make`, `make test` (ASan+UBSan), `make install`
+  pass. Residuals: a lone Esc is swallowed by notcurses 3.0.7 (press Esc
+  twice) — see [[lessons]]; clipboard/link opening/image paste are
+  macOS-only (`pbcopy`/`open`/`osascript`); `--ui` is macOS-only; no Linux CI.
+  Cross-platform bug found meanwhile: Ctrl-S in Insert, then Esc, leaves the
+  buffer marked dirty (`save_file` doesn't clear `ed.dirty`).

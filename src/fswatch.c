@@ -1,4 +1,5 @@
-/* fswatch.c — watch a file's parent directory for changes (kqueue/macOS). */
+/* fswatch.c — watch a file's parent directory for changes (kqueue on macOS,
+ * inotify on Linux). */
 #include "fswatch.h"
 
 #include <stdio.h>
@@ -6,6 +7,44 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <libgen.h>
+
+#ifdef __linux__
+#include <sys/inotify.h>
+
+/* Begin watching the directory containing `path` with inotify; `kq` holds the
+ * inotify fd to poll and `dir` the watch descriptor. */
+int watch_open(Watch *w, const char *path) {
+    w->kq = w->dir = -1;
+    if (!path) return -1;
+
+    char buf[4096];
+    snprintf(buf, sizeof buf, "%s", path);
+    int fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+    if (fd < 0) return -1;
+
+    int wd = inotify_add_watch(fd, dirname(buf),   /* dirname may rewrite buf */
+                               IN_MODIFY | IN_ATTRIB | IN_CLOSE_WRITE | IN_CREATE |
+                               IN_DELETE | IN_MOVED_FROM | IN_MOVED_TO);
+    if (wd < 0) { close(fd); return -1; }
+
+    w->kq = fd; w->dir = wd;
+    return fd;
+}
+
+/* Consume pending inotify events after the fd polls readable. */
+void watch_drain(Watch *w) {
+    if (w->kq < 0) return;
+    char buf[4096];
+    while (read(w->kq, buf, sizeof buf) > 0) { /* discard */ }
+}
+
+/* Stop watching; closing the inotify fd drops its watch descriptor too. */
+void watch_close(Watch *w) {
+    if (w->kq >= 0) close(w->kq);
+    w->kq = w->dir = -1;
+}
+
+#else
 #include <sys/event.h>
 
 int watch_open(Watch *w, const char *path) {
@@ -41,6 +80,7 @@ void watch_close(Watch *w) {
     if (w->kq >= 0) close(w->kq);
     w->kq = w->dir = -1;
 }
+#endif
 
 ReloadAction watch_reload_action(int content_differs, int dirty) {
     if (!content_differs) return RELOAD_NONE;   /* identical (often our own save) */
