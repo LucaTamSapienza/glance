@@ -1,195 +1,194 @@
-# glance
+<p align="center">
+  <img src="macos/Glance.png" alt="glance logo: a paper eye with a mint cursor" width="160">
+</p>
 
-A terminal Markdown tool with two faces, over the same folder of `.md` files:
+<h1 align="center">glance</h1>
 
-- **For you** — a beautifully rendered reader and a real editor: syntax-highlighted
-  code, aligned tables, inline images, vault navigation (`[[wikilinks]]`,
-  backlinks, a graph explorer), themes, search. Obsidian, in your shell.
-- **For your agent** — an **agent-native memory layer**: token-cheap, structure-aware
-  reads, budget-bounded retrieval with a *token receipt*, an **MCP server**, and a
-  **surgical write API**. Your assistant reads and maintains your vault for a
-  fraction of the tokens — locally, with citations, no embeddings required.
-
-```
-$ glance README.md                      # open the reader (you)
-$ glance README.md --ui                 # open a read-only macOS window
-$ glance --context "how do we deploy?" ./vault --budget 4000   # retrieve (your agent)
-$ glance mcp                            # serve the vault to Claude Desktop / Cursor
-```
-
-Same files, same renderer, two consumers. The vault's own structure — headings
-and the link graph — is the engine; nothing is a black box, nothing leaves your
-machine.
+<p align="center">
+  <b>A memory layer that lets your agent read a Markdown brain for a fraction of the tokens.</b><br>
+  Local, written in C, no index to build. It is also a terminal reader and editor for the same files.
+</p>
 
 ---
 
-## User-side: the reader/editor
+You keep a brain in Markdown: an Obsidian vault, an LLM wiki, a `memory/`
+folder in a repo. Notes are split by headings and connected by `[[wikilinks]]`,
+so the folder is really a graph. When an agent such as Claude needs one fact
+from it, it usually greps and then loads whole files. That costs thousands of
+tokens per question, and the agent never sees how the notes connect.
+
+glance sits between the agent and the folder. The agent asks a question and
+sets a token budget; glance returns the sections that answer it, each with a
+citation, a list of what it left out, and a **token receipt** that says what
+the lookup cost compared with reading the files.
+
+## See it work
+
+This repository keeps its own brain in [`memory/`](memory/MEMORY.md): five
+notes, about 9,000 tokens. Ask it a question from a clone of the repo (with
+glance [installed](#install), or after `make` as `./glance`):
 
 ```sh
-glance file.md                 # open in the reader TUI
-glance file.md --ui            # open a read-only macOS preview window
-glance new.md                  # a path that doesn't exist opens empty; :w creates it
-glance-render -w 80 file.md    # render to ANSI on stdout (-l for a light theme)
-cat note.md | glance           # piped stdin: render to stdout (like glance-render)
-glance --help                  # full usage and every key binding
+glance --context "why is the default keyboard mode legacy?" memory/ --budget 400
 ```
 
-glance renders Markdown with **syntax-highlighted** code blocks, **column-aligned
-tables**, and **inline images** (pixel graphics where the terminal supports them).
-Three modes: **Reader** (rendered, with a block cursor), **Insert** (full-screen
-editor), **Split** (editor + live preview).
-
-### macOS preview
-
-`glance file.md --ui` (or `glance --ui file.md`) opens a separate **Glance**
-window and immediately returns the terminal prompt. The window displays the
-rendered Markdown, with selectable text, tables, images and highlighted code.
-It is read-only: there is no editor or save command, and the source stays untouched.
-`Cmd-C` copies selected text; `Cmd-O` opens more Markdown files; `Cmd-W` closes
-one window and `Cmd-Q` quits. Each document gets its own window. Reopening an
-already-open file brings its window forward and keeps your reading position;
-close it and open it again to read external changes. CLI-launched instances quit
-after their last window closes.
-
-The preview uses the same HTML renderer as the export, inside macOS AppKit /
-WebKit. Local images resolve relative to the Markdown file. Web and email links
-open in their default apps; local note navigation is not part of this preview.
-The window shows the file as it was opened.
-Document scripts, forms and embedded frames cannot run or navigate the preview.
-The preview defaults to `auto`, following the macOS light/dark appearance at
-opening, independently of the terminal theme. Choose another palette with
-`--theme NAME` (including custom themes from the config).
-No browser, local server or extra runtime is needed.
-
-After installation, use Finder **Open With > Glance** to open `.md` and
-`.markdown` documents. To make Glance the default, select a Markdown file and
-choose **Get Info > Open with > Glance > Change All…** (Italian Finder:
-**Ottieni informazioni > Apri con > Glance > Modifica tutti…**). If Glance is
-missing from the list, choose **Other…**, enable **All Applications**, and use
-Cmd-Shift-G to select the installed bundle at `PREFIX/libexec/glance/Glance.app`:
-`/usr/local/libexec/glance/Glance.app` by default, or
-`~/.local/libexec/glance/Glance.app` for the no-sudo installation below. Repeat
-for each extension you want to associate. Glance registers as a Markdown viewer;
-installing it does not change your default app. Launching Glance directly offers
-the standard Open panel; **File > Open…** (Cmd-O) remains available after closing
-all windows.
-
-**Linux.** The same `--ui` opens a GTK4/WebKitGTK window (`glance-preview`;
-`make` builds it once `sudo apt install libgtk-4-dev libwebkitgtk-6.0-dev` is done)
-with the same behaviour: `Ctrl-O`, `Ctrl-W`, `Ctrl-Q`, one window per document,
-a single instance per session, and `auto` following the desktop's light/dark
-setting. `make install` also adds `glance.desktop`, so file managers offer
-**Open With > Glance**; make it the default with
-`xdg-mime default glance.desktop text/markdown`. On Ubuntu 23.10+ AppArmor blocks
-WebKit's sandbox, so the preview runs with the sandbox off (JavaScript stays
-disabled) and says so on stderr; to keep it on, install the profile once:
-`sudo install -m 644 linux/glance-preview.apparmor /etc/apparmor.d/glance-preview && sudo apparmor_parser -r /etc/apparmor.d/glance-preview`.
-
-### Keys
-
-**Reader**
-
-| Key | Action | Key | Action |
-|-----|--------|-----|--------|
-| `h j k l` / arrows | move cursor | `i` | insert mode (full-screen editor) |
-| `Alt`/`Ctrl` + `←`/`→` | jump by word | `Cmd`+`←`/`→` (`Ctrl-A`/`E`) | line start / end |
-| `g` / `G` | top / bottom | `e` | split: editor + live preview |
-| `Ctrl-D` / `Ctrl-U` | half page | `v` / `V` | select chars / lines |
-| `/` `n` `N` | search, next, prev | `y` | yank selection → system clipboard |
-| `Enter` | follow link / `[[wikilink]]` | `t` | table of contents |
-| `-` / `Ctrl-O` | back to previous file | `b` | backlinks panel |
-| `?` | key legend (sidebar) | `Ctrl-G` | graph explorer |
-| `Ctrl-P` | fuzzy file switcher | `T` | theme picker (live) |
-| `Ctrl-S` | save | `:w` `:wq` `:x` `:q` `:q!` | write / quit (vi-style) |
-
-**Fuzzy file switcher** (`Ctrl-P`): type to filter every file in the vault by a
-subsequence match (ranked best-first), `↑`/`↓` or `Ctrl-N`/`Ctrl-P` to move,
-`Enter` to open, `Esc` to close.
-
-**Live reload across sessions**: if the file changes on disk and your buffer has
-no unsaved edits, glance adopts the new version automatically — so a second
-glance session editing the same file syncs through. With unsaved edits it instead
-shows a conflict prompt: `r` to reload (take the disk copy) or `k` to keep yours.
-
-Press `?` to slide out a **key legend** on the right; the document reflows into
-the space beside it. **Trackpad / mouse-wheel scrolling** works in every mode
-(the cursor rides along), with a small reading-progress readout in the top-right
-corner of the reader.
-
-**Insert / Split** — type to edit, `Esc` returns to the reader, `Ctrl-S` saves,
-`Ctrl-V` pastes a clipboard image (saved in a `<name>_media/` folder beside the
-document). Brackets `[ ( {` auto-close; you type fences by hand. The editor
-soft-wraps long lines to the pane width. `Alt`/`Ctrl`+`←`/`→` jump by word and
-`Ctrl-A`/`Ctrl-E` go to line start/end; if `Option`/`Cmd`+arrows type letters
-instead of moving, your terminal hides those modifiers in legacy mode — set
-`keyboard = enhanced` in the config (below) to use the kitty keyboard protocol,
-and verify what your terminal sends with `glance --keys`.
-
-In the **graph explorer** (`Ctrl-G`) the current note sits in the centre, notes
-that link *to* it on the left and notes it links *to* on the right; `Space`
-re-centres to walk the vault.
-
-### Themes
-
-Twelve built-ins — `auto` (default; follows your terminal background), `dracula`,
-`nord`, `gruvbox-dark`, `solarized-dark`, `solarized-light`, `github-light`,
-`tokyo-night`, `catppuccin-mocha`, `rose-pine`, `everforest`. Pick
-one with `--theme`, list them with `--list-themes`, or press **`T`** in the reader
-for a **live picker** (the page recolors as you browse; `Enter` keeps and saves
-it, `Esc` reverts). Set a default and define custom palettes in
-`~/.config/glance/config`:
-
-```ini
-theme = nord
-# opt in to the kitty keyboard protocol: Option/Cmd + arrow chords carry real
-# modifier bits on terminals that support it (default is legacy mode)
-keyboard = enhanced
-
-[theme:mine]
-base = dracula
-heading1 = #ff00aa
+```jsonc
+// snapshot from 2026-11-18; scores and counts shift a little whenever the notes change
+{
+  "query": "why is the default keyboard mode legacy?",
+  "budget_tokens": 400,
+  "semantic": false,
+  "chunks": [
+    { "note": "lessons.md",
+      "anchor": "The kitty keyboard stack can outlive the app (iTerm2)",
+      "granularity": "section", "score": 16.537, "text": "…", "tokens": 156 },
+    { "note": "decisions.md",
+      "anchor": "2026-07-01 — Enhanced keyboard is opt-in; legacy stays the default",
+      "granularity": "section", "score": 14.109, "text": "…", "tokens": 106 },
+    { "note": "status.md", "anchor": "Status",
+      "granularity": "abstract", "score": 7.231, "text": "…", "tokens": 56 },
+    { "note": "history.md", "anchor": "History",
+      "granularity": "abstract", "score": 6.811, "text": "…", "tokens": 52 }
+  ],
+  "truncated": [
+    { "note": "lessons.md", "anchor": "Terminals encode Ctrl-chords three different ways",
+      "score": 10.469, "tokens": 268 }
+    // … 52 more sections, each with its anchor, score and token cost
+  ],
+  "receipt": { "used_tokens": 370, "raw_tokens": 9148, "saved_pct": 95 }
+}
 ```
 
-### The vault — no init needed
+The agent gets the decision and the lesson behind it in **under 400 tokens
+instead of about 9,000, a 95% saving**. Three things in that output matter:
 
-**The folder is the vault**, just like Obsidian. glance finds the root by walking
-up to the nearest `.git` or `.obsidian` marker (falling back to the file's
-directory), then scans it **recursively** — so `[[wikilinks]]` resolve to notes
-anywhere in the tree. No `--init`, no index file.
+- **`chunks`** are whole sections, not arbitrary text windows, and each one is
+  citable as `note#heading`. glance first takes the best section from each
+  matching note: the two that answer the question come back in full, and the
+  status and history notes fit only as one-paragraph abstracts.
+- **`truncated`** is the list of what did not fit. The budget never drops
+  something silently: a second `lessons.md` section matched but did not fit,
+  so it is listed, and the agent can fetch it with
+  `glance --section "memory/lessons.md#Terminals encode Ctrl-chords three different ways"`.
+- **`receipt`** compares the tokens used with the cost of reading every note
+  in the folder you passed. Token counts are estimates from a byte and word
+  heuristic, not a tokenizer.
 
-### Export to HTML / PDF
+glance fills the budget and stops, so the saving is set by the budget you
+choose relative to the folder: about 95% at 400 tokens and 91% at 800 on this
+9,000-token folder. What changes from question to question is whether the
+right sections land inside the budget, and `truncated` is there for the times
+they do not. The saving grows with the vault, because the budget stays fixed
+while the raw read does not.
 
-glance owns the renderer, so it can emit a **self-contained, themed HTML page**
-(semantic and reflowable, with the same syntax-highlighted code as the terminal —
-no JavaScript, no CDN):
+## How it works
+
+```mermaid
+flowchart TB
+    A["Agent<br/>Claude Code · Claude Desktop · Cursor"]
+    H["You<br/>terminal reader and editor"]
+    V[("Vault<br/>a folder of .md files<br/>headings + wikilinks")]
+
+    subgraph G["glance"]
+        S["1 · Scan<br/>split notes into heading sections,<br/>build the link graph"]
+        R["2 · Rank<br/>BM25 + link-graph prior<br/>(+ embeddings with --semantic)"]
+        P["3 · Pack under the budget<br/>spread across notes,<br/>section or abstract"]
+        O["4 · Answer<br/>cited chunks + truncation list<br/>+ token receipt"]
+        S --> R --> P --> O
+        W["Write<br/>one section, atomic save"]
+    end
+
+    A -->|"question + token budget<br/>(MCP or CLI)"| S
+    V -->|"read on every call,<br/>no index"| S
+    O -->|"no more than the budget"| A
+    A -.->|"operation + heading + text"| W
+    W -.-> V
+    H <-->|"read · edit"| V
+```
+
+1. **Scan.** The folder you pass is the vault. glance reads every `.md` file
+   under it on each call, splits each note into sections at its headings, and
+   resolves `[[wikilinks]]` into a graph. There is no index file and no setup
+   step.
+2. **Rank.** Sections are scored with BM25 and that score is fused with a
+   prior from the link graph, so among the matching sections, those in notes
+   linked to strong matches rank higher. `--semantic` fuses in an embedding
+   score as well (see [Reads](#reads) for what ships today).
+3. **Pack.** Retrieval is not top-k. glance fills the token budget, spreading
+   it over several notes instead of spending it all on one, and it degrades a
+   section to its abstract before leaving it out.
+4. **Answer.** The result is JSON: the chunks with their anchors, the
+   truncation list, and the receipt.
+
+The same engine serves narrower reads (one section, an outline, a note's
+neighbours in the graph) and a write path that changes one section at a time,
+so the agent can keep the brain up to date as well as read it. Retrieval is
+lexical and graph-based by default, which makes it deterministic and keeps it
+on your machine. The rationale is in [docs/DESIGN.md](docs/DESIGN.md).
+
+## Use it with Claude
+
+Install glance first ([Install](#install)), then pick how the agent reaches it.
+
+**MCP server.** `glance mcp` speaks JSON-RPC 2.0 over stdio and exposes every
+read and write as a native tool.
 
 ```sh
-glance-render --html notes.md > notes.html          # HTML to stdout
-glance --export notes.md                            # writes notes.html
-glance --export notes.md out.pdf                    # PDF (OUT ending in .pdf)
+claude mcp add -s user glance -- glance mcp     # Claude Code, every project
 ```
 
-PDF is produced by handing the HTML to the first converter found —
-**weasyprint**, **wkhtmltopdf**, or headless **Chrome/Chromium**; if none is
-available glance writes the `.html` instead and tells you. `--theme` applies to
-the export too.
+```json
+{ "mcpServers": { "glance": { "command": "glance", "args": ["mcp"] } } }
+```
 
----
+The JSON form is for Claude Desktop, Cursor and other MCP clients. The tools
+are `vault_context`, `vault_section`, `vault_outline`, `vault_neighbors`,
+`vault_backlinks`, `vault_since`, `vault_links`, `vault_graph`, `vault_doctor`,
+`vault_seed`, `vault_edit` and `vault_set_frontmatter`; the reference is
+[docs/MCP.md](docs/MCP.md).
 
-## Agent-side: the memory layer
+**Claude Code plugin.** This repository is also a plugin. It adds slash
+commands for context, outline, links, graph and preview, and skills that
+teach Claude to navigate a vault and preview Markdown through glance instead
+of reading files raw. It calls your installed
+`glance`.
 
-Markdown is the lingua franca agents use for memory and context. The problem:
-today an agent reads a vault by loading whole files — expensive, and blind to how
-notes connect. glance is the layer in between. Every read is **bounded** so it
-stays token-cheap, and the retrieval and write paths are built *for* an agent.
+```sh
+claude plugin marketplace add LucaTamSapienza/glance
+claude plugin install glance
+```
 
-All commands print JSON to stdout; the retrieval ones carry a **token receipt**
-(how many tokens they used versus a naive whole-file read).
+**Plain CLI.** Any agent with a shell can call `glance --context …` directly.
+One line in the repo's agent instructions is enough:
+
+```markdown
+To look something up in `memory/`, run
+`glance --context "your question" memory/ --budget 2000` instead of reading whole files.
+```
+
+### Give a repo a brain
+
+```sh
+glance --seed [DIR]      # scaffold memory/ at the repo root, additively (DIR defaults to .)
+```
+
+`--seed` finds the repo root and creates `memory/`: an index that doubles as
+the maintenance protocol, plus `status`, `decisions`, `lessons` and `history`
+notes. It prints repo facts, a step-by-step **fill plan** for the calling
+agent, a `wire_snippet` for the repo's agent instructions, and the done-check.
+glance writes the structure and the agent fills in the knowledge; the brain is
+ready when `glance --doctor memory/` exits 0. Existing files are never
+touched, so re-running is safe.
+
+## Agent commands
+
+Every command prints JSON to stdout. `--context` and `--section` carry a token
+receipt.
 
 ### Reads
 
 ```sh
-glance --context "QUERY" DIR [--budget N] [--semantic]   # the headline
+glance --context "QUERY" DIR --budget N [--semantic]     # budgeted retrieval (above)
 glance --section "FILE#Heading"        # one heading's subtree + a token receipt
 glance --outline FILE [--depth N] [--abstract]           # heading tree, bounded
 glance --neighbors "Note" DIR [--depth H]                # link-graph neighbourhood
@@ -202,90 +201,54 @@ glance --doctor DIR                    # vault hygiene: oversized/stale/orphan/
                                        #   markers; exit 0 clean / 2 findings
 ```
 
-`--context` is the wedge. It assembles the **optimal bundle under a token budget**:
-note sections ranked by BM25 fused with a **link-graph prior**, chosen with
-diversity and a coarse-to-fine projection (full section, or — if it won't fit —
-its abstract), plus a **truncation manifest** so the agent knows what was left out
-and can follow up. It returns `{query, budget_tokens, chunks, truncated, receipt}`
-— and on a real vault routinely saves 90%+ of the tokens a raw read would cost.
+A cheap way to explore an unfamiliar vault is coarse to fine: `--outline` with
+`--abstract` to see a note's structure, then `--section` for the one part that
+matters, then `--neighbors` to follow the graph from there.
 
-Retrieval is **lexical + graph by default** (local, deterministic, private);
-`--semantic` fuses in an embedding score so notes a keyword search would miss can
-surface (a dependency-free embedder ships today; a MiniLM-class encoder is a
-drop-in behind the same interface).
+Always pass `--budget` to `--context`. It is optional, but the default is 0,
+which means no cap: glance then returns every matching section, and because
+sections nest that can cost more than reading the files.
 
-### Writes — surgical, never a whole-file rewrite
+`--semantic` fuses an embedding score into the ranking. The embedder that
+ships today is a dependency-free word-hashing one, so it still needs shared
+words. An on-device encoder that matches paraphrases, with a persistent
+cache, is built on the `feat/semantic-minilm` branch (all-MiniLM-L6-v2) and
+not yet merged.
 
-The agent declares **intent + location**; glance does the surgery and writes
-atomically (temp file + rename), preserving all other formatting:
+### Writes
+
+The agent states the operation and the heading; glance edits that section and
+saves atomically (temp file + rename), preserving all other formatting. It
+never rewrites a whole file.
 
 ```sh
 glance --edit FILE append|insert|replace|before "Heading" "text"
 glance --set-frontmatter FILE KEY VALUE
 ```
 
-It resolves the section by heading (text or slug), ignores headings inside fenced
-code, and keeps the vault coherent — so an agent can *maintain* your notes, not
-just read them. `before` inserts the text immediately above the heading: the
-surgical way to add a new sibling entry to a dated, ordered log.
+The heading is matched by text or slug, and headings inside fenced code are
+ignored. `before` inserts the text immediately above the heading, which is how
+to add a new entry to a dated, ordered log.
 
-### Seeding — give a repo a brain
+## Also a reader for humans
 
-```sh
-glance --seed [DIR]      # scaffold memory/ at the repo root, additively
-```
-
-One command instantiates the whole loop on any repository: it finds the repo
-root (`.git`/`.obsidian`), creates `memory/` — an index that doubles as the
-maintenance protocol, plus `status` / `decisions` / `lessons` / `history` —
-and prints repo facts, a step-by-step **fill plan** for the calling agent, a
-`wire_snippet` for the repo's agent instructions, and the done-check. glance
-writes the structure; the agent fills in the knowledge; `--doctor` exiting 0
-(`summary.clean`) means the brain is ready. Existing files are never touched,
-so re-running is always safe.
-
-### MCP server — native in any agent
+The files your agent reads are the files you read. glance opens them in a
+rendered terminal UI with syntax-highlighted code, aligned tables and inline
+images, in three vi-style modes: Reader, Insert (`i`) and Split with a live
+preview (`e`). It navigates the vault the way the agent does: `Enter` follows
+a `[[wikilink]]`, `b` lists backlinks, `Ctrl-G` opens the graph explorer and
+`Ctrl-P` a fuzzy file switcher.
 
 ```sh
-glance mcp
+glance notes.md                   # the terminal reader and editor
+glance notes.md --ui              # a read-only native preview window (macOS, Linux)
+glance --export notes.md out.pdf  # themed HTML or PDF
+cat notes.md | glance             # render to stdout
 ```
 
-`glance mcp` speaks JSON-RPC 2.0 over stdio and exposes the reads and writes as
-native [MCP](https://modelcontextprotocol.io) tools (`vault_context`,
-`vault_section`, `vault_outline`, `vault_neighbors`, `vault_backlinks`,
-`vault_since`, `vault_links`, `vault_graph`, `vault_doctor`, `vault_seed`,
-`vault_edit`, `vault_set_frontmatter`).
-Wire it into Claude Desktop / Cursor / the Agent SDK in three lines — see
-[docs/MCP.md](docs/MCP.md):
-
-```json
-{ "mcpServers": { "glance": { "command": "glance", "args": ["mcp"] } } }
-```
-
-The design and rationale for the whole memory layer is in
-[docs/DESIGN.md](docs/DESIGN.md).
-
----
-
-## Why C, why own the renderer
-
-glance began as a Go program built on the Charmbracelet stack (bubbletea +
-glamour). Most of that code existed to *fight* glamour's opacity. So glance was
-rewritten in C, owning the whole pipeline:
-
-```
-Markdown ──▶ md4c (CommonMark/GFM) ──▶ our Doc ──▶ ┌─ ANSI string  (CLI, tests)
-             our renderer builds a     (styled    ├─ notcurses cells (TUI)
-             structured document model  runs)      └─ projections    (agent reads)
-```
-
-Because *we* build the document model, search reads run text directly, the TOC is
-the tagged heading lines, and the agent layer can project the same note at any
-granularity (full / section / abstract) — a glamour black box could not. Local,
-fast, and fully under our control.
-
-> The original Go implementation lives only in git history, at the **`go-final`**
-> tag (`git checkout go-final`).
+Themes, the macOS and Linux preview, "Open With" integration and every key
+binding are in
+[docs/READER.md](docs/READER.md); `glance --help` prints the full usage.
 
 ## Install
 
@@ -309,18 +272,27 @@ For a no-sudo install: `make install PREFIX=~/.local` (with `~/.local/bin` on yo
 `Glance.app` beside the `glance` executable. Building the app also requires the
 macOS SDK / Command Line Tools (`xcode-select --install`).
 
-## Use with Claude Code (plugin)
+## Why C, and why own the renderer
 
-This repo is also a **Claude Code plugin** (it shells out to your installed
-`glance`, so `make install` first):
+glance began as a Go program on the Charmbracelet stack (bubbletea + glamour),
+and most of that code existed to work around glamour's opacity. It was
+rewritten in C to own the whole pipeline:
 
-```sh
-claude plugin marketplace add LucaTamSapienza/glance
-claude plugin install glance
+```
+Markdown ──▶ md4c (CommonMark/GFM) ─┬─▶ Doc ──────▶ ┌─ ANSI string      (CLI, tests)
+                                    │   (lines of   ├─ notcurses cells  (TUI)
+                                    │   styled runs)└─ projections      (agent reads)
+                                    └─▶ HTML        (export, native preview)
 ```
 
-It adds slash commands wrapping the JSON exports and the renderer, plus skills
-that let Claude *use* glance to navigate and render a vault.
+Because glance builds the document model itself, the agent layer can project
+the same note at any granularity (full text, one section, an abstract). That
+is what makes packing under a budget possible, and a black-box renderer could
+not do it. The human and the agent read through one parser, so what you see in
+the reader is what the agent is given.
+
+> The original Go implementation lives only in git history, at the
+> **`go-final`** tag (`git checkout go-final`).
 
 ## Repository layout
 
@@ -329,20 +301,22 @@ src/            the C app: renderer + TUI (user-side) + the agent-memory layer
 tests/          unit tests, one per pure module (make test)
 testdata/       sample.md showcase + a small example vault/
 memory/         the repo's own agent-curated memory (status · decisions · lessons · history)
-docs/           DESIGN.md (agent-memory north-star) · MCP.md · specs/ · archive/
+docs/           DESIGN.md (agent-memory design) · MCP.md · READER.md · specs/ · archive/
 .claude-plugin/ commands/ skills/   the Claude Code plugin
-AGENTS.md       how to work in this repo — humans and agents (CLAUDE.md imports it)
+AGENTS.md       how to work in this repo, for humans and agents (CLAUDE.md imports it)
 ```
 
-## Roadmap / known limitations
+## Roadmap and known limitations
 
-User-side: sharper inline images (persistent image planes), flipping the
-enhanced keyboard protocol on by default (today `keyboard = enhanced` is
-opt-in), remote-image fetch, wide-table wrapping. Agent-side: the real MiniLM semantic tier (persistent `.glance/`
-embedding cache + graph-expansion retrieval) is complete on the
-`feat/semantic-minilm` branch, pending merge. The living list is
+Agent-side: a bounded default for `--context` when no budget is given, and
+merging the real semantic tier (an on-device encoder, a persistent `.glance/`
+embedding cache and graph-expansion retrieval). It is built on
+`feat/semantic-minilm` with all-MiniLM-L6-v2; the decided next step is to swap
+the encoder for the multilingual EmbeddingGemma-300M. User-side: sharper inline images, the enhanced
+keyboard protocol on by default (today `keyboard = enhanced` is opt-in),
+remote-image fetch, wide-table wrapping. The living list is
 [memory/status.md](memory/status.md).
 
 ## License
 
-MIT — part of the glance project by Luca Tamburrano.
+MIT. Part of the glance project by Luca Tamburrano.

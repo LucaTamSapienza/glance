@@ -1,10 +1,12 @@
 # Status
 
-> Last updated: 2026-11-05 (Linux port merged in PR #30; Linux `--ui` on feat/linux-preview).
+> Last updated: 2026-11-18 (agent-first README, PR #32; Linux port and Linux `--ui` on main since PRs #30 and #31).
 > What's done, what's in flight, what's open. Rules and
 > invariants live in AGENTS.md, not here.
 
 ## On main
+
+Docs (2026-11-18, PR #32): the README leads with the agent-memory layer: a reproducible `--context` demo on `memory/` with its receipt, a Mermaid retrieval diagram, and the Claude wiring (MCP, plugin, CLI). The reader/editor reference lives in `docs/READER.md`.
 
 **User-side** is a complete reader/editor: Reader / Insert / Split modes;
 search (`/ n N`); TOC (`t`); atomic save + kqueue (inotify on Linux) live-reload (clean buffers
@@ -61,11 +63,11 @@ Finder integration (2026-10-26, PR #29): `Glance.app` declares `.md`/`.markdown`
 
 Verified 2026-10-26: build, expanded native WebKit tests and all 30 UBSan suites pass (the known ASan fallback applies). Installed under `~/.local`; refreshed Launch Services registration makes the app a candidate for Markdown. Opening a real Downloads document through the installed app's Open panel displays its content correctly; the user confirmed the fix.
 
-Linux preview (2026-11-05, branch feat/linux-preview, PR pending): `--ui` on Linux spawns `glance-preview` (beside the CLI or `../libexec/glance/`, detached via `posix_spawn` + setsid), a GTK4/WebKitGTK 6.0 `GtkApplication` (`dev.glance.Preview`, HANDLES_OPEN): one instance per session over D-Bus, the theme travels as the open hint, one window per canonical path, Ctrl-O/W/Q, JS off + the macOS CSP, ephemeral network session, `auto` from the settings portal `color-scheme`. Built only when the GTK/WebKit dev packages exist; `make install` adds `glance.desktop`. On Ubuntu's userns-restricted AppArmor it probes a user namespace and, failing that, disables WebKit's sandbox with a stderr note; `linux/glance-preview.apparmor` keeps it on (sudo). Verified on Ubuntu 24.04 (X11): make, 30 suites ASan+UBSan, install to `~/.local`, window opens with the prompt back at once, reopen reuses the instance and window, `--theme nord`, Ctrl-W/last-window exit, Ctrl-Q, Ctrl-O dialog appears (picking a file through it not automated). See [[decisions]].
+Linux preview (2026-11-05, PR #31): `--ui` on Linux spawns `glance-preview` (beside the CLI or `../libexec/glance/`, detached via `posix_spawn` + setsid), a GTK4/WebKitGTK 6.0 `GtkApplication` (`dev.glance.Preview`, HANDLES_OPEN): one instance per session over D-Bus, the theme travels as the open hint, one window per canonical path, Ctrl-O/W/Q, JS off + the macOS CSP, ephemeral network session, `auto` from the settings portal `color-scheme`. Built only when the GTK/WebKit dev packages exist; `make install` adds `glance.desktop`. On Ubuntu's userns-restricted AppArmor it probes a user namespace and, failing that, disables WebKit's sandbox with a stderr note; `linux/glance-preview.apparmor` keeps it on (sudo). Verified on Ubuntu 24.04 (X11): make, 30 suites ASan+UBSan, install to `~/.local`, window opens with the prompt back at once, reopen reuses the instance and window, `--theme nord`, Ctrl-W/last-window exit, Ctrl-Q, Ctrl-O dialog appears (picking a file through it not automated). See [[decisions]].
 
 ## In flight (branches)
 
-- **feat/semantic-minilm — complete on the branch, not merged.** The real
+- **feat/semantic-minilm — complete on the branch, not merged; the encoder swap to EmbeddingGemma-300M decided on 2026-06-25 ([[decisions]]) is not done.** The real
   semantic tier: all-MiniLM-L6-v2 (fp16, via llama.cpp) behind the `Embedder`
   seam, persistent `.glance/` embedding cache, model download-on-first-use,
   k-hop graph-expansion retrieval. Supersedes DESIGN.md §11's "next two".
@@ -85,6 +87,8 @@ Linux preview (2026-11-05, branch feat/linux-preview, PR pending): `--ui` on Lin
 
 ## Open
 
+- **`--context` without `--budget` is unbounded (found 2026-11-18, PR #32 review):** the default is 0 = no cap on both the CLI and `vault_context`, and nested heading subtrees are emitted twice, so a query on `memory/` returned 16,177 tokens against 8,043 raw. The docs now say to always pass a budget; the fix is a non-zero default or de-duplicating nested sections.
+- **README screenshot:** the front page has the logo but no real TUI screenshot yet.
 - **User-side residuals:** inline images decode on every frame (persistent
   planes are the right fix); flip enhanced keyboard on by default only after
   field testing; remote (`http`) images aren't fetched; wide tables overflow
@@ -117,7 +121,6 @@ Linux preview (2026-11-05, branch feat/linux-preview, PR pending): `--ui` on Lin
   `make`, `make test` (ASan+UBSan), `make install`
   pass. Residuals: a lone Esc is swallowed by notcurses 3.0.7 (press Esc
   twice) — see [[lessons]]; clipboard/link opening/image paste are
-  macOS-only (`pbcopy`/`open`/`osascript`); `--ui` on Linux is on
-  feat/linux-preview (above); no Linux CI.
+  macOS-only (`pbcopy`/`open`/`osascript`); no Linux CI.
   Cross-platform bug found meanwhile: Ctrl-S in Insert, then Esc, leaves the
   buffer marked dirty (`save_file` doesn't clear `ed.dirty`).

@@ -5,6 +5,10 @@
 > headings are glance's retrieval unit. Drop an entry once it stops
 > informing anything.
 
+## 2026-11-18 — The README leads with the memory layer
+
+The front page opens with what the 2026-06-17 pivot made the product: a reproducible `--context` demo on `memory/` with its receipt, the retrieval diagram and the Claude wiring; the reader/editor reference moved to `docs/READER.md` and the README keeps one short section on it. Savings are stated as a function of the budget, not as proof of retrieval quality (see the 2026-06-25 paper entry), and token counts as estimates. The PR #32 review found `--context` unbounded without `--budget`; the docs tell agents to always pass one until the default changes. See [[status]].
+
 ## 2026-11-05 — Linux preview: one GTK instance, sandbox fallback on Ubuntu
 
 `glance-preview` is a GtkApplication with D-Bus single instance (unlike macOS `open -n`): reopening a file anywhere focuses its window; the theme rides the `open` hint, so each window keeps its own. Ubuntu 23.10+ AppArmor stops WebKit's bwrap sandbox (uid map denied, the web process aborts), and the fix needs root, so the user chose: probe a user namespace, disable the sandbox only when it fails (JS stays off, CSP + ephemeral session stay) and say so on stderr; `linux/glance-preview.apparmor` is the one-command sudo fix. See [[status]].
@@ -81,7 +85,7 @@ the default only after field testing on real terminals.
 
 Six root-level prose docs repeated the module map and status and measurably
 drifted. Now: README = product, AGENTS.md = the one working guide (CLAUDE.md
-just imports it), memory/ = living state, docs/ = DESIGN + MCP + specs +
+just imports it), memory/ = living state, docs/ = DESIGN + MCP + READER + specs +
 archive; STATUS.md, context.md and AGENT_FEATURES.md deleted. Heads-up:
 feat/semantic-minilm still edits the deleted files and will conflict at
 merge — fold its deltas into [[status]].

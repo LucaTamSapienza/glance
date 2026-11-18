@@ -30,6 +30,11 @@ Use the absolute path (`/usr/local/bin/glance` or `~/.local/bin/glance`) if
 `glance` is not on the launcher's `PATH`. Restart Claude Desktop; the glance
 tools then appear in any chat.
 
+### Claude Code
+```sh
+claude mcp add -s user glance -- glance mcp   # every project; drop "-s user" for this project only
+```
+
 ### Cursor / other MCP clients
 Point the client at the same command — `glance mcp` over stdio. Cursor:
 Settings → MCP → add a server with command `glance`, args `["mcp"]`.
@@ -47,12 +52,15 @@ printf '%s\n' \
 
 ## Tools
 
-Every read is **bounded** so it stays token-cheap; `vault_context` and
-`vault_section` also return a token **receipt** (used vs whole-file-read tokens).
+Reads are projections (a section, an outline, a neighbourhood) rather than
+whole files; `vault_context` and `vault_section` also return a token **receipt**
+(estimated tokens used vs a whole-file read). **Always pass `budget` to
+`vault_context`:** it defaults to 0, which means no cap and returns every
+matching section.
 
 | Tool | Arguments | Returns |
 |------|-----------|---------|
-| `vault_context`   | `dir`, `query`, `budget?` | budgeted retrieval bundle: ranked sections (BM25 + a link-graph prior), with diversity, coarse-to-fine projection, a truncation manifest, and a receipt |
+| `vault_context`   | `dir`, `query`, `budget?` (default 0 = no cap; set it), `semantic?` | budgeted retrieval bundle: ranked sections (BM25 + a link-graph prior), with diversity, coarse-to-fine projection, a truncation manifest, and a receipt |
 | `vault_section`   | `file`, `heading?`        | one heading's subtree + a token receipt |
 | `vault_outline`   | `file`, `depth?`, `abstract?` | the heading tree, depth-bounded, optional per-heading abstract |
 | `vault_neighbors` | `dir`, `note`, `depth?`   | link-graph neighbourhood with direction |
@@ -62,7 +70,7 @@ Every read is **bounded** so it stays token-cheap; `vault_context` and
 | `vault_graph`     | `dir`                     | the whole vault's link graph |
 | `vault_doctor`    | `dir`                     | vault hygiene report: per-note size, age, distinct link degree, dangling links (wikilinks, embeds, relative `.md` links), TODO/FIXME markers, and maintenance flags (unreadable/oversized/stale/orphan); the summary carries `clean` |
 | `vault_seed`      | `dir`                     | scaffold a memory vault ("brain") for the repo containing `dir`, additively; returns repo facts, a step-by-step fill plan, a `wire_snippet` for the host AGENTS.md, and the done-check (`vault_doctor` clean) |
-| `vault_edit`      | `file`, `heading`, `op`, `text` | surgically edit a section (`op` = append/insert/replace), saved atomically; echoes the new section |
+| `vault_edit`      | `file`, `heading`, `op`, `text` | surgically edit a section (`op` = append/insert/replace/before), saved atomically; echoes the new section |
 | `vault_set_frontmatter` | `file`, `key`, `value` | set a YAML frontmatter key, saved atomically |
 
 Each tool's result is a text content block whose text is the same JSON the

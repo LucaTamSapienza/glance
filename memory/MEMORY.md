@@ -14,8 +14,9 @@ work reads this first; the *rules* for working here live in
 ## Protocol (distill, don't accumulate)
 
 Read this index first; then ask, don't browse — `./glance --context "your
-question" memory/ --budget 2000` (synchronously — never with `&`), or
-`--section "memory/status.md#Open"`.
+question" memory/ --budget 2000` (synchronously — never with `&`; always
+with `--budget`, because without one `--context` has no cap and returns every
+matching section), or `--section "memory/status.md#Open"`.
 
 **Update triggers — if a row fired, write in the same change, not later:**
 
