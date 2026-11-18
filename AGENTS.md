@@ -139,10 +139,14 @@ testdata/        sample.md showcase + an example vault/
 ## Invariants (do not break)
 
 - **One model, many sinks.** The renderer emits a structured `Doc`;
-  `doc_ansi.c`, `tui.c`, `doc_html.c`, and the agent projections
-  (`section.c`/`context.c`) consume it. Add rendering features in `render.c`,
-  never in a sink, so the CLI, TUI, exports, agent reads, and tests stay
-  consistent.
+  `doc_ansi.c`, `tui.c`, and the agent projections (`section.c`/`context.c`)
+  consume it. Add rendering features in `render.c`, never in a sink, so the
+  CLI, TUI, agent reads, and tests stay consistent. The one exception is
+  `doc_html.c`: the `Doc` is width-wrapped into terminal lines, so the HTML
+  export (and the native preview built on it) re-runs md4c with its own
+  callbacks to emit semantic, reflowable HTML, sharing the theme palette and
+  `highlight.c`. A rendering feature that should appear in HTML has to be
+  added there as well.
 - **MCP tools reuse the exact CLI exports.** `mcp.c` runs the same `agent.c`
   functions and captures their stdout, so the CLI and MCP surface never
   drift — change behaviour in `agent.c`, never in two places.

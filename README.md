@@ -25,7 +25,7 @@ the lookup cost compared with reading the files.
 ## See it work
 
 This repository keeps its own brain in [`memory/`](memory/MEMORY.md): five
-notes, about 8,000 tokens. Ask it a question from a clone of the repo (with
+notes, about 9,000 tokens. Ask it a question from a clone of the repo (with
 glance [installed](#install), or after `make` as `./glance`):
 
 ```sh
@@ -41,31 +41,31 @@ glance --context "why is the default keyboard mode legacy?" memory/ --budget 400
   "chunks": [
     { "note": "lessons.md",
       "anchor": "The kitty keyboard stack can outlive the app (iTerm2)",
-      "granularity": "section", "score": 15.885, "text": "…", "tokens": 156 },
+      "granularity": "section", "score": 16.537, "text": "…", "tokens": 156 },
     { "note": "decisions.md",
       "anchor": "2026-07-01 — Enhanced keyboard is opt-in; legacy stays the default",
-      "granularity": "section", "score": 13.692, "text": "…", "tokens": 106 },
+      "granularity": "section", "score": 14.109, "text": "…", "tokens": 106 },
     { "note": "status.md", "anchor": "Status",
-      "granularity": "abstract", "score": 7.313, "text": "…", "tokens": 42 },
-    { "note": "MEMORY.md", "anchor": "Memory",
-      "granularity": "abstract", "score": 6.453, "text": "…", "tokens": 78 }
+      "granularity": "abstract", "score": 7.231, "text": "…", "tokens": 56 },
+    { "note": "history.md", "anchor": "History",
+      "granularity": "abstract", "score": 6.811, "text": "…", "tokens": 52 }
   ],
   "truncated": [
     { "note": "lessons.md", "anchor": "Terminals encode Ctrl-chords three different ways",
-      "score": 9.966, "tokens": 268 }
-    // … 47 more sections, each with its anchor, score and token cost
+      "score": 10.469, "tokens": 268 }
+    // … 52 more sections, each with its anchor, score and token cost
   ],
-  "receipt": { "used_tokens": 382, "raw_tokens": 8126, "saved_pct": 95 }
+  "receipt": { "used_tokens": 370, "raw_tokens": 9148, "saved_pct": 95 }
 }
 ```
 
 The agent gets the decision and the lesson behind it in **under 400 tokens
-instead of about 8,000, a 95% saving**. Three things in that output matter:
+instead of about 9,000, a 95% saving**. Three things in that output matter:
 
 - **`chunks`** are whole sections, not arbitrary text windows, and each one is
   citable as `note#heading`. glance first takes the best section from each
   matching note: the two that answer the question come back in full, and the
-  status and index notes fit only as one-paragraph abstracts.
+  status and history notes fit only as one-paragraph abstracts.
 - **`truncated`** is the list of what did not fit. The budget never drops
   something silently: a second `lessons.md` section matched but did not fit,
   so it is listed, and the agent can fetch it with
@@ -75,8 +75,8 @@ instead of about 8,000, a 95% saving**. Three things in that output matter:
   heuristic, not a tokenizer.
 
 glance fills the budget and stops, so the saving is set by the budget you
-choose relative to the folder: about 95% at 400 tokens and 90% at 800 on this
-8,000-token folder. What changes from question to question is whether the
+choose relative to the folder: about 95% at 400 tokens and 91% at 800 on this
+9,000-token folder. What changes from question to question is whether the
 right sections land inside the budget, and `truncated` is there for the times
 they do not. The saving grows with the vault, because the budget stays fixed
 while the raw read does not.
@@ -84,13 +84,12 @@ while the raw read does not.
 ## How it works
 
 ```mermaid
-flowchart LR
+flowchart TB
     A["Agent<br/>Claude Code · Claude Desktop · Cursor"]
     H["You<br/>terminal reader and editor"]
     V[("Vault<br/>a folder of .md files<br/>headings + wikilinks")]
 
     subgraph G["glance"]
-        direction TB
         S["1 · Scan<br/>split notes into heading sections,<br/>build the link graph"]
         R["2 · Rank<br/>BM25 + link-graph prior<br/>(+ embeddings with --semantic)"]
         P["3 · Pack under the budget<br/>spread across notes,<br/>section or abstract"]
@@ -101,7 +100,7 @@ flowchart LR
 
     A -->|"question + token budget<br/>(MCP or CLI)"| S
     V -->|"read on every call,<br/>no index"| S
-    O -->|"a few hundred tokens"| A
+    O -->|"no more than the budget"| A
     A -.->|"operation + heading + text"| W
     W -.-> V
     H <-->|"read · edit"| V
@@ -213,7 +212,8 @@ sections nest that can cost more than reading the files.
 `--semantic` fuses an embedding score into the ranking. The embedder that
 ships today is a dependency-free word-hashing one, so it still needs shared
 words. An on-device encoder that matches paraphrases, with a persistent
-cache, is built on the `feat/semantic-minilm` branch and not yet merged.
+cache, is built on the `feat/semantic-minilm` branch (all-MiniLM-L6-v2) and
+not yet merged.
 
 ### Writes
 
@@ -310,8 +310,9 @@ AGENTS.md       how to work in this repo, for humans and agents (CLAUDE.md impor
 
 Agent-side: a bounded default for `--context` when no budget is given, and
 merging the real semantic tier (an on-device encoder, a persistent `.glance/`
-embedding cache and graph-expansion retrieval), which is built on
-`feat/semantic-minilm`. User-side: sharper inline images, the enhanced
+embedding cache and graph-expansion retrieval). It is built on
+`feat/semantic-minilm` with all-MiniLM-L6-v2; the decided next step is to swap
+the encoder for the multilingual EmbeddingGemma-300M. User-side: sharper inline images, the enhanced
 keyboard protocol on by default (today `keyboard = enhanced` is opt-in),
 remote-image fetch, wide-table wrapping. The living list is
 [memory/status.md](memory/status.md).

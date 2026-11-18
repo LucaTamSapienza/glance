@@ -67,7 +67,7 @@ Linux preview (2026-11-05, PR #31): `--ui` on Linux spawns `glance-preview` (bes
 
 ## In flight (branches)
 
-- **feat/semantic-minilm — complete on the branch, not merged.** The real
+- **feat/semantic-minilm — complete on the branch, not merged; the encoder swap to EmbeddingGemma-300M decided on 2026-06-25 ([[decisions]]) is not done.** The real
   semantic tier: all-MiniLM-L6-v2 (fp16, via llama.cpp) behind the `Embedder`
   seam, persistent `.glance/` embedding cache, model download-on-first-use,
   k-hop graph-expansion retrieval. Supersedes DESIGN.md §11's "next two".

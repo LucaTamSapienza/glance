@@ -118,3 +118,11 @@ PR #28 brings the approved paper-eye logo to the native preview on main, includi
 ## 2026-10-26 — Finder Markdown integration
 
 PR #29 makes Glance selectable as a Markdown viewer in Finder and adds native document-open events, independent windows and the standard Open panel. CLI themes and last-window termination remain intact. All 30 UBSan suites and the expanded native tests pass; installed-app registration and opening a real document were verified, and the user confirmed the fix. Details: [[status]] and [[decisions]].
+
+## 2026-11-05 — Linux
+
+PRs #30 and #31 bring glance to Linux: an inotify watcher and notcurses 3.0.7 compatibility for the TUI, then a GTK4/WebKitGTK `glance-preview` behind the same `--ui`. Verified on Ubuntu 24.04. Details: [[status]], [[decisions]] and [[lessons]].
+
+## 2026-11-18 — The README turns to the agent
+
+PR #32 rewrites the front page around the memory layer and its token receipt, moves the reader reference to `docs/READER.md`, and through its review surfaces the unbounded `--context` default. Details: [[decisions]] and [[status]].
