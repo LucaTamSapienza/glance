@@ -241,12 +241,13 @@ a `[[wikilink]]`, `b` lists backlinks, `Ctrl-G` opens the graph explorer and
 
 ```sh
 glance notes.md                   # the terminal reader and editor
-glance notes.md --ui              # a read-only macOS preview window
+glance notes.md --ui              # a read-only native preview window (macOS, Linux)
 glance --export notes.md out.pdf  # themed HTML or PDF
 cat notes.md | glance             # render to stdout
 ```
 
-Themes, the Finder "Open With" integration and every key binding are in
+Themes, the macOS and Linux preview, "Open With" integration and every key
+binding are in
 [docs/READER.md](docs/READER.md); `glance --help` prints the full usage.
 
 ## Install
@@ -265,7 +266,8 @@ make install         # copy onto your PATH (/usr/local/bin; honours PREFIX/DESTD
 ```
 
 For a no-sudo install: `make install PREFIX=~/.local` (with `~/.local/bin` on your
-`PATH`). The preview app is installed under `PREFIX/libexec/glance/Glance.app`.
+`PATH`). The preview app is installed under `PREFIX/libexec/glance/Glance.app`
+(`PREFIX/libexec/glance/glance-preview` on Linux).
 `make uninstall` removes both binaries and the app. From a release archive, keep
 `Glance.app` beside the `glance` executable. Building the app also requires the
 macOS SDK / Command Line Tools (`xcode-select --install`).
@@ -280,7 +282,7 @@ rewritten in C to own the whole pipeline:
 Markdown ──▶ md4c (CommonMark/GFM) ─┬─▶ Doc ──────▶ ┌─ ANSI string      (CLI, tests)
                                     │   (lines of   ├─ notcurses cells  (TUI)
                                     │   styled runs)└─ projections      (agent reads)
-                                    └─▶ HTML        (export, macOS preview)
+                                    └─▶ HTML        (export, native preview)
 ```
 
 Because glance builds the document model itself, the agent layer can project

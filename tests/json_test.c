@@ -82,7 +82,9 @@ int main(void) {
     assert(json_parse(".5") == NULL);
     assert(json_parse("1.") == NULL);
     assert(json_parse("1e9999") == NULL);                 /* overflows to inf */
-    assert(json_parse("-0.5e2") != NULL);                 /* a valid number */
+    Json *num = json_parse("-0.5e2");                     /* a valid number */
+    assert(num != NULL);
+    json_free(num);
 
     printf("all json tests passed\n");
     return 0;

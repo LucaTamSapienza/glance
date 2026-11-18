@@ -38,6 +38,39 @@ static void test_args(void) {
     assert(preview_args(1, tui, &path) == 0);
 }
 
+#ifdef __linux__
+/* Find an executable glance-preview beside the CLI or under libexec, via a symlink. */
+static void test_discovery(void) {
+    char tmp[] = "/tmp/glance-preview-test-XXXXXX";
+    assert(mkdtemp(tmp));
+    char *cwd = getcwd(NULL, 0);
+    assert(cwd && chdir(tmp) == 0);
+    file("glance", 0755);
+    assert(!preview_app_path("glance"));
+    file("glance-preview", 0644);
+    assert(!preview_app_path("glance"));
+    assert(chmod("glance-preview", 0755) == 0);
+    char *app = preview_app_path("glance");
+    assert(app && !strcmp(strrchr(app, '/'), "/glance-preview"));
+    free(app);
+    assert(mkdir("bin", 0700) == 0 && mkdir("libexec", 0700) == 0 && mkdir("libexec/glance", 0700) == 0);
+    assert(rename("glance", "bin/glance") == 0);
+    assert(rename("glance-preview", "libexec/glance/glance-preview") == 0);
+    assert(symlink("bin/glance", "linked glance") == 0);
+    app = preview_app_path("linked glance");
+    assert(app && strstr(app, "/libexec/glance/glance-preview"));
+    free(app);
+    unlink("libexec/glance/glance-preview");
+    rmdir("libexec/glance");
+    rmdir("libexec");
+    unlink("linked glance");
+    unlink("bin/glance");
+    rmdir("bin");
+    assert(chdir(cwd) == 0);
+    free(cwd);
+    assert(rmdir(tmp) == 0);
+}
+#else
 /* Discover development, release and installed apps, including symlinked CLIs. */
 static void test_discovery(void) {
     char tmp[] = "/tmp/glance-preview-test-XXXXXX";
@@ -84,6 +117,7 @@ static void test_discovery(void) {
     free(cwd);
     assert(rmdir(tmp) == 0);
 }
+#endif
 
 /* Run launcher contract tests without opening a graphical application. */
 int main(void) {

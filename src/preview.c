@@ -1,4 +1,7 @@
-/* preview.c — launch the native macOS companion without entering the TUI. */
+/* preview.c — launch the native preview companion without entering the TUI. */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
 #include "preview.h"
 #include "doc_html.h"
 #include "theme.h"
@@ -13,8 +16,11 @@
 #include <unistd.h>
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
-#include <spawn.h>
 #include <sys/wait.h>
+#endif
+#if defined(__APPLE__) || defined(__linux__)
+#include <fcntl.h>
+#include <spawn.h>
 extern char **environ;
 #endif
 
@@ -62,15 +68,21 @@ char *preview_app_path(const char *executable) {
     char *slash = strrchr(resolved, '/');
     if (!slash) { free(resolved); return NULL; }
     *slash = '\0';
+#ifdef __linux__
+    const char *locations[] = { "glance-preview", "../libexec/glance/glance-preview" };
+    const char *inner = "";
+#else
     const char *locations[] = {
         "build/Glance.app", "Glance.app", "../libexec/glance/Glance.app"
     };
+    const char *inner = "/Contents/MacOS/Glance";
+#endif
     char *result = NULL;
     for (size_t i = 0; i < sizeof locations / sizeof locations[0]; i++) {
         char app[PATH_MAX], binary[PATH_MAX];
         int n = snprintf(app, sizeof app, "%s/%s", resolved, locations[i]);
         if (n < 0 || (size_t)n >= sizeof app) continue;
-        n = snprintf(binary, sizeof binary, "%s/Contents/MacOS/Glance", app);
+        n = snprintf(binary, sizeof binary, "%s%s", app, inner);
         if (n < 0 || (size_t)n >= sizeof binary) continue;
         struct stat st;
         if (stat(binary, &st) == 0 && S_ISREG(st.st_mode) && access(binary, X_OK) == 0) {
@@ -82,9 +94,9 @@ char *preview_app_path(const char *executable) {
     return result;
 }
 
-/* Validate the input before asking Launch Services to start an independent app. */
+/* Validate the input, then start the companion detached from the terminal. */
 int preview_open(const char *path, const char *theme_name) {
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__linux__)
     char *file = realpath(path, NULL);
     if (!file) { perror(path); return 1; }
     struct stat st;
@@ -93,6 +105,7 @@ int preview_open(const char *path, const char *theme_name) {
         free(file);
         return 1;
     }
+#ifdef __APPLE__
     uint32_t size = 0;
     _NSGetExecutablePath(NULL, &size);
     char *executable = malloc(size);
@@ -121,8 +134,33 @@ int preview_open(const char *path, const char *theme_name) {
     }
     return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : 1;
 #else
+    char *viewer = preview_app_path("/proc/self/exe");
+    if (!viewer) {
+        fprintf(stderr, "glance --ui: glance-preview not found; run make (or make install) "
+                        "to build and install the preview window.\n");
+        free(file);
+        return 1;
+    }
+    char *args[] = { viewer, file, theme_name ? "--theme" : NULL, (char *)theme_name, NULL };
+    posix_spawn_file_actions_t io;
+    posix_spawnattr_t attr;
+    posix_spawn_file_actions_init(&io);
+    for (int fd = 0; fd <= 2; fd++)
+        posix_spawn_file_actions_addopen(&io, fd, "/dev/null", fd ? O_WRONLY : O_RDONLY, 0);
+    posix_spawnattr_init(&attr);
+    posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSID);
+    pid_t pid;
+    int err = posix_spawn(&pid, viewer, &io, &attr, args, environ);
+    posix_spawnattr_destroy(&attr);
+    posix_spawn_file_actions_destroy(&io);
+    free(viewer);
+    free(file);
+    if (err) { errno = err; perror("glance --ui: glance-preview"); return 1; }
+    return 0;
+#endif
+#else
     (void)path; (void)theme_name;
-    fprintf(stderr, "glance --ui is available only on macOS.\n");
+    fprintf(stderr, "glance --ui is available only on macOS and Linux.\n");
     return 1;
 #endif
 }

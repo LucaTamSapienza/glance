@@ -1,6 +1,7 @@
 # Build artifacts
 /glance
 /glance-render
+/glance-preview
 /build/
 /build-t-*
 /.san-probe*

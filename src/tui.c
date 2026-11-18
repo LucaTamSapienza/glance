@@ -42,6 +42,15 @@
 #include <sys/stat.h>
 #include <time.h>
 
+/* First effective codepoint of a key. notcurses < 3.0.8 has no eff_text, so
+ * fall back to the key's own id when it is a Unicode scalar (not an NCKEY_*). */
+#ifdef NCINPUT_MAX_EFF_TEXT_CODEPOINTS
+#define NI_EFF0(ni) ((ni)->eff_text[0])
+#else
+#include <termios.h>
+#define NI_EFF0(ni) ((ni)->id <= 0x10FFFF ? (ni)->id : 0)
+#endif
+
 enum { MODE_READER, MODE_INSERT, MODE_SPLIT };
 
 typedef struct {
@@ -229,6 +238,20 @@ static int detect_dark(struct notcurses *nc) {
     int r = (bg >> 16) & 0xff, g = (bg >> 8) & 0xff, b = bg & 0xff;
     int luma = (299 * r + 587 * g + 114 * b) / 1000;   /* perceived brightness */
     return luma < 128;
+}
+
+/* Old notcurses (3.0.7, Ubuntu 24.04) leaves XON/XOFF flow control and line
+ * signals on, so Ctrl-S would freeze the terminal and Ctrl-C kill us instead
+ * of arriving as keys. Turn both off; notcurses_stop restores the termios. */
+static void tty_keys_raw(struct notcurses *nc) {
+#ifndef NCINPUT_MAX_EFF_TEXT_CODEPOINTS
+    notcurses_linesigs_disable(nc);
+    struct termios t;
+    if (tcgetattr(STDIN_FILENO, &t) == 0) {
+        t.c_iflag &= ~(tcflag_t)IXON;
+        tcsetattr(STDIN_FILENO, TCSANOW, &t);
+    }
+#endif
 }
 
 /* Tear down notcurses and restore the terminal's keyboard state. */
@@ -1270,6 +1293,7 @@ static void handle_resize(App *a) {
  * it is empty. Ctrl-chords are commands, not text. Returns 1 if it inserted. */
 static int try_insert_text(Editor *e, const ncinput *ni) {
     if (ncinput_ctrl_p(ni)) return 0;
+#ifdef NCINPUT_MAX_EFF_TEXT_CODEPOINTS
     char buf[NCINPUT_MAX_EFF_TEXT_CODEPOINTS * 4];
     int len = 0;
     for (int i = 0; i < NCINPUT_MAX_EFF_TEXT_CODEPOINTS && ni->eff_text[i]; i++) {
@@ -1277,6 +1301,10 @@ static int try_insert_text(Editor *e, const ncinput *ni) {
         if (cp < 0x20 || cp == 0x7f || cp > 0x10FFFF) continue;
         len += u8_encode(cp, buf + len);
     }
+#else
+    char buf[sizeof ni->utf8];
+    int len = 0;
+#endif
     if (len == 0 && ni->utf8[0] && (unsigned char)ni->utf8[0] >= 0x20 &&
         (unsigned char)ni->utf8[0] != 0x7f && ni->id <= 0x10FFFF) {
         len = (int)strlen(ni->utf8);
@@ -1337,7 +1365,7 @@ static int handle_command(App *a, uint32_t id, const ncinput *ni) {
         return 1;
     }
     /* command text is ASCII (q, w, ...); take the effective codepoint */
-    uint32_t cp = ni->eff_text[0] ? ni->eff_text[0] : id;
+    uint32_t cp = NI_EFF0(ni) ? NI_EFF0(ni) : id;
     if (!ncinput_ctrl_p(ni) && cp >= 0x20 && cp < 0x7f &&
         a->cmdlen < (int)sizeof(a->cmdbuf) - 1) {
         a->cmdbuf[a->cmdlen++] = (char)cp;
@@ -1381,8 +1409,8 @@ static int handle_search(App *a, uint32_t id, const ncinput *ni) {
         else a->searchmode = 0;
         return 1;
     }
-    if (!ncinput_ctrl_p(ni) && ni->eff_text[0] >= 0x20) {
-        char buf[8]; int k = u8_encode(ni->eff_text[0], buf);
+    if (!ncinput_ctrl_p(ni) && NI_EFF0(ni) >= 0x20) {
+        char buf[8]; int k = u8_encode(NI_EFF0(ni), buf);
         if (a->searchlen + k < (int)sizeof(a->searchbuf) - 1) {
             memcpy(a->searchbuf + a->searchlen, buf, k);
             a->searchlen += k; a->searchbuf[a->searchlen] = '\0';
@@ -1727,8 +1755,8 @@ static int handle_fuzzy(App *a, uint32_t id, const ncinput *ni) {
         else a->fuzzymode = 0;
         return 1;
     }
-    if (!ncinput_ctrl_p(ni) && ni->eff_text[0] >= 0x20) {
-        char buf[8]; int k = u8_encode(ni->eff_text[0], buf);
+    if (!ncinput_ctrl_p(ni) && NI_EFF0(ni) >= 0x20) {
+        char buf[8]; int k = u8_encode(NI_EFF0(ni), buf);
         if (a->fuzzy_qlen + k < (int)sizeof(a->fuzzy_query) - 1) {
             memcpy(a->fuzzy_query + a->fuzzy_qlen, buf, k);
             a->fuzzy_qlen += k; a->fuzzy_query[a->fuzzy_qlen] = '\0';
@@ -1874,7 +1902,7 @@ static int handle_reader(App *a, uint32_t id, const ncinput *ni) {
 /* Insert text with bracket auto-pairing: an opener adds its closer (cursor in
  * between), and typing a closer that already sits at the cursor steps over it. */
 static void insert_with_pairing(Editor *e, uint32_t id, const ncinput *ni) {
-    uint32_t cp = ni->eff_text[0] ? ni->eff_text[0] : id;
+    uint32_t cp = NI_EFF0(ni) ? NI_EFF0(ni) : id;
     ELine *L = &e->lines[e->cy];
     char next = (size_t)e->cx < L->len ? L->b[e->cx] : 0;
     if (pair_should_skip(cp, next)) { editor_right(e); return; }
@@ -1999,6 +2027,7 @@ int tui_keyprobe(void) {
     struct notcurses *nc = notcurses_init(&opts, NULL);
     if (!nc) return 1;
     g_nc = nc;
+    tty_keys_raw(nc);
     if (!enh) term_kbd_reset();    /* legacy keyboard mode (see term_kbd_reset) */
     atexit(term_kbd_reset);        /* either way, leave the shell clean on exit */
 
@@ -2024,9 +2053,11 @@ int tui_keyprobe(void) {
             hp += snprintf(hex + hp, sizeof hex - hp, "%02x ", (unsigned char)ni.utf8[i]);
 
         char eff[64] = {0};
+#ifdef NCINPUT_MAX_EFF_TEXT_CODEPOINTS
         int ep = 0;
         for (int i = 0; i < NCINPUT_MAX_EFF_TEXT_CODEPOINTS && ni.eff_text[i]; i++)
             ep += snprintf(eff + ep, sizeof eff - ep, "U+%04X ", ni.eff_text[i]);
+#endif
 
         char buf[256];
         snprintf(buf, sizeof buf,
@@ -2203,6 +2234,7 @@ int tui_run(const char *src, unsigned long len, const char *path, const char *ti
 
     a.nc = notcurses_init(&opts, NULL);
     if (!a.nc) { free(a.src); return 1; }
+    tty_keys_raw(a.nc);
     a.plane = notcurses_stdplane(a.nc);
     a.dark = detect_dark(a.nc);   /* terminal background polarity */
     /* CLI flag wins, else the config default, else "auto" (detected polarity). */

@@ -1,13 +1,13 @@
 # glance for humans: the reader and editor
 
 The user-side face of glance: a rendered terminal reader, a real editor, a
-read-only macOS preview window, and HTML/PDF export, all over the same folder
+read-only native preview window (macOS and Linux), and HTML/PDF export, all over the same folder
 of Markdown that your agent reads through the memory layer described in the
 [README](../README.md).
 
 ```sh
 glance file.md                 # open in the reader TUI
-glance file.md --ui            # open a read-only macOS preview window
+glance file.md --ui            # open a read-only native preview window (macOS, Linux)
 glance new.md                  # a path that doesn't exist opens empty; :w creates it
 glance-render -w 80 file.md    # render to ANSI on stdout (-l for a light theme)
 cat note.md | glance           # piped stdin: render to stdout (like glance-render)
@@ -19,7 +19,7 @@ tables**, and **inline images** (pixel graphics where the terminal supports them
 Three modes: **Reader** (rendered, with a block cursor), **Insert** (full-screen
 editor), **Split** (editor + live preview).
 
-## macOS preview
+## Native preview
 
 `glance file.md --ui` (or `glance --ui file.md`) opens a separate **Glance**
 window and immediately returns the terminal prompt. The window displays the
@@ -53,6 +53,17 @@ for each extension you want to associate. Glance registers as a Markdown viewer;
 installing it does not change your default app. Launching Glance directly offers
 the standard Open panel; **File > Open…** (Cmd-O) remains available after closing
 all windows.
+
+**Linux.** The same `--ui` opens a GTK4/WebKitGTK window (`glance-preview`;
+`make` builds it once `sudo apt install libgtk-4-dev libwebkitgtk-6.0-dev` is done)
+with the same behaviour: `Ctrl-O`, `Ctrl-W`, `Ctrl-Q`, one window per document,
+a single instance per session, and `auto` following the desktop's light/dark
+setting. `make install` also adds `glance.desktop`, so file managers offer
+**Open With > Glance**; make it the default with
+`xdg-mime default glance.desktop text/markdown`. On Ubuntu 23.10+ AppArmor blocks
+WebKit's sandbox, so the preview runs with the sandbox off (JavaScript stays
+disabled) and says so on stderr; to keep it on, install the profile once:
+`sudo install -m 644 linux/glance-preview.apparmor /etc/apparmor.d/glance-preview && sudo apparmor_parser -r /etc/apparmor.d/glance-preview`.
 
 ## Keys
 
