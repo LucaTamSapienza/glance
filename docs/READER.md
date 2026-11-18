@@ -100,7 +100,8 @@ re-centres to walk the vault.
 
 ## Themes
 
-Twelve built-ins — `auto` (default; follows your terminal background), `dracula`,
+Eleven palettes plus `auto` (default; follows your terminal background by
+picking `auto-dark` or `auto-light`) — `dracula`,
 `nord`, `gruvbox-dark`, `solarized-dark`, `solarized-light`, `github-light`,
 `tokyo-night`, `catppuccin-mocha`, `rose-pine`, `everforest`. Pick
 one with `--theme`, list them with `--list-themes`, or press **`T`** in the reader

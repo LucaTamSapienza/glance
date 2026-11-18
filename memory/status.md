@@ -1,12 +1,12 @@
 # Status
 
-> Last updated: 2026-11-18 (agent-first README, branch docs/readme-agent-first).
+> Last updated: 2026-11-18 (agent-first README, PR #32).
 > What's done, what's in flight, what's open. Rules and
 > invariants live in AGENTS.md, not here.
 
 ## On main
 
-Docs (2026-11-18, branch `docs/readme-agent-first`, not yet merged): the README leads with the agent-memory layer: a reproducible `--context` demo on `memory/` with its receipt, a Mermaid retrieval diagram, and the Claude wiring (MCP, plugin, CLI). The reader/editor reference lives in `docs/READER.md`. Still missing: a real TUI screenshot ([[decisions]]).
+Docs (2026-11-18, PR #32): the README leads with the agent-memory layer: a reproducible `--context` demo on `memory/` with its receipt, a Mermaid retrieval diagram, and the Claude wiring (MCP, plugin, CLI). The reader/editor reference lives in `docs/READER.md`.
 
 **User-side** is a complete reader/editor: Reader / Insert / Split modes;
 search (`/ n N`); TOC (`t`); atomic save + kqueue live-reload (clean buffers
@@ -85,6 +85,8 @@ Verified 2026-10-26: build, expanded native WebKit tests and all 30 UBSan suites
 
 ## Open
 
+- **`--context` without `--budget` is unbounded (found 2026-11-18, PR #32 review):** the default is 0 = no cap on both the CLI and `vault_context`, and nested heading subtrees are emitted twice, so a query on `memory/` returned 16,177 tokens against 8,043 raw. The docs now say to always pass a budget; the fix is a non-zero default or de-duplicating nested sections.
+- **README screenshot:** the front page has the logo but no real TUI screenshot yet.
 - **User-side residuals:** inline images decode on every frame (persistent
   planes are the right fix); flip enhanced keyboard on by default only after
   field testing; remote (`http`) images aren't fetched; wide tables overflow

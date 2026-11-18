@@ -32,7 +32,7 @@ tools then appear in any chat.
 
 ### Claude Code
 ```sh
-claude mcp add glance -- glance mcp
+claude mcp add -s user glance -- glance mcp   # every project; drop "-s user" for this project only
 ```
 
 ### Cursor / other MCP clients
@@ -52,12 +52,15 @@ printf '%s\n' \
 
 ## Tools
 
-Every read is **bounded** so it stays token-cheap; `vault_context` and
-`vault_section` also return a token **receipt** (used vs whole-file-read tokens).
+Reads are projections (a section, an outline, a neighbourhood) rather than
+whole files; `vault_context` and `vault_section` also return a token **receipt**
+(estimated tokens used vs a whole-file read). **Always pass `budget` to
+`vault_context`:** it defaults to 0, which means no cap and returns every
+matching section.
 
 | Tool | Arguments | Returns |
 |------|-----------|---------|
-| `vault_context`   | `dir`, `query`, `budget?` | budgeted retrieval bundle: ranked sections (BM25 + a link-graph prior), with diversity, coarse-to-fine projection, a truncation manifest, and a receipt |
+| `vault_context`   | `dir`, `query`, `budget?` (default 0 = no cap; set it), `semantic?` | budgeted retrieval bundle: ranked sections (BM25 + a link-graph prior), with diversity, coarse-to-fine projection, a truncation manifest, and a receipt |
 | `vault_section`   | `file`, `heading?`        | one heading's subtree + a token receipt |
 | `vault_outline`   | `file`, `depth?`, `abstract?` | the heading tree, depth-bounded, optional per-heading abstract |
 | `vault_neighbors` | `dir`, `note`, `depth?`   | link-graph neighbourhood with direction |

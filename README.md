@@ -25,52 +25,61 @@ the lookup cost compared with reading the files.
 ## See it work
 
 This repository keeps its own brain in [`memory/`](memory/MEMORY.md): five
-notes, about 7,900 tokens. Ask it a question from a clone of the repo:
+notes, about 8,000 tokens. Ask it a question from a clone of the repo (with
+glance [installed](#install), or after `make` as `./glance`):
 
 ```sh
 glance --context "why is the default keyboard mode legacy?" memory/ --budget 400
 ```
 
 ```jsonc
+// snapshot from 2026-11-18; scores and counts shift a little whenever the notes change
 {
   "query": "why is the default keyboard mode legacy?",
   "budget_tokens": 400,
+  "semantic": false,
   "chunks": [
     { "note": "lessons.md",
       "anchor": "The kitty keyboard stack can outlive the app (iTerm2)",
-      "granularity": "section", "score": 15.778, "tokens": 156, "text": "…" },
+      "granularity": "section", "score": 15.885, "text": "…", "tokens": 156 },
     { "note": "decisions.md",
       "anchor": "2026-07-01 — Enhanced keyboard is opt-in; legacy stays the default",
-      "granularity": "section", "score": 13.629, "tokens": 106, "text": "…" },
-    { "note": "status.md", "anchor": "Status", "granularity": "abstract", "tokens": 42, "text": "…" },
-    { "note": "MEMORY.md", "anchor": "Memory", "granularity": "abstract", "tokens": 78, "text": "…" }
+      "granularity": "section", "score": 13.692, "text": "…", "tokens": 106 },
+    { "note": "status.md", "anchor": "Status",
+      "granularity": "abstract", "score": 7.313, "text": "…", "tokens": 42 },
+    { "note": "MEMORY.md", "anchor": "Memory",
+      "granularity": "abstract", "score": 6.453, "text": "…", "tokens": 78 }
   ],
   "truncated": [
     { "note": "lessons.md", "anchor": "Terminals encode Ctrl-chords three different ways",
-      "score": 9.879, "tokens": 268 }
+      "score": 9.966, "tokens": 268 }
     // … 47 more sections, each with its anchor, score and token cost
   ],
-  "receipt": { "used_tokens": 382, "raw_tokens": 7909, "saved_pct": 95 }
+  "receipt": { "used_tokens": 382, "raw_tokens": 8126, "saved_pct": 95 }
 }
 ```
 
-The agent gets the decision and the lesson behind it in **382 tokens instead
-of 7,909, a 95% saving**. Three things in that output matter:
+The agent gets the decision and the lesson behind it in **under 400 tokens
+instead of about 8,000, a 95% saving**. Three things in that output matter:
 
 - **`chunks`** are whole sections, not arbitrary text windows, and each one is
-  citable as `note#heading`. The two that answer the question come back in
-  full; two others come back as one-paragraph abstracts because that is what
-  fit.
+  citable as `note#heading`. glance first takes the best section from each
+  matching note: the two that answer the question come back in full, and the
+  status and index notes fit only as one-paragraph abstracts.
 - **`truncated`** is the list of what did not fit. The budget never drops
-  something silently: the agent sees what else matched and can fetch one item
-  with `glance --section "memory/lessons.md#Terminals encode Ctrl-chords three different ways"`.
+  something silently: a second `lessons.md` section matched but did not fit,
+  so it is listed, and the agent can fetch it with
+  `glance --section "memory/lessons.md#Terminals encode Ctrl-chords three different ways"`.
 - **`receipt`** compares the tokens used with the cost of reading every note
-  in the folder.
+  in the folder you passed. Token counts are estimates from a byte and word
+  heuristic, not a tokenizer.
 
-Other questions against the same folder saved 90% at a budget of 800 tokens
-and 94 to 95% at 400 (measured in November 2026; the numbers move as the
-notes change). The saving grows with the vault, because the budget stays
-fixed while the raw read does not.
+glance fills the budget and stops, so the saving is set by the budget you
+choose relative to the folder: about 95% at 400 tokens and 90% at 800 on this
+8,000-token folder. What changes from question to question is whether the
+right sections land inside the budget, and `truncated` is there for the times
+they do not. The saving grows with the vault, because the budget stays fixed
+while the raw read does not.
 
 ## How it works
 
@@ -87,23 +96,25 @@ flowchart LR
         P["3 · Pack under the budget<br/>spread across notes,<br/>section or abstract"]
         O["4 · Answer<br/>cited chunks + truncation list<br/>+ token receipt"]
         S --> R --> P --> O
+        W["Write<br/>one section, atomic save"]
     end
 
     A -->|"question + token budget<br/>(MCP or CLI)"| S
     V -->|"read on every call,<br/>no index"| S
     O -->|"a few hundred tokens"| A
-    A -.->|"surgical edits"| V
+    A -.->|"operation + heading + text"| W
+    W -.-> V
     H <-->|"read · edit"| V
 ```
 
-1. **Scan.** The folder is the vault. glance finds the root by walking up to a
-   `.git` or `.obsidian` marker, splits every note into sections at its
-   headings, and resolves `[[wikilinks]]` into a graph. There is no index file
-   and no setup step.
+1. **Scan.** The folder you pass is the vault. glance reads every `.md` file
+   under it on each call, splits each note into sections at its headings, and
+   resolves `[[wikilinks]]` into a graph. There is no index file and no setup
+   step.
 2. **Rank.** Sections are scored with BM25 and that score is fused with a
-   prior from the link graph, so a note that is connected to good matches
-   ranks higher than an isolated one. `--semantic` adds an embedding score for
-   questions that share no keywords with the answer.
+   prior from the link graph, so among the matching sections, those in notes
+   linked to strong matches rank higher. `--semantic` fuses in an embedding
+   score as well (see [Reads](#reads) for what ships today).
 3. **Pack.** Retrieval is not top-k. glance fills the token budget, spreading
    it over several notes instead of spending it all on one, and it degrades a
    section to its abstract before leaving it out.
@@ -124,7 +135,7 @@ Install glance first ([Install](#install)), then pick how the agent reaches it.
 read and write as a native tool.
 
 ```sh
-claude mcp add glance -- glance mcp        # Claude Code
+claude mcp add -s user glance -- glance mcp     # Claude Code, every project
 ```
 
 ```json
@@ -138,8 +149,9 @@ are `vault_context`, `vault_section`, `vault_outline`, `vault_neighbors`,
 [docs/MCP.md](docs/MCP.md).
 
 **Claude Code plugin.** This repository is also a plugin. It adds slash
-commands for context, outline, links, graph and preview, and skills that teach Claude to navigate a
-vault through glance instead of reading files raw. It calls your installed
+commands for context, outline, links, graph and preview, and skills that
+teach Claude to navigate a vault and preview Markdown through glance instead
+of reading files raw. It calls your installed
 `glance`.
 
 ```sh
@@ -158,7 +170,7 @@ To look something up in `memory/`, run
 ### Give a repo a brain
 
 ```sh
-glance --seed .      # scaffold memory/ at the repo root, additively
+glance --seed [DIR]      # scaffold memory/ at the repo root, additively (DIR defaults to .)
 ```
 
 `--seed` finds the repo root and creates `memory/`: an index that doubles as
@@ -177,7 +189,7 @@ receipt.
 ### Reads
 
 ```sh
-glance --context "QUERY" DIR [--budget N] [--semantic]   # budgeted retrieval (above)
+glance --context "QUERY" DIR --budget N [--semantic]     # budgeted retrieval (above)
 glance --section "FILE#Heading"        # one heading's subtree + a token receipt
 glance --outline FILE [--depth N] [--abstract]           # heading tree, bounded
 glance --neighbors "Note" DIR [--depth H]                # link-graph neighbourhood
@@ -194,9 +206,14 @@ A cheap way to explore an unfamiliar vault is coarse to fine: `--outline` with
 `--abstract` to see a note's structure, then `--section` for the one part that
 matters, then `--neighbors` to follow the graph from there.
 
-`--semantic` fuses an embedding score into the ranking. A dependency-free
-hashing embedder ships today; the MiniLM encoder with a persistent cache is
-finished on the `feat/semantic-minilm` branch and not yet merged.
+Always pass `--budget` to `--context`. It is optional, but the default is 0,
+which means no cap: glance then returns every matching section, and because
+sections nest that can cost more than reading the files.
+
+`--semantic` fuses an embedding score into the ranking. The embedder that
+ships today is a dependency-free word-hashing one, so it still needs shared
+words. An on-device encoder that matches paraphrases, with a persistent
+cache, is built on the `feat/semantic-minilm` branch and not yet merged.
 
 ### Writes
 
@@ -260,10 +277,10 @@ and most of that code existed to work around glamour's opacity. It was
 rewritten in C to own the whole pipeline:
 
 ```
-Markdown ──▶ md4c (CommonMark/GFM) ──▶ Doc ──────▶ ┌─ ANSI string       (CLI, tests)
-             the renderer builds a     (lines of   ├─ notcurses cells   (TUI)
-             structured document model  styled     ├─ HTML              (export, macOS preview)
-                                        runs)      └─ projections       (agent reads)
+Markdown ──▶ md4c (CommonMark/GFM) ─┬─▶ Doc ──────▶ ┌─ ANSI string      (CLI, tests)
+                                    │   (lines of   ├─ notcurses cells  (TUI)
+                                    │   styled runs)└─ projections      (agent reads)
+                                    └─▶ HTML        (export, macOS preview)
 ```
 
 Because glance builds the document model itself, the agent layer can project
@@ -289,8 +306,9 @@ AGENTS.md       how to work in this repo, for humans and agents (CLAUDE.md impor
 
 ## Roadmap and known limitations
 
-Agent-side: merging the MiniLM semantic tier (persistent `.glance/` embedding
-cache and graph-expansion retrieval), which is complete on
+Agent-side: a bounded default for `--context` when no budget is given, and
+merging the real semantic tier (an on-device encoder, a persistent `.glance/`
+embedding cache and graph-expansion retrieval), which is built on
 `feat/semantic-minilm`. User-side: sharper inline images, the enhanced
 keyboard protocol on by default (today `keyboard = enhanced` is opt-in),
 remote-image fetch, wide-table wrapping. The living list is
