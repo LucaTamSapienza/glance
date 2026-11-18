@@ -1,10 +1,12 @@
 # Status
 
-> Last updated: 2026-10-26 (Finder integration, PR #29).
+> Last updated: 2026-11-18 (agent-first README, branch docs/readme-agent-first).
 > What's done, what's in flight, what's open. Rules and
 > invariants live in AGENTS.md, not here.
 
 ## On main
+
+Docs (2026-11-18, branch `docs/readme-agent-first`, not yet merged): the README leads with the agent-memory layer: a reproducible `--context` demo on `memory/` with its receipt, a Mermaid retrieval diagram, and the Claude wiring (MCP, plugin, CLI). The reader/editor reference lives in `docs/READER.md`. Still missing: a real TUI screenshot ([[decisions]]).
 
 **User-side** is a complete reader/editor: Reader / Insert / Split modes;
 search (`/ n N`); TOC (`t`); atomic save + kqueue live-reload (clean buffers

@@ -213,8 +213,11 @@ The living state lives in `memory/` — a glance vault of small notes
 
 ## Where everything else lives
 
-- [`README.md`](README.md) — the product front page: install, usage, both
-  faces, every key binding.
+- [`README.md`](README.md) — the product front page. It leads with the
+  agent-memory layer (token savings, how retrieval works, wiring into Claude)
+  and keeps the reader to a short section.
+- [`docs/READER.md`](docs/READER.md) — the user-side reference: reader/editor,
+  macOS preview, every key binding, themes, export.
 - [`memory/`](memory/MEMORY.md) — living state: status · decisions · lessons.
 - [`docs/DESIGN.md`](docs/DESIGN.md) — the agent-memory north-star, milestones,
   open questions.

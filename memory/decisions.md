@@ -84,8 +84,8 @@ the default only after field testing on real terminals.
 ## 2026-07-01 — Docs reorganized: one source per fact + this memory vault
 
 Six root-level prose docs repeated the module map and status and measurably
-drifted. Now: README = product, AGENTS.md = the one working guide (CLAUDE.md
-just imports it), memory/ = living state, docs/ = DESIGN + MCP + specs +
+drifted. Now: README = product (since 2026-11-18 it leads with the memory layer and the token receipt, per the 2026-06-17 pivot; the reader reference moved to docs/READER.md), AGENTS.md = the one working guide (CLAUDE.md
+just imports it), memory/ = living state, docs/ = DESIGN + MCP + READER + specs +
 archive; STATUS.md, context.md and AGENT_FEATURES.md deleted. Heads-up:
 feat/semantic-minilm still edits the deleted files and will conflict at
 merge — fold its deltas into [[status]].
